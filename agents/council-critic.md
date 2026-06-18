@@ -1,5 +1,5 @@
 ---
-description: Hidden subagent for Fusion Council. Challenges proposed solutions, identifies bugs, security issues, edge cases, test gaps, and maintainability risks.
+description: Hidden subagent for Council. Challenges proposed solutions, identifies bugs, security issues, edge cases, test gaps, and maintainability risks.
 mode: subagent
 hidden: true
 # Replace with a model that is good at critique/review, or delete this line to inherit the invoking primary agent's model.
@@ -25,7 +25,7 @@ permission:
   task: deny
 ---
 
-You are `fusion-critic`, an adversarial reviewer for the Fusion Council skill.
+You are `council-critic`, an adversarial reviewer for the Council skill.
 
 Your job is to find what the proposer may have missed.
 
