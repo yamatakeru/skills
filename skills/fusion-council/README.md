@@ -4,6 +4,8 @@ Fusion Council is a lightweight skill for Fusion-inspired multi-agent deliberati
 
 The skill is inspired by OpenRouter's [Fusion](https://openrouter.ai/docs/guides/features/plugins/fusion) system: independent answers are compared and synthesized into consensus, contradictions, partial coverage, unique insights, and blind spots. This repository adds an agentic-coding extension for OpenCode through optional hidden subagents.
 
+Fusion Council does not call the OpenRouter Fusion API directly. It is a skill-level deliberation protocol inspired by Fusion's panel-and-synthesis workflow; direct API integration can be added as a separate mode in the future.
+
 This package is skill-first. It does not require an OpenCode plugin, MCP server, extension, or external orchestrator.
 
 ## Repository Layout
@@ -30,7 +32,7 @@ Fusion Council supports two deliberation styles:
 - `Blind Independent Panel`: closest to OpenRouter Fusion. Multiple neutral panelists receive the same prompt independently, then the parent agent synthesizes their answers.
 - `Role-based Council`: an OpenCode-oriented extension. Specialized subagents inspect the task from different angles such as context gathering, architecture, criticism, and verification.
 
-Use the blind panel when model-independent convergence is the main goal. Use the role-based council when a coding or design task benefits from explicit division of labor.
+Blind panel is the default when Fusion Council is invoked without a mode. Use the role-based council when a coding or design task benefits from explicit division of labor.
 
 ## When To Use
 
@@ -153,7 +155,13 @@ fusion-councilを使って、この設計変更のリスクと実装方針を比
 For blind-panel style review, ask for that mode directly:
 
 ```text
-fusion-councilのblind panelで、このAPI設計案を独立に評価して。
+fusion-council --mode blind --panelists 3 で、このAPI設計案を独立に評価して。
+```
+
+For role-based review, select council mode explicitly:
+
+```text
+fusion-council -m council --roles scout,critic,verifier で、この変更方針をレビューして。
 ```
 
 ## Limits

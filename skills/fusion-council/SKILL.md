@@ -23,25 +23,32 @@ metadata:
   optional‑subagents: "fusion-scout,fusion-architect,fusion-critic,fusion-verifier,fusion-panelist"
 ---
 
-# Fusion Council: role‑based council and blind panel
+# Fusion Council: blind panel and role‑based council
 
 Fusion Council is a general‑purpose deliberation protocol inspired by
 OpenRouter's Fusion system but adapted for agentic coding and research
-workflows.  It allows you to turn a single query into multiple
-independent perspectives and then synthesise them into one coherent
-answer.  It offers two complementary modes:
-
-* **Role‑based Council** – different subagents tackle the task from
-  different roles (e.g. scout, architect, critic, verifier), each with
-  their own permissions.  This is ideal when you know which lenses you
-  want to apply (design, risk, implementation, verification) and want
-  structured diversity.
+workflows.  It is not an OpenRouter Fusion API wrapper and does not call
+the OpenRouter Fusion API directly.  Instead, it implements a
+skill-level panel-and-synthesis protocol that can be used by agents.  It
+allows you to turn a single query into multiple independent perspectives
+and then synthesise them into one coherent answer.  It offers two
+complementary modes:
 
 * **Blind Independent Panel** – multiple subagents receive the same
   prompt verbatim and are not assigned specific lenses.  They answer
   independently without seeing each other's work.  This mode mirrors
   OpenRouter's Fusion: diversity comes from stochastic differences in
   reasoning paths and tool usage rather than from assigned personas.
+  This is the default mode when Fusion Council is invoked without an
+  explicit mode.
+
+* **Role‑based Council** – an OpenCode-oriented extension where
+  different subagents tackle the task from different roles (e.g. scout,
+  architect, critic, verifier), each with their own permissions.  This
+  is ideal when you know which lenses you want to apply (design, risk,
+  implementation, verification) and want structured diversity.  It is
+  Fusion-inspired, but less faithful to OpenRouter Fusion than the blind
+  panel because the roles intentionally bias each subagent's view.
 
 In both modes, the parent agent synthesises the responses into a
 structured analysis, surfacing **consensus**, **contradictions**,
@@ -54,6 +61,32 @@ The council is reserved for **hard or high‑stakes tasks**.  Direct
 answers are still appropriate for simple factual queries or
 straightforward code edits.  Reaching for a council on every
 prompt wastes time and tokens.
+
+## Invocation options
+
+Users may specify lightweight options in natural language or key-value
+style.  Treat these as preferences, not as a strict CLI syntax:
+
+```text
+fusion-council --mode blind --panelists 3 --record で、この設計をレビューして。
+fusion-council -m council --roles scout,critic,verifier で使って。
+```
+
+Supported options:
+
+* `--mode <blind|council|auto>`, `-m <blind|council|auto>`: deliberation
+  mode.  If omitted, use `blind` unless the user's wording clearly asks
+  for role-based review, verification, or implementation planning.
+* `--panelists <n>`, `-p <n>`: number of blind independent panelists to
+  spawn when available.  Prefer 2-4; avoid more unless the user
+  explicitly accepts higher cost and latency.
+* `--roles <list>`, `-r <list>`: comma-separated role-based council
+  members to use, such as `scout`, `architect`, `critic`, and
+  `verifier`.
+* `--record`: save provenance under `.fusion-runs/` when the environment
+  and permissions permit it.
+* `--verify`: include verification planning or verification commands
+  where safe and allowed.
 
 ## When to use
 
@@ -94,7 +127,23 @@ coverage, unique insights and blind spots.  This provides some
 diversity without requiring subagents.  Keep internal councils
 lightweight; do not recursively spawn more councils.
 
-### Tier 2 — Role‑based council (default when subagents exist)
+### Tier 2 — Blind independent panel (default when subagents exist)
+
+If hidden subagents are present and the user invokes Fusion Council
+without selecting a mode, use a blind independent panel by default.
+Spawn two or more neutral panelist subagents, preferably
+`fusion-panelist` or model-specific copies of it, with the **same
+prompt** and no assigned roles or personas.  Do not seed them with
+different system messages; the diversity should come from stochastic
+sampling, model differences, and tool use rather than from artificially
+different lenses.  Make sure each subagent cannot see the others' work.
+After they return, synthesise as above into consensus, contradictions,
+partial coverage, unique insights and blind spots.  Use the blind panel
+for deep research questions, multi‑model cross‑checking, or when the
+user requests a "panel", "ensemble", "fusion", or does not specify a
+mode.
+
+### Tier 2 (alternative) — Role‑based council
 
 If hidden subagents are present and the problem benefits from
 multiple lenses, spawn a role‑based council with up to four
@@ -113,6 +162,12 @@ specialised subagents:
   permission if the project warrants it.  This subagent should not
   perform edits.
 
+This mode is an OpenCode-oriented extension, not the most literal
+OpenRouter Fusion mode.  Use it when the user explicitly asks for
+role-based review, or when the task is a coding/design problem where
+division into research, design, critique and verification is more useful
+than same-prompt independent convergence.
+
 Each subagent receives the full task description and any context the
 parent can provide.  Do **not** summarise or pre‑digest the task.
 Subagents should work independently: they must not see each other's
@@ -123,21 +178,6 @@ insights, blind spots), attributes each piece to its source and
 produces a final answer grounded in this analysis.  This tier is
 suitable for architecture decisions, complex bug triage, policy
 reviews, and other tasks where distinct roles are helpful.
-
-### Tier 2 (alternative) — Blind independent panel
-
-If model diversity itself is valuable (e.g. you want two or more runs
-of the same model or different models to capture different
-reasoning paths), use a **blind panel** instead of role‑based
-council.  Spawn two or more neutral panelist subagents, preferably `fusion-panelist` or model-specific copies of it, with the **same prompt** and
-no assigned roles or personas.  Do not seed them with different
-system messages; the diversity should come from stochastic sampling
-and tool use rather than from artificially different lenses.  Make
-sure each subagent cannot see the others' work.  After they return,
-synthetise as above into consensus, contradictions, partial coverage,
-unique insights and blind spots.  Use the blind panel for deep
-research questions, multi‑model cross‑checking, or when the user
-requests a "panel" or "ensemble" answer.
 
 ## Synthesis
 
@@ -171,7 +211,7 @@ ground your final answer in the analysis.
 
 ## Provenance and record keeping (optional)
 
-When tools and environment permit, record the full council session.
+When tools and environment permit, record the full panel or council session.
 For example, save each panelist's output, the structured analysis and
 the final answer to files under a `.fusion-runs/` directory.  Include
 metadata such as the model slug or configuration used for each
@@ -188,20 +228,22 @@ minor code edit, skip the council and answer directly.
 
 ## Usage summary
 
-1. **Assess the task** – decide whether to answer directly (Tier 0),
-   run an internal council (Tier 1), or spawn subagents (Tier 2).  If
-   subagents are available and the task is complex, use role‑based
-   council by default.  Consider blind panel mode if you need
-   multiple independent runs of the same model or cross‑provider
-   checking.
-2. **Spawn subagents** – allocate up to four hidden subagents
-   (scout, architect, critic, verifier) for role‑based council, or
-   spawn multiple `fusion-panelist` subagents for blind panel.  For actual model diversity, create model-specific copies such as `fusion-panelist-claude.md`, `fusion-panelist-openai.md`, and `fusion-panelist-gemini.md`, each with a different `model:` line in its frontmatter.  Provide the
+1. **Assess the task and options** – decide whether to answer directly
+   (Tier 0), run an internal council (Tier 1), or spawn subagents
+   (Tier 2).  Respect explicit options such as `--mode blind`,
+   `-m council`, `--panelists 3`, `--roles scout,critic`, `--record`,
+   and `--verify`.  If Fusion Council is invoked and no mode is
+   specified, use blind panel by default unless the user's wording
+   clearly calls for role-based review or verification.
+2. **Spawn subagents** – spawn multiple `fusion-panelist` subagents for
+   blind panel, or allocate up to four hidden subagents (scout,
+   architect, critic, verifier) for role‑based council.  For actual model diversity, create model-specific copies such as `fusion-panelist-claude.md`, `fusion-panelist-openai.md`, and `fusion-panelist-gemini.md`, each with a different `model:` line in its frontmatter.  Provide the
    full user task verbatim; do not summarise or pre‑digest it.  Ensure
    subagents cannot see each other's output.
 3. **Collect responses** – wait for all subagents to return.  For
-   code tasks, ask the verifier to run tests, type checks and lint to
-   gather execution evidence.
+   role-based code tasks, include `fusion-verifier` when verification is
+   requested or clearly useful, and use its test, type check or lint
+   results as execution evidence.
 4. **Structure the analysis** – synthesise panelist responses into
    consensus, contradictions, partial coverage, unique insights and
    blind spots.  Attribute each point to its source and include test
@@ -215,7 +257,7 @@ minor code edit, skip the council and answer directly.
 6. **Record provenance (optional)** – if possible, save the panel
    prompt, each answer, the analysis and the final output for
    auditing.  Note any model degradations (e.g. missing CLI, timeouts).
-7. **Communicate clearly** – inform the user that a council was
+7. **Communicate clearly** – inform the user that a panel or council was
    invoked, summarise what models or subagents participated, and
    include any caveats or unresolved uncertainties.
 
