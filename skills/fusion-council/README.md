@@ -15,6 +15,7 @@ skills/
   fusion-council/
     SKILL.md      # The portable skill definition
     README.md     # This file
+    details/      # Optional deep-dive guidance; not required at runtime
 agents/
   fusion-scout.md
   fusion-architect.md
@@ -23,7 +24,7 @@ agents/
   fusion-panelist.md
 ```
 
-The `SKILL.md` file is the core artifact. The files under `agents/` are optional OpenCode subagents that make the council more useful when OpenCode can spawn hidden subagents.
+The `SKILL.md` file is the core artifact and contains the complete runtime protocol. The files under `details/` are optional deep-dive guidance; the skill should still work correctly if they are not read. The files under `agents/` are optional OpenCode subagents that make the council more useful when OpenCode can spawn hidden subagents.
 
 ## Modes
 
