@@ -52,3 +52,7 @@ Give each copy a different `model:` line if those models are available in the
 environment. Users may request these via `--models gpt,kimi,deepseek,glm,composer`.
 The selected model-specific agents still receive the same prompt; model choice
 must not become a role, persona, or specialty lens.
+
+Independent runs may use the same underlying model more than once when each run
+remains blind and independent. This treats stochastic reasoning paths and tool
+usage as diversity sources, not as separate roles.

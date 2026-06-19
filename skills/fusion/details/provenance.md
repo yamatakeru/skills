@@ -10,7 +10,10 @@ panel decision without persisting secrets or unnecessary private data.
 
 - Original prompt and options.
 - Panelist identifiers and model metadata when known.
-- Each panelist's raw output.
+- Each panelist's returned structured output, excluding private
+  chain-of-thought and full reasoning traces.
+- Concise reasoning summaries, evidence, sources, tool-result references,
+  assumptions, uncertainties, and verification notes when provided.
 - Structured synthesis.
 - Final answer.
 - Verification commands and results, if any.
