@@ -42,6 +42,10 @@ These rules are authoritative even if supplementary files are not read:
   participant's output before synthesis.
 * Subagents are read-only by default. `council-verifier` may run safe, allowed,
   targeted checks but must not edit files.
+* Do not request, expose, synthesize or record private chain-of-thought from
+  role subagents. Roles should provide concise reasoning summaries, evidence,
+  sources, tool results, assumptions, uncertainties and verification notes
+  instead.
 * Do not recursively spawn additional councils or panels from any participant.
 * The final answer must be grounded in the synthesis, not copied from one role
   verbatim.
@@ -122,6 +126,9 @@ councils.
 When subagents are available, spawn the useful `council-*` agents. Give each the
 full task and shared context. The role prompt may focus the lens, but it must
 not hide important context or steer toward a preferred answer.
+Council diversity comes from assigned roles, not from requiring distinct models.
+Multiple roles may use the same underlying model when each role remains
+independent until synthesis.
 
 ## Synthesis
 
@@ -140,10 +147,12 @@ was not verified.
 
 ## Provenance And Record Keeping
 
-If `--record` is requested and safe, save the prompt, role outputs, synthesis,
-final answer, verification evidence and degraded-mode notes under
-`.council-runs/`. Do not persist secrets or unnecessary private data. If
-recording is unavailable, mention that when relevant.
+If `--record` is requested and safe, save prompt and options, role identifiers
+when known, each role's returned structured output excluding private
+chain-of-thought, synthesis, final answer, verification evidence, tool-result
+references, assumptions, uncertainties and degraded-mode notes under
+`.council-runs/`. Do not persist secrets, unnecessary private data or full
+reasoning traces. If recording is unavailable, mention that when relevant.
 
 ## Cost And Latency
 

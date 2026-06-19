@@ -11,7 +11,10 @@ review without persisting secrets or unnecessary private data.
 
 - Original prompt and options.
 - Role identifiers and model metadata when known.
-- Each role's raw output.
+- Each role's returned structured output, excluding private chain-of-thought and
+  full reasoning traces.
+- Concise reasoning summaries, evidence, sources, tool-result references,
+  assumptions, uncertainties, and verification notes when provided.
 - Structured synthesis.
 - Final answer.
 - Verification commands and results, if any.
