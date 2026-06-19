@@ -4,8 +4,10 @@ mode: subagent
 hidden: true
 # Replace with a strong reasoning/design model available in your OpenCode setup, or delete this line to inherit the invoking primary agent's model.
 model: openai/gpt-5.5-fast
-temperature: 0.2
-steps: 14
+steps: 18
+# options:
+#   reasoning:
+#     effort: xhigh
 permission:
   read: allow
   glob: allow

@@ -4,8 +4,8 @@ mode: subagent
 hidden: true
 # Replace with a precise coding/verifier model available in your OpenCode setup, or delete this line to inherit the invoking primary agent's model.
 model: opencode-go/kimi-k2.7-code
-temperature: 0.0
-steps: 10
+top_p: 0.95
+steps: 18
 permission:
   read: allow
   glob: allow

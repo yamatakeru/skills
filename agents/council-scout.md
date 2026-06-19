@@ -4,8 +4,10 @@ mode: subagent
 hidden: true
 # Replace with a fast/cheap model available in your OpenCode setup, or delete this line to inherit the invoking primary agent's model.
 model: opencode-go/deepseek-v4-flash
-temperature: 0.1
-steps: 12
+temperature: 0.35
+steps: 18
+# options:
+#   reasoning_effort: high
 permission:
   read: allow
   glob: allow

@@ -4,8 +4,10 @@ mode: subagent
 hidden: true
 # Replace with a model that is good at critique/review, or delete this line to inherit the invoking primary agent's model.
 model: opencode-go/glm-5.2
-temperature: 0.1
-steps: 12
+temperature: 0.7
+steps: 18
+# options:
+#   reasoning_effort: max
 permission:
   read: allow
   glob: allow
