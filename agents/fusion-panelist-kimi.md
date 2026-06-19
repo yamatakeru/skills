@@ -2,9 +2,6 @@
 description: Hidden neutral subagent for the Fusion blind-panel skill. Receives the user's task verbatim, works independently, uses available tools when useful, and returns a complete self-contained answer without seeing or reacting to other panelists.
 mode: subagent
 hidden: true
-# Set this to a concrete provider/model-id available in your OpenCode setup.
-# If omitted, OpenCode will make this subagent inherit the invoking primary agent's model.
-# For model diversity, copy this file to fusion-panelist-claude.md, fusion-panelist-openai.md, etc., and give each copy a different active model line.
 model: opencode-go/kimi-k2.7-code
 temperature: 0.35
 top_p: 0.9
