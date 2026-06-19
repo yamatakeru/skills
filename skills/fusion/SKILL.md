@@ -52,6 +52,9 @@ These rules are authoritative even if supplementary files are not read:
 * Panelists are read-only by default. They may inspect context or propose
   verification, but they must not edit files.
 * Do not recursively spawn additional panels or councils from any panelist.
+* Do not request, expose, synthesize or record private chain-of-thought.
+  Panelists should provide concise reasoning summaries, evidence, sources, tool
+  results, assumptions, uncertainties and verification notes instead.
 * The final answer must be grounded in the synthesis, not copied from one
   panelist verbatim.
 
@@ -141,6 +144,9 @@ the same prompt and essential shared context, with no assigned role, no persona,
 no model-specific instruction, and no visibility into other panelists' outputs.
 If a requested model-specific panelist is unavailable, replace it with another
 neutral panelist or degrade to Tier 1 rather than changing the task.
+Independent runs may use the same underlying model multiple times when each run
+remains blind and independent. Diversity from stochastic reasoning paths and
+tool use is valid, though distinct models are preferred when available.
 
 ## Synthesis
 
@@ -160,10 +166,12 @@ contradictions and blind spots, and make recommendations only when supported.
 
 ## Provenance And Record Keeping
 
-If `--record` is requested and safe, save the prompt, panelist outputs,
-synthesis, final answer, verification evidence and degraded-mode notes under
-`.fusion-runs/`. Do not persist secrets or unnecessary private data. If
-recording is unavailable, mention that when relevant.
+If `--record` is requested and safe, save prompt and options, panelist
+identifiers when known, each panelist's returned structured output excluding
+private chain-of-thought, synthesis, final answer, verification evidence,
+tool-result references, assumptions, uncertainties and degraded-mode notes under
+`.fusion-runs/`. Do not persist secrets, unnecessary private data or full
+reasoning traces. If recording is unavailable, mention that when relevant.
 
 ## Cost And Latency
 
