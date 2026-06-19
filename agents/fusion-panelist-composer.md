@@ -4,7 +4,6 @@ mode: subagent
 hidden: true
 model: xai/grok-composer-2.5-fast
 temperature: 0.35
-top_p: 0.9
 steps: 18
 permission:
   read: allow

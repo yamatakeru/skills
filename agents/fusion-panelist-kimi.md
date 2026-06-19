@@ -3,8 +3,7 @@ description: Hidden neutral subagent for the Fusion blind-panel skill. Receives 
 mode: subagent
 hidden: true
 model: opencode-go/kimi-k2.7-code
-temperature: 0.35
-top_p: 0.9
+top_p: 0.95
 steps: 18
 permission:
   read: allow

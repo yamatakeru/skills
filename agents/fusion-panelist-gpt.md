@@ -3,9 +3,10 @@ description: Hidden neutral subagent for the Fusion blind-panel skill. Receives 
 mode: subagent
 hidden: true
 model: openai/gpt-5.5-fast
-temperature: 0.35
-top_p: 0.9
 steps: 18
+# options:
+#   reasoning:
+#     effort: xhigh
 permission:
   read: allow
   glob: allow

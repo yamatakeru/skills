@@ -3,9 +3,10 @@ description: Hidden neutral subagent for the Fusion blind-panel skill. Receives 
 mode: subagent
 hidden: true
 model: opencode-go/glm-5.2
-temperature: 0.35
-top_p: 0.9
+temperature: 0.7
 steps: 18
+# options:
+#   reasoning_effort: max
 permission:
   read: allow
   glob: allow

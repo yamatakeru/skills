@@ -4,8 +4,9 @@ mode: subagent
 hidden: true
 model: opencode-go/deepseek-v4-flash
 temperature: 0.35
-top_p: 0.9
 steps: 18
+# options:
+#   reasoning_effort: high
 permission:
   read: allow
   glob: allow

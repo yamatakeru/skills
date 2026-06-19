@@ -6,8 +6,6 @@ hidden: true
 # If omitted, OpenCode will make this subagent inherit the invoking primary agent's model.
 # For model diversity, copy this file to fusion-panelist-claude.md, fusion-panelist-openai.md, etc., and give each copy a different active model line.
 # model: provider/model-id
-temperature: 0.35
-top_p: 0.9
 steps: 18
 permission:
   read: allow
