@@ -95,12 +95,7 @@ are already discoverable and permissions allow them. The following
         },
         "task": {
           "*": "ask",
-          "fusion-panelist": "allow",
-          "fusion-panelist-gpt": "allow",
-          "fusion-panelist-kimi": "allow",
-          "fusion-panelist-deepseek": "allow",
-          "fusion-panelist-glm": "allow",
-          "fusion-panelist-composer": "allow"
+          "fusion-panelist*": "allow"
         }
       }
     }
