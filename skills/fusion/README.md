@@ -23,12 +23,18 @@ skills/
     details/      # Optional deep-dive guidance; not required at runtime
 agents/
   fusion-panelist.md
+  fusion-panelist-gpt.md
+  fusion-panelist-kimi.md
+  fusion-panelist-deepseek.md
+  fusion-panelist-glm.md
+  fusion-panelist-composer.md
 ```
 
 The `SKILL.md` file is the core artifact and contains the complete runtime
 protocol. The files under `details/` are optional guidance; the skill should
-still work correctly if they are not read. `fusion-panelist.md` is an optional
-OpenCode hidden subagent for stronger independent-panel behavior.
+still work correctly if they are not read. `fusion-panelist*.md` files are
+optional OpenCode hidden subagents for stronger independent-panel behavior and
+model diversity.
 
 ## When To Use
 
@@ -57,12 +63,12 @@ mkdir -p /path/to/your/repo/.opencode/skills
 cp -R skills/fusion /path/to/your/repo/.opencode/skills/
 ```
 
-For OpenCode project-local hidden subagents, copy the panelist file into
+For OpenCode project-local hidden subagents, copy the panelist files into
 `.opencode/agent/` or `.opencode/agents/`:
 
 ```bash
 mkdir -p /path/to/your/repo/.opencode/agent
-cp agents/fusion-panelist.md /path/to/your/repo/.opencode/agent/
+cp agents/fusion-panelist*.md /path/to/your/repo/.opencode/agent/
 ```
 
 ## OpenCode Optional Configuration
@@ -89,7 +95,12 @@ are already discoverable and permissions allow them. The following
         },
         "task": {
           "*": "ask",
-          "fusion-panelist": "allow"
+          "fusion-panelist": "allow",
+          "fusion-panelist-gpt": "allow",
+          "fusion-panelist-kimi": "allow",
+          "fusion-panelist-deepseek": "allow",
+          "fusion-panelist-glm": "allow",
+          "fusion-panelist-composer": "allow"
         }
       }
     }
@@ -103,9 +114,17 @@ agent, and plugin files are loaded at startup.
 ## Model Setup
 
 `fusion-panelist.md` may inherit the invoking primary agent's model. For model
-diversity, copy it to files such as `fusion-panelist-openai.md`,
-`fusion-panelist-claude.md`, or `fusion-panelist-gemini.md`, then set different
-`model:` lines in their frontmatter.
+diversity, use model-specific copies with different `model:` lines in their
+frontmatter, such as:
+
+- `fusion-panelist-gpt.md`
+- `fusion-panelist-kimi.md`
+- `fusion-panelist-deepseek.md`
+- `fusion-panelist-glm.md`
+- `fusion-panelist-composer.md`
+
+Model-specific panelists are not roles or personas. They must receive the same
+task prompt and output expectations; only the underlying model differs.
 
 Use this command to inspect available models:
 
@@ -126,8 +145,22 @@ fusion --panelists 3 で、このAPI設計案をレビューして。
 ```
 
 ```text
+fusion --models gpt,kimi,deepseek で、このAPI設計案をレビューして。
+```
+
+```text
+fusion --panelists 4 --models gpt,kimi で、この実装方針を評価して。
+```
+
+```text
 fusion --verify で、このバグ修正方針を評価して。実装はまだしないで。
 ```
+
+Supported model aliases are `gpt`, `kimi`, `deepseek`, `glm`, and `composer`.
+When `--panelists` and `--models` are combined, Fusion uses the requested models
+first and fills remaining slots with other neutral panelists. If `--models`
+contains more entries than `--panelists`, the explicit model list becomes the
+effective panel size unless cost or latency would be unreasonable.
 
 ## Limits
 

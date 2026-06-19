@@ -17,7 +17,7 @@ metadata:
   mode: "blind"
   primary-client: "opencode"
   fallback-mode: "internal"
-  optional-subagents: "fusion-panelist"
+  optional-subagents: "fusion-panelist,fusion-panelist-gpt,fusion-panelist-kimi,fusion-panelist-deepseek,fusion-panelist-glm,fusion-panelist-composer"
 ---
 
 # Fusion
@@ -44,6 +44,9 @@ These rules are authoritative even if supplementary files are not read:
   not pre-digest the task into a preferred answer.
 * Do not assign roles, personas, debate positions, or specialty lenses to
   panelists.
+* Model-specific panelist agents are allowed and preferred when available, but
+  model choice is only a diversity mechanism. It must not change the prompt,
+  role, persona, or expected output format for that panelist.
 * Keep panelists independent: do not show one panelist another panelist's
   output before synthesis.
 * Panelists are read-only by default. They may inspect context or propose
@@ -60,6 +63,7 @@ these as preferences, not as a strict parser contract:
 ```text
 fusion --panelists 3 --record で、この設計をレビューして。
 fusion --verify で、このバグ修正方針を独立に評価して。
+fusion --models gpt,kimi,deepseek で、このAPI設計を評価して。
 ```
 
 Supported options:
@@ -67,6 +71,10 @@ Supported options:
 * `--panelists <n>`, `-p <n>`: number of independent panelists to spawn when
   available. Prefer 2-4; avoid more unless the user explicitly accepts higher
   cost and latency.
+* `--models <list>`, `-m <list>`: comma-separated model-specific panelist names
+  or short aliases to prefer, such as `gpt,kimi,deepseek,glm,composer`. This
+  selects panelist implementations, not roles. Give each selected panelist the
+  same prompt and output expectations.
 * `--record`: save provenance under `.fusion-runs/` when the environment and
   permissions permit it.
 * `--verify`: ask panelists to include verification plans or commands where
@@ -74,6 +82,22 @@ Supported options:
 
 Ignore role options such as `--roles`; if the user asks for role-divided review,
 recommend or invoke `council` instead.
+
+Model aliases map to neutral panelist agents when available:
+
+* `gpt` -> `fusion-panelist-gpt`
+* `kimi` -> `fusion-panelist-kimi`
+* `deepseek` -> `fusion-panelist-deepseek`
+* `glm` -> `fusion-panelist-glm`
+* `composer` -> `fusion-panelist-composer`
+
+If both `--panelists` and `--models` are provided, use the requested models in
+order first, then fill remaining slots with other neutral panelists. If
+`--models` names more panelists than `--panelists`, prefer the explicit model
+list and treat it as the effective panel size unless cost or latency would be
+unreasonable. If a named model-specific panelist is unavailable, mention the
+degraded selection when relevant and substitute another neutral panelist or use
+Tier 1.
 
 ## When To Use
 
@@ -106,9 +130,17 @@ panels.
 
 ### Tier 2 - Hidden Panelists
 
-When subagents are available, spawn 2-4 neutral `fusion-panelist` subagents or
-model-specific copies. Give each the same prompt, no assigned role, no persona,
-and no visibility into other panelists' outputs.
+When subagents are available, spawn 2-4 neutral panelists. Prefer a diverse set
+of model-specific agents such as `fusion-panelist-gpt`,
+`fusion-panelist-kimi`, `fusion-panelist-deepseek`, `fusion-panelist-glm` and
+`fusion-panelist-composer` when they are configured and available. Use the
+generic `fusion-panelist` as a fallback or filler.
+
+Model diversity must preserve the blind-panel contract: every panelist receives
+the same prompt and essential shared context, with no assigned role, no persona,
+no model-specific instruction, and no visibility into other panelists' outputs.
+If a requested model-specific panelist is unavailable, replace it with another
+neutral panelist or degrade to Tier 1 rather than changing the task.
 
 ## Synthesis
 

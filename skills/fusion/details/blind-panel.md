@@ -39,12 +39,16 @@ findings.
 
 ## Model Diversity
 
-For stronger diversity in OpenCode, copy `agents/fusion-panelist.md` to
-model-specific agents such as:
+For stronger diversity in OpenCode, use model-specific neutral panelists such
+as:
 
-- `fusion-panelist-openai.md`
-- `fusion-panelist-claude.md`
-- `fusion-panelist-gemini.md`
+- `fusion-panelist-gpt.md`
+- `fusion-panelist-kimi.md`
+- `fusion-panelist-deepseek.md`
+- `fusion-panelist-glm.md`
+- `fusion-panelist-composer.md`
 
 Give each copy a different `model:` line if those models are available in the
-environment.
+environment. Users may request these via `--models gpt,kimi,deepseek,glm,composer`.
+The selected model-specific agents still receive the same prompt; model choice
+must not become a role, persona, or specialty lens.
