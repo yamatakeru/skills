@@ -32,6 +32,14 @@ authoritatively determine compliance.
 The orchestrator-produced result that compares worker outputs. It records
 consensus, contradictions, partial coverage, unique insights, and blind spots.
 
+Important synthesis claims should be attributable to worker outputs when the
+synthesis contract requires attribution.
+
+### FinalAnswer
+
+The user-facing answer produced after synthesis. It is grounded in synthesis but
+is separate from the comparative synthesis artifact.
+
 ### ComplianceJudgment
 
 The orchestrator-derived decision about whether the panel and each worker met
@@ -56,6 +64,11 @@ Defines whether a worker uses a fresh, forked, or resumed session.
 ### HarnessDescriptor
 
 Identifies the harness and invocation mode actually used.
+
+### WorkerPolicy
+
+Defines worker-level behavioral limits. Fusion workers should not recursively
+spawn panels, councils, or delegated subtasks by default.
 
 ## Domain Events
 
@@ -91,9 +104,12 @@ warning if `synthesis.completed` records the input worker result set.
 - Workers in a panel receive the same rendered prompt and shared context.
 - Workers do not receive peer outputs, draft synthesis, or panel conclusions
   before returning.
+- Workers do not recursively spawn panels, councils, or delegated subtasks unless
+  an explicit non-default policy allows it.
 - Full compliance requires independent worker invocations.
 - Compliance is derived by the orchestrator from evidence.
 - Partial synthesis must disclose missing or failed workers.
+- Final answers are grounded in synthesis but are distinct from synthesis.
 - Missing required provenance events prevent full compliance.
 - The event log is a compliance audit log, not a full execution trace.
 

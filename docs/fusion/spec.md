@@ -53,6 +53,7 @@ interface PanelResult {
   status: "ok" | "partial" | "failed";
   workerResults: WorkerResult[];
   synthesis: string;
+  finalAnswer?: string;
   complianceSummary: ComplianceSummary;
   events?: ProvenanceEvent[];
   warnings?: string[];
@@ -70,6 +71,7 @@ interface WorkerRequest {
   session: SessionPolicy;
   isolationPolicy: IsolationPolicy;
   blindnessPolicy: BlindnessPolicy;
+  workerPolicy: WorkerPolicy;
   toolsPolicy?: ToolsPolicy;
   environment?: WorkerEnvironment;
   budget?: WorkerBudget;
@@ -123,6 +125,7 @@ interface SynthesisContract {
   >;
   format: "markdown" | "json";
   allowPartial: boolean;
+  requireAttribution: boolean;
 }
 
 interface ModelPreference {
@@ -161,6 +164,12 @@ interface BlindnessPolicy {
   noPeerOutputs: boolean;
   noDraftSynthesis: boolean;
   noPanelConclusions: boolean;
+}
+
+interface WorkerPolicy {
+  allowRecursiveDelegation: boolean;
+  denyPanelSpawning: boolean;
+  denySubtaskDelegation?: boolean;
 }
 
 interface ToolsPolicy {
@@ -297,6 +306,18 @@ the prompt identity boundary for full compliance.
 Partial synthesis is allowed when `SynthesisContract.allowPartial` is true. A
 partial synthesis must disclose failed workers and avoid presenting partial
 agreement as full-panel consensus.
+
+`PanelResult.finalAnswer` is separate from `synthesis`. Synthesis compares and
+attributes worker outputs; the final answer is the user-facing response grounded
+in that synthesis.
+
+Fusion workers should default to `allowRecursiveDelegation: false`,
+`denyPanelSpawning: true`, and `denySubtaskDelegation: true`. This preserves the
+original non-recursive blind-panel behavior.
+
+When `SynthesisContract.requireAttribution` is true, important synthesis claims
+should be traceable to worker outputs or explicitly marked as orchestrator
+judgment.
 
 Full compliance requires the minimum provenance events listed above. A missing
 `synthesis.started` should produce a warning, not an automatic downgrade, when

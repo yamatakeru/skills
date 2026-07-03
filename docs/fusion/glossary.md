@@ -86,6 +86,22 @@ A synthesis produced from fewer than the requested workers because one or more
 workers timed out, failed, refused, or returned invalid output. It must disclose
 the missing workers and avoid overstating consensus.
 
+## Final Answer
+
+The user-facing response produced after synthesis. It is grounded in the
+synthesis but is a separate artifact from the comparative synthesis itself.
+
+## Attribution
+
+Traceability from an important synthesis claim back to one or more worker
+outputs, or an explicit note that the claim is orchestrator judgment.
+
+## Recursive Delegation
+
+A worker spawning another panel, council, subagent, or delegated subtask. Fusion
+workers deny recursive delegation by default to preserve panel independence and
+avoid hidden nested panels.
+
 ## Degraded Simulation
 
 A local approximation of Fusion, such as same-agent internal multiple passes,
