@@ -54,6 +54,38 @@ worker.
 A Fusion run that uses true independent workers, same prompt, same shared
 context, blindness, and isolated contexts before synthesis.
 
+Full compliance is determined by the orchestrator from evidence, not asserted by
+workers themselves.
+
+## Context Manifest
+
+A digest-bearing record of the rendered worker prompt, shared context, files,
+and references given to workers. It lets the orchestrator verify that workers
+received the same task inputs.
+
+## Rendered Prompt
+
+The exact prompt sent to a worker, including the user task, portable worker
+instructions, and output contract. This is the prompt identity boundary for full
+compliance.
+
+## Provenance Event Log
+
+The panel-level audit trail used to derive and explain compliance. It records
+important lifecycle events such as context manifestation, harness selection,
+worker invocation, synthesis, and compliance evaluation.
+
+The event log is a compliance audit log, not a complete execution trace. Full
+compliance requires the minimum events needed to verify same input, independent
+worker invocation, terminal worker status, synthesis provenance, and
+orchestrator-derived compliance.
+
+## Partial Synthesis
+
+A synthesis produced from fewer than the requested workers because one or more
+workers timed out, failed, refused, or returned invalid output. It must disclose
+the missing workers and avoid overstating consensus.
+
 ## Degraded Simulation
 
 A local approximation of Fusion, such as same-agent internal multiple passes,

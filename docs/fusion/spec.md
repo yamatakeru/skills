@@ -41,6 +41,7 @@ interface PanelRequest {
   panelRunId: string;
   prompt: string;
   sharedContext: SharedContext;
+  contextManifest: ContextManifest;
   panelSpec: PanelSpec;
   harnessSelectionPolicy: HarnessSelectionPolicy;
   synthesisContract: SynthesisContract;
@@ -53,6 +54,7 @@ interface PanelResult {
   workerResults: WorkerResult[];
   synthesis: string;
   complianceSummary: ComplianceSummary;
+  events?: ProvenanceEvent[];
   warnings?: string[];
   errors?: string[];
 }
@@ -85,7 +87,7 @@ interface WorkerResult {
   sessionId?: string;
   toolUseSummary?: ToolUseSummary;
   usage?: UsageSummary;
-  compliance: WorkerCompliance;
+  complianceEvidence?: WorkerComplianceEvidence;
   warnings?: string[];
   errors?: string[];
 }
@@ -97,9 +99,11 @@ interface SharedContext {
 }
 
 interface ContextManifest {
-  promptHash: string;
+  renderedPromptHash: string;
+  userTaskHash?: string;
   sharedContextHash: string;
   files?: Array<{ path: string; digest: string }>;
+  references?: Array<{ label: string; digest: string }>;
 }
 
 interface PanelSpec {
@@ -118,6 +122,7 @@ interface SynthesisContract {
     "consensus" | "contradictions" | "partial-coverage" | "unique-insights" | "blind-spots"
   >;
   format: "markdown" | "json";
+  allowPartial: boolean;
 }
 
 interface ModelPreference {
@@ -191,8 +196,39 @@ interface OutputContract {
 interface ProvenancePolicy {
   record: boolean;
   redactSecrets: boolean;
+  eventLog: boolean;
+  requireMinimumEventsForFullCompliance: boolean;
   includeToolLogs: boolean;
   includeModelMetadata: boolean;
+}
+
+interface ProvenanceEvent {
+  eventId: string;
+  panelRunId: string;
+  workerId?: string;
+  type:
+    | "panel.started"
+    | "context.manifested"
+    | "harness.selected"
+    | "worker.invocation.requested"
+    | "worker.invocation.started"
+    | "worker.invocation.completed"
+    | "worker.invocation.failed"
+    | "synthesis.started"
+    | "synthesis.completed"
+    | "compliance.evaluated"
+    | string;
+  timestamp: string;
+  data?: Record<string, unknown>;
+}
+
+interface WorkerComplianceEvidence {
+  adapterClaimsIndependentInvocation?: boolean;
+  adapterClaimsIsolatedContext?: boolean;
+  adapterClaimsBlindness?: boolean;
+  observedSessionMode?: SessionMode;
+  observedToolPolicy?: ToolsPolicy;
+  notes?: string[];
 }
 
 interface WorkerCompliance {
@@ -210,7 +246,10 @@ interface WorkerCompliance {
 
 interface ComplianceSummary {
   tier: ComplianceTier;
+  workerCompliance: Array<{ workerId: string; compliance: WorkerCompliance }>;
   degradedWorkers?: string[];
+  failedWorkers?: string[];
+  missingRequiredEvents?: string[];
   notes?: string[];
 }
 
@@ -226,6 +265,17 @@ interface UsageSummary {
   outputTokens?: number;
   costUsd?: number;
 }
+
+const minimumRequiredEventsForFullCompliance = [
+  "panel.started",
+  "context.manifested",
+  "harness.selected",
+  "worker.invocation.requested",
+  "worker.invocation.started",
+  "worker.invocation.completed | worker.invocation.failed",
+  "synthesis.completed when synthesis is present",
+  "compliance.evaluated",
+] as const;
 ```
 
 ## Notes
@@ -233,3 +283,23 @@ interface UsageSummary {
 The types are intentionally draft-level. They prioritize semantic clarity over
 implementation completeness. Adapters may need additional private fields, but
 portable behavior should be expressible through this contract.
+
+Compliance is authoritative only when derived by the orchestrator. Worker-level
+metadata is evidence, not the final judgment.
+
+Full compliance requires a `ContextManifest`; without it, the orchestrator cannot
+prove that workers received the same rendered prompt and shared context.
+
+The rendered prompt is the exact prompt sent to a worker, including task,
+portable worker instructions, and output contract. The rendered prompt hash is
+the prompt identity boundary for full compliance.
+
+Partial synthesis is allowed when `SynthesisContract.allowPartial` is true. A
+partial synthesis must disclose failed workers and avoid presenting partial
+agreement as full-panel consensus.
+
+Full compliance requires the minimum provenance events listed above. A missing
+`synthesis.started` should produce a warning, not an automatic downgrade, when
+`synthesis.completed` records the input worker result set. Detailed tool-call
+logs are optional; the event log is a compliance audit log rather than a full
+execution trace.
