@@ -7,10 +7,10 @@ Accepted
 ## Context
 
 Fusion may use multiple concrete harnesses to invoke workers, such as OpenCode,
-pi, Claude Code, or direct API adapters. Some model families may be practically
-available through only one harness in a given environment. For example, Claude
-models may need Claude Code when subscription or routing constraints prevent use
-through another harness.
+Cursor CLI, Claude Code, or pi. Some model families may be practically available
+through only one harness in a given environment. For example, Claude models may
+need Claude Code when subscription or routing constraints prevent use through
+another harness.
 
 ## Decision
 
@@ -25,8 +25,9 @@ orchestrator selects a harness from:
 - workspace and tool constraints,
 - user or environment policy.
 
-Claude Code, OpenCode, pi, and direct APIs are adapter candidates, not protocol
-requirements.
+Claude Code, OpenCode, Cursor CLI, and pi are adapter candidates, not protocol
+requirements. Direct provider API adapters are possible future candidates only
+when they meet the same harness capability and compliance evidence requirements.
 
 ## Consequences
 

@@ -4,7 +4,7 @@ export type ComplianceTier =
   "full" | "full-reused-isolated-session" | "degraded" | "non-compliant";
 
 export type HarnessKind =
-  "opencode" | "pi" | "claude-code" | "direct-api" | string;
+  "opencode" | "cursor-cli" | "claude-code" | "pi" | string;
 export type InvocationMode = "headless" | "subagent" | "cli" | "api";
 export type PanelStatus = "ok" | "partial" | "failed";
 export type WorkerStatus =

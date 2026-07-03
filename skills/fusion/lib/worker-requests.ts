@@ -2,18 +2,78 @@ import { mergeDefaultPolicies } from "./defaults";
 import type {
   DefaultPolicies,
   HarnessDescriptor,
+  HarnessKind,
   HarnessSelector,
+  ModelPreference,
   PanelRequest,
   WorkerRequest,
 } from "./types";
 import { validatePanelSpec } from "./validation";
 
 export const defaultHarnessSelector: HarnessSelector = {
-  selectHarness: (): HarnessDescriptor => ({
-    kind: "direct-api",
-    invocation: "api",
-  }),
+  selectHarness({ modelPreference, policy }): HarnessDescriptor {
+    const availableHarnesses = policy.availableHarnesses;
+
+    if (
+      isClaudeModelPreference(modelPreference) &&
+      isHarnessAvailable("claude-code", availableHarnesses)
+    ) {
+      return {
+        kind: "claude-code",
+        invocation: "headless",
+      };
+    }
+
+    return {
+      kind: selectFallbackHarness(availableHarnesses),
+      invocation: "headless",
+    };
+  },
 };
+
+function selectFallbackHarness(
+  availableHarnesses: HarnessKind[] | undefined,
+): HarnessKind {
+  if (availableHarnesses?.length === 0) {
+    throw new RangeError(
+      "No harnesses are available for Fusion worker selection.",
+    );
+  }
+
+  if (isHarnessAvailable("opencode", availableHarnesses)) {
+    return "opencode";
+  }
+  return availableHarnesses?.[0] ?? "opencode";
+}
+
+function isHarnessAvailable(
+  harness: HarnessKind,
+  availableHarnesses: HarnessKind[] | undefined,
+): boolean {
+  return (
+    availableHarnesses === undefined || availableHarnesses.includes(harness)
+  );
+}
+
+function isClaudeModelPreference(
+  modelPreference: ModelPreference | undefined,
+): boolean {
+  return [
+    modelPreference?.provider,
+    modelPreference?.model,
+    ...(modelPreference?.aliases ?? []),
+    ...(modelPreference?.fallbacks ?? []),
+  ].some(isClaudeModelIdentifier);
+}
+
+function isClaudeModelIdentifier(value: string | undefined): boolean {
+  if (value === undefined) {
+    return false;
+  }
+
+  const normalized = value.toLowerCase();
+  return normalized.includes("claude") || normalized.includes("anthropic");
+}
 
 export function buildWorkerRequests(
   request: PanelRequest,

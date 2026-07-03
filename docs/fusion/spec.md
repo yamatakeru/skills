@@ -5,8 +5,8 @@
 Draft
 
 This document sketches the portable Fusion protocol contract. It is
-harness-neutral and does not make OpenCode, Claude Code, pi, or any direct API
-adapter normative.
+harness-neutral and does not make OpenCode, Cursor CLI, Claude Code, pi, or any
+other concrete harness normative.
 
 ## Core Invariants
 
@@ -16,6 +16,36 @@ adapter normative.
 - Full compliance requires true independent worker invocations.
 - Internal same-agent passes are degraded simulations, not full compliance.
 - Harness-specific agents are reference examples, not protocol requirements.
+
+## Reference Harness Policy
+
+The initial reference runtime targets headless worker invocation only. SDK or API
+control is preferred over raw CLI control when available because it can provide
+stronger session, permission, event, and metadata evidence.
+
+The current reference harness set is `opencode`, `cursor-cli`, `claude-code`, and
+`pi`. The reference selector prefers `opencode` by default and prefers
+`claude-code` for Claude-family model preferences when available. This is an
+overrideable reference policy, not a portable protocol requirement.
+
+If `availableHarnesses` is provided as an empty list, no harness is selectable;
+the selector should fail rather than silently choosing a default.
+
+A harness is full-capable only when its adapter can:
+
+- create or prove a fresh worker session;
+- observe and report the actual model used;
+- record rendered prompt and shared context identity through the
+  `ContextManifest`;
+- apply the requested read-only tool policy as an effective harness policy;
+- deny edit and write operations;
+- deny recursive delegation, including subagents, panels, or delegated subtasks;
+- resolve headless approval requests as deny or structured error by default;
+- capture worker output and tool events;
+- record session or run id, usage, errors, and relevant harness metadata.
+
+Harnesses that cannot provide these capabilities may still be used, but the
+orchestrator must downgrade compliance or report the missing evidence.
 
 ## Contract Sketch
 
@@ -30,9 +60,9 @@ type ComplianceTier =
 
 type HarnessKind =
   | "opencode"
+  | "cursor-cli"
   | "pi"
   | "claude-code"
-  | "direct-api"
   | string;
 
 type InvocationMode = "headless" | "subagent" | "cli" | "api";

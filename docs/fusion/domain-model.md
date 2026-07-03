@@ -65,10 +65,35 @@ Defines whether a worker uses a fresh, forked, or resumed session.
 
 Identifies the harness and invocation mode actually used.
 
+### HarnessCapability
+
+Describes whether a harness adapter can satisfy the minimum evidence and policy
+requirements for full compliance. Harness capability is adapter evidence, not a
+portable domain entity.
+
 ### WorkerPolicy
 
 Defines worker-level behavioral limits. Fusion workers should not recursively
 spawn panels, councils, or delegated subtasks by default.
+
+## Full-Capable Harness Criteria
+
+A harness adapter is full-capable only when it can:
+
+- create or prove a fresh worker session;
+- observe and report the actual model used;
+- record rendered prompt and shared context identity through the
+  `ContextManifest`;
+- apply the requested read-only tool policy as an effective harness policy;
+- deny edit and write operations;
+- deny recursive delegation, including subagents, panels, or delegated subtasks;
+- resolve headless approval requests as deny or structured error by default;
+- capture worker output and tool events;
+- record session or run id, usage, errors, and relevant harness metadata.
+
+OpenCode and Claude Code are the first full-capable reference targets. Cursor CLI
+and pi are useful candidates, but should be treated as conditional or degraded
+until their adapters prove equivalent policy enforcement and evidence.
 
 ## Domain Events
 
@@ -126,3 +151,6 @@ warning if `synthesis.completed` records the input worker result set.
 - Missing `synthesis.completed` while synthesis is present degrades the panel.
 - Known blindness breaches, peer output exposure, or synthesis before worker
   return make the panel non-compliant.
+- Missing harness evidence for fresh session, observed model, effective tool
+  policy, edit/write denial, recursive delegation denial, headless ask handling,
+  output capture, or run metadata prevents full compliance.

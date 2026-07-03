@@ -16,7 +16,7 @@ execution environment.
 ## Harness
 
 An execution environment capable of invoking workers. Examples may include
-OpenCode, pi, Claude Code, or a direct model API adapter.
+OpenCode, Cursor CLI, Claude Code, or pi.
 
 ## Harness Adapter
 
@@ -117,6 +117,27 @@ requirements.
 
 A non-interactive worker invocation suitable for automation. A headless worker
 run should not require a TTY or user confirmation prompt.
+
+## Full-Capable Harness
+
+A harness whose adapter can provide enough control and evidence for full Fusion
+compliance. It must be able to create or prove a fresh worker session, report the
+actual model used, apply the requested read-only tool policy, deny edit/write and
+recursive delegation, resolve headless approval requests as deny or structured
+error by default, capture output and tool events, and record run metadata.
+
+## Reference Harness Selection Policy
+
+The non-normative default harness policy used by the reference implementation or
+local deployment. The reference selector prefers OpenCode by default and prefers
+Claude Code for Claude-family model preferences when available. Users and
+deployments may override this policy.
+
+## SDK Transport
+
+A harness invocation path that uses a harness SDK or API rather than plain CLI
+stdout. SDK transport is preferred for headless adapters when it provides better
+session, permission, event, usage, and metadata evidence.
 
 ## Capability-Based Harness Selection
 
