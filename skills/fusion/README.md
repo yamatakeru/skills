@@ -21,6 +21,7 @@ skills/
     SKILL.md      # The portable blind-panel skill definition
     README.md     # This file
     details/      # Optional deep-dive guidance; not required at runtime
+    lib/          # Portable TypeScript protocol reference implementation
 agents/
   fusion-panelist.md
   fusion-panelist-gpt.md
@@ -34,7 +35,11 @@ The `SKILL.md` file is the core artifact and contains the complete runtime
 protocol. The files under `details/` are optional guidance; the skill should
 still work correctly if they are not read. `fusion-panelist*.md` files are
 optional OpenCode hidden subagents for stronger independent-panel behavior and
-model diversity.
+model diversity. `lib/protocol.ts` is the public TypeScript entry point for the
+harness-neutral reference implementation. The implementation is split across
+`lib/*.ts` by responsibility: request/result types, manifest helpers, worker
+request construction, event logging, compliance evaluation, and `runPanel`
+orchestration around injected worker and synthesis adapters.
 
 ## When To Use
 

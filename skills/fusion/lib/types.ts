@@ -1,43 +1,23 @@
-# Fusion Portable Spec
+export type SessionMode = "fresh" | "fork" | "resume";
 
-## Status
+export type ComplianceTier =
+  "full" | "full-reused-isolated-session" | "degraded" | "non-compliant";
 
-Draft
+export type HarnessKind =
+  "opencode" | "pi" | "claude-code" | "direct-api" | string;
+export type InvocationMode = "headless" | "subagent" | "cli" | "api";
+export type PanelStatus = "ok" | "partial" | "failed";
+export type WorkerStatus =
+  "ok" | "timeout" | "error" | "invalid-output" | "refused";
 
-This document sketches the portable Fusion protocol contract. It is
-harness-neutral and does not make OpenCode, Claude Code, pi, or any direct API
-adapter normative.
+export type FindingKind =
+  | "consensus"
+  | "contradictions"
+  | "partial-coverage"
+  | "unique-insights"
+  | "blind-spots";
 
-## Core Invariants
-
-- Fusion uses neutral workers, not roles or personas.
-- Each worker receives the same task prompt and shared context.
-- Workers must not see peer outputs or draft synthesis before returning.
-- Full compliance requires true independent worker invocations.
-- Internal same-agent passes are degraded simulations, not full compliance.
-- Harness-specific agents are reference examples, not protocol requirements.
-
-## Contract Sketch
-
-```ts
-type SessionMode = "fresh" | "fork" | "resume";
-
-type ComplianceTier =
-  | "full"
-  | "full-reused-isolated-session"
-  | "degraded"
-  | "non-compliant";
-
-type HarnessKind =
-  | "opencode"
-  | "pi"
-  | "claude-code"
-  | "direct-api"
-  | string;
-
-type InvocationMode = "headless" | "subagent" | "cli" | "api";
-
-interface PanelRequest {
+export interface PanelRequest {
   panelRunId: string;
   prompt: string;
   sharedContext: SharedContext;
@@ -48,9 +28,9 @@ interface PanelRequest {
   provenancePolicy?: ProvenancePolicy;
 }
 
-interface PanelResult {
+export interface PanelResult {
   panelRunId: string;
-  status: "ok" | "partial" | "failed";
+  status: PanelStatus;
   workerResults: WorkerResult[];
   synthesis: string;
   finalAnswer?: string;
@@ -60,7 +40,7 @@ interface PanelResult {
   errors?: string[];
 }
 
-interface WorkerRequest {
+export interface WorkerRequest {
   panelRunId: string;
   workerId: string;
   prompt: string;
@@ -79,10 +59,10 @@ interface WorkerRequest {
   provenancePolicy?: ProvenancePolicy;
 }
 
-interface WorkerResult {
+export interface WorkerResult {
   panelRunId: string;
   workerId: string;
-  status: "ok" | "timeout" | "error" | "invalid-output" | "refused";
+  status: WorkerStatus;
   output: string;
   modelUsed?: string;
   harnessUsed?: HarnessDescriptor;
@@ -94,13 +74,13 @@ interface WorkerResult {
   errors?: string[];
 }
 
-interface SharedContext {
+export interface SharedContext {
   text?: string;
   files?: Array<{ path: string; content?: string; digest?: string }>;
   references?: Array<{ label: string; uri?: string; digest?: string }>;
 }
 
-interface ContextManifest {
+export interface ContextManifest {
   renderedPromptHash: string;
   userTaskHash?: string;
   sharedContextHash: string;
@@ -108,71 +88,69 @@ interface ContextManifest {
   references?: Array<{ label: string; digest: string }>;
 }
 
-interface PanelSpec {
+export interface PanelSpec {
   workerCount: number;
   modelPreferences?: ModelPreference[];
 }
 
-interface HarnessSelectionPolicy {
+export interface HarnessSelectionPolicy {
   availableHarnesses?: HarnessKind[];
   requiredCapabilities?: string[];
   userPolicy?: Record<string, unknown>;
 }
 
-interface SynthesisContract {
-  requiredFindings: Array<
-    "consensus" | "contradictions" | "partial-coverage" | "unique-insights" | "blind-spots"
-  >;
+export interface SynthesisContract {
+  requiredFindings: FindingKind[];
   format: "markdown" | "json";
   allowPartial: boolean;
   requireAttribution: boolean;
 }
 
-interface ModelPreference {
+export interface ModelPreference {
   provider?: string;
   model?: string;
   aliases?: string[];
   fallbacks?: string[];
 }
 
-interface HarnessPreference {
+export interface HarnessPreference {
   kind?: HarnessKind;
   invocation?: InvocationMode;
   version?: string;
 }
 
-interface HarnessDescriptor {
+export interface HarnessDescriptor {
   kind: HarnessKind;
   invocation: InvocationMode;
   version?: string;
 }
 
-interface SessionPolicy {
+export interface SessionPolicy {
   mode: SessionMode;
   sessionId?: string;
   parentSessionId?: string;
   reusePolicy?: "none" | "same-worker-lineage" | "explicit-user-opt-in";
 }
 
-interface IsolationPolicy {
+export interface IsolationPolicy {
   requireIndependentInvocation: boolean;
   requireIsolatedContext: boolean;
   allowUnverifiedReuse: boolean;
 }
 
-interface BlindnessPolicy {
+export interface BlindnessPolicy {
   noPeerOutputs: boolean;
   noDraftSynthesis: boolean;
   noPanelConclusions: boolean;
 }
 
-interface WorkerPolicy {
+export interface WorkerPolicy {
   allowRecursiveDelegation: boolean;
   denyPanelSpawning: boolean;
   denySubtaskDelegation?: boolean;
 }
 
-interface ToolsPolicy {
+export interface ToolsPolicy {
   mode: "none" | "read-only" | "limited" | "full";
   allow?: string[];
   deny?: string[];
@@ -181,13 +159,13 @@ interface ToolsPolicy {
   parity?: "same-by-default" | "strict-same-required" | "harness-default";
 }
 
-interface WorkerEnvironment {
+export interface WorkerEnvironment {
   workspaceRoot?: string;
   workingDirectory?: string;
   envProfile?: string;
 }
 
-interface WorkerBudget {
+export interface WorkerBudget {
   timeoutMs?: number;
   maxTurns?: number;
   maxToolCalls?: number;
@@ -195,14 +173,14 @@ interface WorkerBudget {
   maxOutputTokens?: number;
 }
 
-interface OutputContract {
+export interface OutputContract {
   format: "markdown" | "json";
   requiredSections?: string[];
   schemaName?: string;
   forbidChainOfThought: boolean;
 }
 
-interface ProvenancePolicy {
+export interface ProvenancePolicy {
   record: boolean;
   redactSecrets: boolean;
   eventLog: boolean;
@@ -211,27 +189,28 @@ interface ProvenancePolicy {
   includeModelMetadata: boolean;
 }
 
-interface ProvenanceEvent {
+export interface ProvenanceEvent {
   eventId: string;
   panelRunId: string;
   workerId?: string;
-  type:
-    | "panel.started"
-    | "context.manifested"
-    | "harness.selected"
-    | "worker.invocation.requested"
-    | "worker.invocation.started"
-    | "worker.invocation.completed"
-    | "worker.invocation.failed"
-    | "synthesis.started"
-    | "synthesis.completed"
-    | "compliance.evaluated"
-    | string;
+  type: ProvenanceEventType | string;
   timestamp: string;
   data?: Record<string, unknown>;
 }
 
-interface WorkerComplianceEvidence {
+export type ProvenanceEventType =
+  | "panel.started"
+  | "context.manifested"
+  | "harness.selected"
+  | "worker.invocation.requested"
+  | "worker.invocation.started"
+  | "worker.invocation.completed"
+  | "worker.invocation.failed"
+  | "synthesis.started"
+  | "synthesis.completed"
+  | "compliance.evaluated";
+
+export interface WorkerComplianceEvidence {
   adapterClaimsIndependentInvocation?: boolean;
   adapterClaimsIsolatedContext?: boolean;
   adapterClaimsBlindness?: boolean;
@@ -241,7 +220,7 @@ interface WorkerComplianceEvidence {
   notes?: string[];
 }
 
-interface WorkerCompliance {
+export interface WorkerCompliance {
   tier: ComplianceTier;
   independentInvocation: boolean;
   blind: boolean;
@@ -254,7 +233,7 @@ interface WorkerCompliance {
   degradedReason?: string;
 }
 
-interface ComplianceSummary {
+export interface ComplianceSummary {
   tier: ComplianceTier;
   workerCompliance: Array<{ workerId: string; compliance: WorkerCompliance }>;
   degradedWorkers?: string[];
@@ -263,20 +242,71 @@ interface ComplianceSummary {
   notes?: string[];
 }
 
-interface ToolUseSummary {
+export interface ToolUseSummary {
   toolsUsed?: string[];
   deniedRequests?: string[];
   promptRequests?: string[];
 }
 
-interface UsageSummary {
+export interface UsageSummary {
   durationMs?: number;
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
 }
 
-const minimumRequiredEventsForFullCompliance = [
+export interface SynthesisResult {
+  synthesis: string;
+  finalAnswer?: string;
+  warnings?: string[];
+  errors?: string[];
+}
+
+export interface WorkerRunner {
+  runWorker(request: WorkerRequest): Promise<WorkerResult>;
+}
+
+export interface Synthesizer {
+  synthesize(input: SynthesisInput): Promise<SynthesisResult>;
+}
+
+export interface SynthesisInput {
+  panelRequest: PanelRequest;
+  workerRequests: WorkerRequest[];
+  workerResults: WorkerResult[];
+  events: ProvenanceEvent[];
+}
+
+export interface HarnessSelector {
+  selectHarness(input: HarnessSelectionInput): HarnessDescriptor;
+}
+
+export interface HarnessSelectionInput {
+  workerId: string;
+  modelPreference?: ModelPreference;
+  policy: HarnessSelectionPolicy;
+}
+
+export interface PanelRunOptions {
+  runner: WorkerRunner;
+  synthesizer: Synthesizer;
+  harnessSelector?: HarnessSelector;
+  defaults?: Partial<DefaultPolicies>;
+  now?: () => Date;
+  idFactory?: () => string;
+}
+
+export interface DefaultPolicies {
+  session: SessionPolicy;
+  isolation: IsolationPolicy;
+  blindness: BlindnessPolicy;
+  worker: WorkerPolicy;
+  tools: ToolsPolicy;
+  output: OutputContract;
+  provenance: ProvenancePolicy;
+}
+
+export const minimumRequiredEventsForFullCompliance = [
   "panel.started",
   "context.manifested",
   "harness.selected",
@@ -286,51 +316,3 @@ const minimumRequiredEventsForFullCompliance = [
   "synthesis.completed when synthesis is present",
   "compliance.evaluated",
 ] as const;
-```
-
-## Notes
-
-The types are intentionally draft-level. They prioritize semantic clarity over
-implementation completeness. Adapters may need additional private fields, but
-portable behavior should be expressible through this contract.
-
-The reference implementation is exposed through `skills/fusion/lib/protocol.ts`
-and split across `skills/fusion/lib/*.ts` by responsibility. It does not call any
-model provider directly. Instead, it implements the portable orchestration
-boundary around injected `runWorker` and `synthesize` adapters.
-
-Compliance is authoritative only when derived by the orchestrator. Worker-level
-metadata is evidence, not the final judgment.
-
-Full compliance requires a `ContextManifest`; without it, the orchestrator cannot
-prove that workers received the same rendered prompt and shared context.
-
-The rendered prompt is the exact prompt sent to a worker, including task,
-portable worker instructions, and output contract. The rendered prompt hash is
-the prompt identity boundary for full compliance.
-
-Partial synthesis is allowed when `SynthesisContract.allowPartial` is true. A
-partial synthesis must disclose failed workers and avoid presenting partial
-agreement as full-panel consensus.
-
-`PanelResult.finalAnswer` is separate from `synthesis`. Synthesis compares and
-attributes worker outputs; the final answer is the user-facing response grounded
-in that synthesis.
-
-Fusion workers should default to `allowRecursiveDelegation: false`,
-`denyPanelSpawning: true`, and `denySubtaskDelegation: true`. This preserves the
-original non-recursive blind-panel behavior.
-
-When `SynthesisContract.requireAttribution` is true, important synthesis claims
-should be traceable to worker outputs or explicitly marked as orchestrator
-judgment.
-
-Full compliance requires the minimum provenance events listed above. A missing
-`synthesis.started` should produce a warning, not an automatic downgrade, when
-`synthesis.completed` records the input worker result set. Detailed tool-call
-logs are optional; the event log is a compliance audit log rather than a full
-execution trace.
-
-Resumed sessions require explicit clean same-worker lineage evidence to avoid a
-compliance downgrade. Partial synthesis should run only when all workers succeed,
-or when partial synthesis is allowed and at least one worker succeeds.
