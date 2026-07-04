@@ -47,6 +47,64 @@ A harness is full-capable only when its adapter can:
 Harnesses that cannot provide these capabilities may still be used, but the
 orchestrator must downgrade compliance or report the missing evidence.
 
+## Reference Runtime Recording
+
+Fusion does not require durable run artifacts to execute. The reference runtime
+uses a `RunRecorder` boundary so callers can choose whether to record audit and
+debug artifacts.
+
+The default recorder is no-op. When file recording is explicitly enabled, the
+project-local default location is `<workspaceRoot>/.fusion-runs/<panelRunId>/`.
+This location treats Fusion run artifacts as project-scoped generated evidence,
+not source files.
+
+A recorded run directory should contain split artifacts for auditability and
+debugging:
+
+- `request.json`
+- `manifest.json`
+- `events.jsonl`
+- `worker-requests.json`
+- `worker-results.json`
+- `synthesis.json`
+- `compliance.json`
+- `result.json`
+
+Run records should be written incrementally so partial evidence survives worker,
+synthesis, or process failures. Secret redaction is enabled by default for
+recorded artifacts.
+
+Project-local recording requires safety checks. The file recorder should verify
+that `.fusion-runs/` is ignored by git or require an explicit override, use
+restrictive permissions where possible, avoid raw tool logs by default, and make
+recording status visible with states such as `not-recorded`, `partial`,
+`complete`, or `failed`.
+
+The first usable integration is library-first: callers compose `runPanel`, the
+OpenCode worker runner, the Claude Code worker runner, an optional recorder, and
+the deterministic synthesizer. CLI and skill command wrappers are later
+ergonomics layers.
+
+The skill should remain an implementation preview until both OpenCode and Claude
+Code worker adapters can execute through the same portable library contract.
+
+## Reference Synthesis Policy
+
+The next reference runtime includes a deterministic fallback synthesizer so a
+panel can complete without requiring model-backed synthesis. This fallback is a
+stability and testability mechanism, not the final quality target.
+
+The long-term synthesis direction is a harness-backed synthesizer, with OpenCode
+or Claude Code as likely implementations once worker adapter evidence and run
+recording are stable. Synthesis artifacts should identify their strategy, for
+example `deterministic`, `opencode`, or `claude-code`.
+
+## Reference Schema Policy
+
+JSON Schema is generated from the TypeScript contracts. Runtime schemas used by
+the Fusion skill should live under `skills/fusion/schema/` so they are installed
+with the skill rather than depending on repository-level files.
+
 ## Contract Sketch
 
 ```ts

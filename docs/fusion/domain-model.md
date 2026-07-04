@@ -35,6 +35,11 @@ consensus, contradictions, partial coverage, unique insights, and blind spots.
 Important synthesis claims should be attributable to worker outputs when the
 synthesis contract requires attribution.
 
+The reference runtime may use a deterministic fallback synthesizer to make early
+panel runs executable and testable. This is not the final answer-quality target;
+future model-backed synthesis should be represented as a harness-backed
+synthesizer with its own evidence and recorded artifact metadata.
+
 ### FinalAnswer
 
 The user-facing answer produced after synthesis. It is grounded in synthesis but
@@ -44,6 +49,14 @@ is separate from the comparative synthesis artifact.
 
 The orchestrator-derived decision about whether the panel and each worker met
 Fusion compliance requirements.
+
+### RunRecorder
+
+The optional recording boundary for a `PanelRun`. A recorder observes request,
+manifest, event log, worker requests, worker results, synthesis, compliance, and
+final result artifacts. The default recorder is no-op. The reference file
+recorder writes project-local artifacts under
+`<workspaceRoot>/.fusion-runs/<panelRunId>/` when explicitly enabled.
 
 ## Value Objects
 
@@ -95,6 +108,11 @@ OpenCode and Claude Code are the first full-capable reference targets. Cursor CL
 and pi are useful candidates, but should be treated as conditional or degraded
 until their adapters prove equivalent policy enforcement and evidence.
 
+The first usable reference runtime requires both OpenCode and Claude Code worker
+adapters to exercise the same portable `WorkerRequest` to `WorkerResult`
+contract. Implementing only one of them is an implementation preview, not the
+usable milestone.
+
 ## Domain Events
 
 The event log should record at least these event types:
@@ -123,6 +141,22 @@ For full compliance, the minimum required event set is:
 
 `synthesis.started` is recommended, but a missing `synthesis.started` is only a
 warning if `synthesis.completed` records the input worker result set.
+
+## Recording Invariants
+
+- Recording is optional; missing recorded files do not prevent Fusion execution.
+- A recorded run directory belongs to exactly one `PanelRun`.
+- `events.jsonl` is written incrementally when file recording is enabled.
+- Summary artifacts may be rewritten as the run advances, but should represent
+  the latest known state.
+- Recorded artifacts redact secrets by default.
+- Project-local recording requires safety checks such as git-ignore verification
+  or an explicit override.
+- Missing recording does not by itself determine protocol compliance, but it
+  limits auditability for the reference runtime.
+- A successful worker result with incomplete harness evidence may still be
+  returned, recorded when recording is enabled, and synthesized, but compliance
+  must be downgraded rather than reported as full.
 
 ## Invariants
 

@@ -23,6 +23,12 @@ OpenCode, Cursor CLI, Claude Code, or pi.
 A component that maps the portable Fusion contract onto a concrete harness.
 Adapters are implementation details and are not themselves the portable spec.
 
+## Adapter Registry
+
+The runtime wiring that maps selected harness kinds to concrete worker runners.
+The registry prevents a selector from choosing a harness that the current runtime
+cannot execute.
+
 ## Worker
 
 An independent model or agent invocation participating in a Fusion panel. A
@@ -133,6 +139,18 @@ local deployment. The reference selector prefers OpenCode by default and prefers
 Claude Code for Claude-family model preferences when available. Users and
 deployments may override this policy.
 
+## Usable Reference Runtime
+
+The first runtime milestone where Fusion can execute through the library API with
+both OpenCode and Claude Code worker adapters. Before both adapters exist, the
+skill is an implementation preview rather than a generally usable tool.
+
+## Implementation Preview
+
+A partial runtime that validates contracts or one harness path but is not yet the
+usable Fusion skill. In the current plan, OpenCode-only execution is a preview
+until Claude Code execution also satisfies the same worker contract.
+
 ## SDK Transport
 
 A harness invocation path that uses a harness SDK or API rather than plain CLI
@@ -144,6 +162,43 @@ session, permission, event, usage, and metadata evidence.
 A harness selection strategy that chooses an adapter based on requested model,
 available harnesses, required capabilities, workspace constraints, and user
 policy. The portable Fusion protocol does not hardcode model-to-harness routing.
+
+## Run Recorder
+
+The optional reference runtime boundary for recording Fusion run artifacts. The
+default recorder is no-op. An opt-in file recorder can write request, manifest,
+event log, worker request, worker result, synthesis, compliance, and final result
+artifacts under `<workspaceRoot>/.fusion-runs/<panelRunId>/`.
+
+## File Run Recorder
+
+The opt-in recorder that writes project-local Fusion artifacts. It should redact
+secrets by default, verify `.fusion-runs/` is git-ignored or require an explicit
+override, use restrictive permissions where possible, and report recording status.
+
+## Deterministic Synthesizer
+
+A local fallback synthesizer that produces predictable synthesis from worker
+outputs without invoking another model. It exists to make early runs executable
+and tests stable; it is not the final quality target.
+
+## Harness-Backed Synthesizer
+
+A future synthesizer implementation that uses a concrete harness, such as
+OpenCode, to produce higher-quality synthesis from completed worker outputs. It
+is not subject to worker blindness because synthesis occurs after worker results
+are returned, but it still needs provenance and delegation controls.
+
+## Secret Redaction
+
+The default file-recording behavior that avoids writing raw secrets, credential
+values, or sensitive environment data into run artifacts.
+
+## Runtime Schema
+
+A JSON Schema generated from the Fusion TypeScript contracts and used by the
+installed skill at runtime. Runtime schemas live under `skills/fusion/schema/` so
+they are installed with the Fusion skill.
 
 ## Tools Policy
 
