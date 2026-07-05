@@ -44,7 +44,9 @@ export class OpenCodeHeadlessCliAdapter implements WorkerRunner {
     const result = await this.executor({
       command: this.command,
       args: buildOpenCodeArgs(request),
-      cwd: request.environment?.workingDirectory ?? request.environment?.workspaceRoot,
+      cwd:
+        request.environment?.workingDirectory ??
+        request.environment?.workspaceRoot,
       timeoutMs: request.budget?.timeoutMs,
     });
     return cliResultToWorkerResult("opencode", request, result);
@@ -64,7 +66,9 @@ export class ClaudeCodeHeadlessCliAdapter implements WorkerRunner {
     const result = await this.executor({
       command: this.command,
       args: buildClaudeCodeArgs(request),
-      cwd: request.environment?.workingDirectory ?? request.environment?.workspaceRoot,
+      cwd:
+        request.environment?.workingDirectory ??
+        request.environment?.workspaceRoot,
       timeoutMs: request.budget?.timeoutMs,
     });
     return cliResultToWorkerResult("claude-code", request, result);
@@ -83,6 +87,7 @@ export function buildOpenCodeArgs(request: WorkerRequest): string[] {
 export function buildClaudeCodeArgs(request: WorkerRequest): string[] {
   const args = [
     "--print",
+    "--verbose",
     "--output-format",
     "stream-json",
     "--permission-mode",
@@ -93,9 +98,13 @@ export function buildClaudeCodeArgs(request: WorkerRequest): string[] {
   if (model !== undefined) {
     args.push("--model", model);
   }
+  const fallbackModel = request.modelPreference?.fallbacks?.[0];
+  if (fallbackModel !== undefined) {
+    args.push("--fallback-model", fallbackModel);
+  }
   const tools = claudeToolsForPolicy(request);
   if (tools !== undefined) {
-    args.push("--tools", tools);
+    args.push(`--tools=${tools}`);
   }
   return [...args, renderWorkerPrompt(request)];
 }
@@ -171,7 +180,9 @@ function cliResultToWorkerResult(
     },
     warnings:
       ok && isOpenCode
-        ? ["OpenCode CLI adapter result is degraded until tool policy evidence is proven."]
+        ? [
+            "OpenCode CLI adapter result is degraded until tool policy evidence is proven.",
+          ]
         : undefined,
     errors: cliErrors(kind, result, parsedOutput, output),
   };
@@ -219,10 +230,14 @@ function cliErrors(
 
 function adapterComplianceNotes(kind: HarnessKind): string[] {
   if (kind === "opencode") {
-    return ["OpenCode CLI adapter cannot yet prove exact tool policy enforcement."];
+    return [
+      "OpenCode CLI adapter cannot yet prove exact tool policy enforcement.",
+    ];
   }
 
-  return ["Claude Code CLI adapter uses dontAsk and explicit tool flags when available."];
+  return [
+    "Claude Code CLI adapter uses dontAsk and explicit tool flags when available.",
+  ];
 }
 
 function renderWorkerPrompt(request: WorkerRequest): string {
@@ -241,7 +256,10 @@ function renderWorkerPrompt(request: WorkerRequest): string {
 function modelPreferenceToModel(
   modelPreference: ModelPreference | undefined,
 ): string | undefined {
-  if (modelPreference?.provider !== undefined && modelPreference.model !== undefined) {
+  if (
+    modelPreference?.provider !== undefined &&
+    modelPreference.model !== undefined
+  ) {
     return `${modelPreference.provider}/${modelPreference.model}`;
   }
   return modelPreference?.model ?? modelPreference?.aliases?.[0];
@@ -252,7 +270,10 @@ function claudeToolsForPolicy(request: WorkerRequest): string | undefined {
     case "none":
       return "";
     case "read-only":
-      return "Read,Grep,Glob,LS";
+      return (
+        request.toolsPolicy.allow?.join(",") ??
+        "Read,Grep,Glob,LS,WebSearch,WebFetch"
+      );
     case "limited":
       return request.toolsPolicy.allow?.join(",");
     case "full":
@@ -261,9 +282,7 @@ function claudeToolsForPolicy(request: WorkerRequest): string | undefined {
   }
 }
 
-type ParsedOutput =
-  | { ok: true; output: string }
-  | { ok: false; error: string };
+type ParsedOutput = { ok: true; output: string } | { ok: false; error: string };
 
 function parseTextOutput(stdout: string): ParsedOutput {
   const lines = stdout
@@ -307,6 +326,10 @@ function extractJsonLineText(line: string): ParsedOutput {
     if (typeof record.text === "string") {
       return { ok: true, output: record.text };
     }
+    const partText = textFromRecordPart(record.part);
+    if (partText !== undefined) {
+      return { ok: true, output: partText };
+    }
     if (Array.isArray(record.content)) {
       return {
         ok: true,
@@ -320,6 +343,18 @@ function extractJsonLineText(line: string): ParsedOutput {
     return { ok: false, error: "JSON line could not be parsed" };
   }
   return { ok: true, output: "" };
+}
+
+function textFromRecordPart(part: unknown): string | undefined {
+  if (part === null || typeof part !== "object") {
+    return undefined;
+  }
+
+  const record = part as Record<string, unknown>;
+  if (record.type !== "text") {
+    return undefined;
+  }
+  return typeof record.text === "string" ? record.text : undefined;
 }
 
 function textFromContentPart(part: unknown): string | undefined {

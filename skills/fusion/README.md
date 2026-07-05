@@ -18,28 +18,22 @@ the separate `council` skill.
 ```text
 skills/
   fusion/
+    bin/          # Bundled Bun CLI entrypoint
     SKILL.md      # The portable blind-panel skill definition
     README.md     # This file
     details/      # Optional deep-dive guidance; not required at runtime
     lib/          # Portable TypeScript protocol reference implementation
-agents/
-  fusion-panelist.md
-  fusion-panelist-gpt.md
-  fusion-panelist-kimi.md
-  fusion-panelist-deepseek.md
-  fusion-panelist-glm.md
-  fusion-panelist-composer.md
 ```
 
 The `SKILL.md` file is the core artifact and contains the complete runtime
 protocol. The files under `details/` are optional guidance; the skill should
-still work correctly if they are not read. `fusion-panelist*.md` files are
-optional OpenCode hidden subagents for stronger independent-panel behavior and
-model diversity. `lib/protocol.ts` is the public TypeScript entry point for the
-harness-neutral reference implementation. The implementation is split across
-`lib/*.ts` by responsibility: request/result types, manifest helpers, worker
-request construction, event logging, compliance evaluation, and `runPanel`
-orchestration around injected worker and synthesis adapters.
+still work correctly if they are not read. `bin/fusion-run.ts` is the
+canonical execution path. `lib/protocol.ts` is the public TypeScript entry
+point for the harness-neutral reference implementation. The implementation is
+split across `lib/*.ts` by responsibility: request/result types, manifest
+helpers, panel composition, worker request construction, event logging,
+compliance evaluation, recording, and `runPanel` orchestration around injected
+worker and synthesis adapters.
 
 ## When To Use
 
@@ -68,18 +62,13 @@ mkdir -p /path/to/your/repo/.opencode/skills
 cp -R skills/fusion /path/to/your/repo/.opencode/skills/
 ```
 
-For OpenCode project-local hidden subagents, copy the panelist files into
-`.opencode/agent/` or `.opencode/agents/`:
-
-```bash
-mkdir -p /path/to/your/repo/.opencode/agent
-cp agents/fusion-panelist*.md /path/to/your/repo/.opencode/agent/
-```
+Bun must be installed on the machine where the parent agent runs the skill.
+The skill runtime itself has no npm runtime dependencies.
 
 ## OpenCode Optional Configuration
 
-OpenCode can use the skill without extra configuration if the skill and agent
-are already discoverable and permissions allow them. The following
+OpenCode can use the skill without extra configuration if the skill is
+discoverable and permissions allow it. The following
 `opencode.jsonc` fragment is optional.
 
 ```jsonc
@@ -90,43 +79,19 @@ are already discoverable and permissions allow them. The following
       "*": "ask",
       "fusion": "allow"
     }
-  },
-  "agent": {
-    "build": {
-      "permission": {
-        "skill": {
-          "*": "ask",
-          "fusion": "allow"
-        },
-        "task": {
-          "*": "ask",
-          "fusion-panelist*": "allow"
-        }
-      }
-    }
   }
 }
 ```
 
 After changing OpenCode configuration, restart OpenCode. Configuration, skill,
-agent, and plugin files are loaded at startup.
+and plugin files are loaded at startup.
 
 ## Model Setup
 
-`fusion-panelist.md` may inherit the invoking primary agent's model. For model
-diversity, use model-specific copies with different `model:` lines in their
-frontmatter, such as:
-
-- `fusion-panelist-gpt.md`
-- `fusion-panelist-kimi.md`
-- `fusion-panelist-deepseek.md`
-- `fusion-panelist-glm.md`
-- `fusion-panelist-composer.md`
-
-Model-specific panelists are not roles or personas. They must receive the same
-task prompt and output expectations; only the underlying model differs.
-
-Use this command to inspect available models:
+The CLI composes a default three-worker panel from `--parent-model`, the
+`openai-flagship` alias, and the `budget-smart` alias. Use `--models` to
+replace that default composition with explicit model entries. Use this command
+to inspect OpenCode-backed model IDs:
 
 ```bash
 opencode models
@@ -145,22 +110,13 @@ fusion --panelists 3 で、このAPI設計案をレビューして。
 ```
 
 ```text
-fusion --models gpt,kimi,deepseek で、このAPI設計案をレビューして。
+fusion --models sonnet,openai-flagship,budget-smart で、このAPI設計案をレビューして。
 ```
 
-```text
-fusion --panelists 4 --models gpt,kimi で、この実装方針を評価して。
-```
-
-```text
-fusion --verify で、このバグ修正方針を評価して。実装はまだしないで。
-```
-
-Supported model aliases are `gpt`, `kimi`, `deepseek`, `glm`, and `composer`.
-When `--panelists` and `--models` are combined, Fusion uses the requested models
-first and fills remaining slots with other neutral panelists. If `--models`
-contains more entries than `--panelists`, the explicit model list becomes the
-effective panel size unless cost or latency would be unreasonable.
+Supported model entries are provider-qualified OpenCode models such as
+`openai/gpt-5.5`, Claude aliases such as `sonnet`, alias-table names such as
+`openai-flagship` and `budget-smart`, and explicit harness prefixes such as
+`opencode:openai/gpt-5.5` or `claude-code:sonnet`. Unknown entries are errors.
 
 ## Limits
 

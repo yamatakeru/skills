@@ -2,160 +2,112 @@
 
 Date: 2026-07-05
 
-This handoff captures the current state of the Fusion runtime work, what is not yet satisfied, and the next work needed to make the skill practically usable.
+This handoff captures the state of the Fusion runtime after the usable
+milestone was implemented and smoke-verified. The design authority is
+`docs/fusion/` (spec, domain model, glossary, ADR 0001-0019).
 
-## Current Status
+## Current Status: Usable Milestone Achieved
 
-- Fusion now has a TypeScript reference runtime under `skills/fusion/lib/`.
-- The runtime contract is library-first, not skill-first or CLI-first.
-- `runPanel` can build worker requests, invoke a registered worker runner, collect worker results, run deterministic fallback synthesis, emit provenance events, and evaluate compliance.
-- `AdapterRegistry` can register harness adapters and select between registered harnesses.
-- Initial headless CLI adapters exist for `opencode` and `claude-code`.
-- Optional run recording exists through `NoopRunRecorder` and `FileRunRecorder`.
-- Runtime JSON Schemas are generated under `skills/fusion/schema/` from the TypeScript contracts.
-- The existing `skills/fusion/SKILL.md` still describes the older skill behavior based on internal passes and OpenCode hidden subagents.
-- The new runtime is not yet wired into `SKILL.md` as the actual skill execution path.
-- There is no user-facing Fusion CLI wrapper yet.
+All four acceptance criteria from `docs/fusion/spec.md` ("Usable Milestone
+Acceptance Criteria") were observed on this machine on 2026-07-05:
 
-## Implemented Files
+1. Default three-worker panel from a Claude Code parent (claude-code x1 +
+   opencode x2), every worker `status: "ok"`, correct Markdown report.
+2. Panel invoked from an OpenCode parent (`opencode run` with the bash tool
+   executing the CLI) with a claude-code worker included, every worker
+   `status: "ok"`.
+3. `bun test` (28 pass), `bun run typecheck:fusion`, and `bun run schema:fusion`
+   all green.
+4. A `--record` run wrote the full split artifact set (8 files) under
+   `.fusion-runs/<panelRunId>/`.
 
-- `package.json`: Bun scripts and dev dependencies for tests, typecheck, and schema generation.
-- `tsconfig.json`: TypeScript config for Fusion runtime and tests.
-- `bun.lock`: Bun dependency lockfile.
-- `.gitignore`: now includes `node_modules/` and `.fusion-runs/`.
-- `skills/fusion/lib/types.ts`: portable runtime contracts and recorder interfaces.
-- `skills/fusion/lib/run-panel.ts`: panel orchestration, provenance events, recorder hooks, synthesis gating, compliance evaluation.
-- `skills/fusion/lib/protocol.ts`: public TypeScript barrel export.
-- `skills/fusion/lib/recorder.ts`: no-op and file recorders with redaction and safety checks.
-- `skills/fusion/lib/deterministic-synthesizer.ts`: deterministic fallback synthesizer.
-- `skills/fusion/lib/adapter-registry.ts`: harness registration, selection, and dispatch.
-- `skills/fusion/lib/headless-cli-adapters.ts`: initial OpenCode and Claude Code headless CLI adapters.
-- `skills/fusion/test/runtime.test.ts`: runtime tests for selection, manifests, adapters, recorder, compliance, and synthesis.
-- `skills/fusion/schema/`: generated JSON Schemas for runtime contracts.
+## What Exists Now
 
-## Verified Baseline
+- `skills/fusion/bin/fusion-run.ts`: the bundled Bun CLI, the single canonical
+  skill execution path (ADR 0014). Zero npm runtime dependencies; runs without
+  `node_modules`. Markdown panel report on stdout by default, `--json` for the
+  complete `PanelResult`. Exit code 0 for `ok`/`partial`, 1 for `failed`/usage
+  errors.
+- `skills/fusion/lib/panel-composition.ts`: default three-slot composition
+  (parent model / `openai-flagship` / `budget-smart`), bundled alias table with
+  ordered OpenAI-family and budget fallbacks, availability checks against
+  `opencode models`, dedupe by resolved model ID with refill, and model-entry
+  routing (`provider/model` → opencode, Claude aliases → claude-code,
+  `opencode:`/`claude-code:` forced prefixes, unknown entries error) (ADR 0015).
+- `skills/fusion/lib/headless-cli-adapters.ts`: both adapter bugs from the
+  previous handoff are fixed and regression-tested. OpenCode parses
+  `part.text` from `{"type":"text","part":{"type":"text","text":...}}` events
+  (restricted to `part.type === "text"` so reasoning parts are not captured).
+  Claude Code emits `--verbose`, `--tools=<comma-list>` (equals form), and
+  `--fallback-model` from `ModelPreference.fallbacks`.
+- Worker tool defaults include web: read-only local access plus
+  WebSearch/WebFetch; edit/write/destructive/delegation tools denied (ADR 0018).
+- Contract additions: `SynthesizerPreference`, `PanelRequest.synthesizer`,
+  `PanelSpec.parentModel`; schemas regenerated (ADR 0016).
+- Partial-failure defaults are OpenRouter-aligned: `allowPartial: true`,
+  continue-and-disclose, `failed` only when every worker fails (ADR 0019).
+- `skills/fusion/SKILL.md`: rewritten around the CLI path and parent-agent
+  synthesis. Legacy execution tiers and hidden-subagent instructions are gone;
+  the only internal path left is the emergency fallback, which must announce
+  degraded status first (ADR 0017).
 
-- `bun test` passes with 22 tests.
-- `bun run typecheck:fusion` passes.
-- `bun run schema:fusion` passes.
+## Smoke Procedure (re-runnable)
 
-## Real CLI Smoke Test Results
-
-### OpenCode
-
-- Real `opencode run --format json --pure` execution succeeded for a minimal prompt.
-- The raw OpenCode JSON event carries final text at `part.text`.
-- Current adapter parser does not read `part.text`.
-- Adapter result is currently `invalid-output` even though OpenCode returned the expected answer.
-- Fix needed in `skills/fusion/lib/headless-cli-adapters.ts` to parse OpenCode JSON event lines with `record.part.text`.
-
-Observed OpenCode event shape:
-
-```json
-{"type":"text","part":{"type":"text","text":"fusion-smoke-ok"}}
-```
-
-### Claude Code
-
-- Real `claude` CLI invocation reached argument parsing and process startup.
-- Current adapter args are not correct for the local Claude Code CLI.
-- `--output-format stream-json` requires `--verbose` in this environment.
-- `--tools Read,Grep,Glob,LS` can consume the trailing prompt because `--tools` is variadic.
-- `--tools=Read,Grep,Glob,LS` preserves the prompt argument.
-- With corrected raw args, Claude Code started but failed with `401 Invalid authentication credentials` in this environment.
-- Because of the 401, a successful Claude Code worker result has not yet been verified here.
-
-Corrected raw Claude shape to test after adapter changes and auth fix:
+These are manual checks with real, paid model invocations.
 
 ```bash
-claude --print --verbose --output-format stream-json --permission-mode dontAsk --no-session-persistence --tools=Read,Grep,Glob,LS "Return exactly: fusion-smoke-ok"
+# Criterion 3: library validation (free)
+bun test && bun run typecheck:fusion && bun run schema:fusion
+
+# Criteria 1 + 4: default panel from a Claude Code parent, with recording.
+# The parent agent passes its own model id as --parent-model.
+bun skills/fusion/bin/fusion-run.ts --parent-model fable --record \
+  --timeout-ms 240000 \
+  "Return exactly the string: fusion-smoke-ok. Do not add any other text."
+# Expect: Run status ok; workers claude-code x1 + opencode x2 all ok;
+# 8 artifacts under .fusion-runs/<panelRunId>/ (request, manifest, events,
+# worker-requests, worker-results, synthesis, compliance, result).
+
+# Criterion 2: invocation from an OpenCode parent with a claude-code worker.
+opencode run --model openai/gpt-5.5 'Use your bash tool to run this exact \
+shell command from the current directory, wait for it to finish, then reply \
+with only its "- Run status:" line and every "- Status:" line from stdout: \
+bun skills/fusion/bin/fusion-run.ts --models sonnet,opencode/deepseek-v4-flash-free \
+--timeout-ms 240000 "Return exactly the string: fusion-smoke-ok. Do not add any other text."'
+# Expect: Run status ok; both workers ok.
 ```
 
-## Currently Not Satisfied
+`.fusion-runs/` must be git-ignored (it is, in the repo `.gitignore`); the file
+recorder refuses to write otherwise without an explicit override.
 
-- The Fusion skill is not practically usable through `skills/fusion/SKILL.md` with the new runtime.
-- Natural language skill invocation does not start `runPanel` or the headless harness adapters.
-- There is no Fusion runtime CLI wrapper for users to call directly.
-- OpenCode headless adapter does not parse real OpenCode JSON output correctly yet.
-- Claude Code headless adapter does not build locally valid stream-json args yet.
-- Claude Code worker success is blocked by local CLI authentication failure in this environment.
-- Full compliance is not proven for either harness.
-- SDK-based adapters are not implemented.
-- Model selection is implemented only at the runtime contract and adapter-argument level, not exposed through a supported skill-facing interface.
-- Recorder integration exists in the library, but there is no skill-facing `--record` path that creates `FileRunRecorder` automatically.
-- The deterministic synthesizer is a fallback for testability, not the final quality target for production synthesis.
-- The current `SKILL.md` still says the runtime protocol in the skill text is authoritative, but that text does not describe the new library runtime or harness behavior.
+## Known Limitations (honest state)
 
-## Immediate Next Work
+- Compliance tier is `degraded`, not `full`: the OpenCode CLI adapter cannot
+  yet prove effective tool-policy enforcement, and neither adapter provides
+  full session/tool-event evidence. Full compliance was not claimed for the
+  usable milestone.
+- The alias table (`openai-flagship`, `budget-smart`) pins current model IDs;
+  generation changes are absorbed by editing
+  `skills/fusion/lib/panel-composition.ts` in a skill update.
+- `--synthesizer` accepts `parent-agent` (default) and `deterministic`;
+  harness-kind values error as not implemented (contract-reserved).
+- Forced per-worker harness routing travels through
+  `harnessSelectionPolicy.userPolicy.fusionForcedHarnesses` because `PanelSpec`
+  has no per-worker harness field; revisit if the portable contract grows one.
+- The deterministic synthesis in the report is an audit reference; answer
+  quality depends on the parent agent authoring the five-finding synthesis.
 
-1. Fix OpenCode parser in `headless-cli-adapters.ts` to read `part.text` from JSON event lines.
-2. Add a regression test using the real OpenCode event shape.
-3. Fix Claude Code arg builder to include `--verbose` when using `stream-json`.
-4. Fix Claude Code tools argument to use `--tools=<comma-list>` instead of separate variadic args.
-5. Add a regression test for the corrected Claude Code args.
-6. Re-run `bun test`, `bun run typecheck:fusion`, and `bun run schema:fusion`.
-7. Re-run OpenCode real CLI smoke test through `OpenCodeHeadlessCliAdapter`.
-8. Re-run Claude Code real CLI smoke test after local Claude auth is fixed or with an environment known to be authenticated.
-9. Only after both adapters smoke-test correctly, start wiring the runtime into a user-facing skill or CLI entrypoint.
+## Next Milestones (reserved)
 
-## Practical Usability Requirements
-
-- A user can invoke Fusion without writing a custom Bun script.
-- The invocation path can choose `opencode`, `claude-code`, or both.
-- The invocation path can set panel size.
-- The invocation path can set model preferences.
-- The invocation path can enable recording when safe.
-- The invocation path shows whether the run is full, degraded, partial, or failed.
-- The skill docs match the actual execution path.
-- Runtime failures are reported clearly instead of being silently downgraded.
-- Real OpenCode CLI output is parsed into `WorkerResult.status: "ok"`.
-- Real Claude Code CLI output is parsed into `WorkerResult.status: "ok"` in an authenticated environment.
-
-## Future Full-Compliance Requirements
-
-- Both OpenCode and Claude Code workers must use the same `WorkerRequest` to `WorkerResult` contract.
-- Workers must receive the same rendered prompt and shared context unless an explicit policy says otherwise.
-- Worker blindness must be enforced by the orchestrator.
-- Worker invocations must be independently launched.
-- Session isolation must be proven or explicitly downgraded.
-- Tool policy enforcement must be proven or explicitly downgraded.
-- Compliance must be derived by the orchestrator, not trusted from worker self-report alone.
-- Required provenance events must be present for full compliance.
-- `ContextManifest` must be present for full compliance.
-- Recording must be optional, redacted by default, and visibly marked as not recorded, partial, complete, or failed.
-- Full-compliance runs must not depend on hidden shared state from the parent assistant session.
-- SDK/API transports should be preferred when they can provide stronger evidence than raw CLI execution.
-- Same-agent or internal-pass behavior must remain classified as degraded/local simulation, not full compliance.
-
-## Skill Integration Work
-
-- Update `skills/fusion/SKILL.md` to distinguish current legacy hidden-panel behavior from the new headless runtime.
-- Decide whether the skill should call a CLI wrapper or provide instructions to run a Bun entrypoint.
-- Add a small runtime entrypoint if skill execution needs a stable command.
-- Map `--panelists` to `PanelSpec.workerCount`.
-- Map `--models` to `PanelSpec.modelPreferences` and harness selection policy.
-- Map `--record` to `FileRunRecorder` with `.fusion-runs/` safety checks.
-- Map `--verify` to prompt/output-contract guidance without granting write tools by default.
-- Document supported model syntax for OpenCode and Claude Code separately.
-- Preserve existing blind-panel rules: same prompt, no roles, no peer outputs, no private chain-of-thought.
-
-## Suggested Runtime CLI Shape
-
-This is not implemented yet. It is a suggested shape for the next implementation step.
-
-```bash
-bun run fusion:run --panelists 2 --harnesses opencode,claude-code --models openai/gpt-5.5,sonnet --record "Review this design"
-```
-
-Suggested behavior:
-
-- Build a `PanelRequest` from command-line options.
-- Register `OpenCodeHeadlessCliAdapter` when `opencode` is requested.
-- Register `ClaudeCodeHeadlessCliAdapter` when `claude-code` is requested.
-- Use `AdapterRegistry` as both `runner` and `harnessSelector`.
-- Use `FileRunRecorder` only when `--record` is supplied.
-- Use `DeterministicSynthesizer` until a harness-backed synthesizer exists.
-- Print final synthesis, status, compliance tier, warnings, and recording status.
+1. Harness-backed judge: implement `--synthesizer <harness-kind>` as a separate
+   worker invocation with its own provenance and evidence (ADR 0016).
+2. CI automation of the smoke matrix (needs credential management and paid
+   calls in CI; deferred by the acceptance criteria).
+3. Stronger compliance evidence toward `full` tier: tool-policy proof for
+   OpenCode workers, session/tool-event capture, SDK transports where they
+   provide better evidence.
+4. Consider removing the emergency internal fallback once the skill matures
+   (ADR 0017).
 
 ## Useful Commands
 
@@ -163,12 +115,6 @@ Suggested behavior:
 bun test
 bun run typecheck:fusion
 bun run schema:fusion
-opencode run --format json --pure "Return exactly: fusion-smoke-ok"
-claude --print --verbose --output-format stream-json --permission-mode dontAsk --no-session-persistence --tools=Read,Grep,Glob,LS "Return exactly: fusion-smoke-ok"
+bun skills/fusion/bin/fusion-run.ts --help
+opencode models
 ```
-
-## Important Caution
-
-- Do not claim the skill is usable through `SKILL.md` until the runtime is wired into the skill-facing path.
-- Do not claim Claude Code harness success until authentication is fixed and a real adapter smoke test returns `status: "ok"`.
-- Do not claim full compliance until session isolation, tool policy, provenance, and context-manifest requirements are verified from orchestrator-controlled evidence.

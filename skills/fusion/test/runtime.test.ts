@@ -14,7 +14,9 @@ import {
   ClaudeCodeHeadlessCliAdapter,
   NoopRunRecorder,
   OpenCodeHeadlessCliAdapter,
+  resolvePanelComposition,
   runPanel,
+  type CommandExecutor,
   type CommandExecution,
   type PanelRequest,
   type WorkerRequest,
@@ -114,12 +116,27 @@ describe("Fusion headless CLI adapters", () => {
   });
 
   test("builds Claude Code non-interactive stream-json arguments", () => {
-    const args = buildClaudeCodeArgs(workerRequest());
+    const request = {
+      ...workerRequest(),
+      modelPreference: { model: "sonnet", fallbacks: ["haiku"] },
+    };
+    const args = buildClaudeCodeArgs(request);
 
-    expect(args).toContain("--print");
-    expect(args).toContain("stream-json");
-    expect(args).toContain("dontAsk");
-    expect(args).toContain("Read,Grep,Glob,LS");
+    expect(args).toEqual([
+      "--print",
+      "--verbose",
+      "--output-format",
+      "stream-json",
+      "--permission-mode",
+      "dontAsk",
+      "--no-session-persistence",
+      "--model",
+      "sonnet",
+      "--fallback-model",
+      "haiku",
+      "--tools=Read,Grep,Glob,LS,WebSearch,WebFetch",
+      expectedRenderedPrompt(request),
+    ]);
   });
 
   test("maps OpenCode CLI output to a degraded worker result", async () => {
@@ -143,6 +160,23 @@ describe("Fusion headless CLI adapters", () => {
     expect(result.output).toBe("adapter output");
     expect(result.complianceEvidence?.observedToolPolicy).toBeUndefined();
     expect(result.warnings?.[0]).toContain("degraded");
+  });
+
+  test("maps OpenCode observed text part events to worker output", async () => {
+    const adapter = new OpenCodeHeadlessCliAdapter({
+      executor: async () => ({
+        exitCode: 0,
+        stdout:
+          '{"type":"text","part":{"type":"text","text":"fusion-smoke-ok"}}\n',
+        stderr: "",
+        durationMs: 7,
+      }),
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("fusion-smoke-ok");
   });
 
   test("maps Claude Code CLI output with observed tool policy", async () => {
@@ -211,6 +245,100 @@ describe("Fusion headless CLI adapters", () => {
 
     expect(result.status).toBe("error");
     expect(result.errors?.[0]).toContain("no worker output");
+  });
+});
+
+describe("Fusion panel composition", () => {
+  test("builds the default parent, flagship, and budget slots", async () => {
+    const composition = await resolvePanelComposition({
+      parentModel: "sonnet",
+      executor: opencodeModelsExecutor([
+        "openai/gpt-5.5",
+        "opencode/deepseek-v4-flash-free",
+      ]),
+    });
+
+    expect(composition.panelSpec.workerCount).toBe(3);
+    expect(composition.panelSpec.parentModel).toEqual({
+      model: "sonnet",
+      fallbacks: ["haiku"],
+    });
+    expect(
+      composition.resolvedModels.map((model) => model.resolvedModelId),
+    ).toEqual(["sonnet", "openai/gpt-5.5", "opencode/deepseek-v4-flash-free"]);
+    expect(
+      composition.harnessSelectionPolicy.userPolicy?.fusionForcedHarnesses,
+    ).toEqual({
+      "worker-1": "claude-code",
+      "worker-2": "opencode",
+      "worker-3": "opencode",
+    });
+  });
+
+  test("warns and refills when the parent model is omitted", async () => {
+    const composition = await resolvePanelComposition({
+      executor: opencodeModelsExecutor([
+        "openai/gpt-5.5",
+        "openai/gpt-5.5-fast",
+        "opencode/deepseek-v4-flash-free",
+      ]),
+    });
+
+    expect(composition.warnings.join("\n")).toContain("No --parent-model");
+    expect(
+      new Set(composition.resolvedModels.map((model) => model.resolvedModelId))
+        .size,
+    ).toBe(3);
+    expect(
+      composition.resolvedModels.map((model) => model.resolvedModelId),
+    ).toEqual([
+      "openai/gpt-5.5",
+      "opencode/deepseek-v4-flash-free",
+      "openai/gpt-5.5-fast",
+    ]);
+  });
+
+  test("dedupes default model ids and refills from fallback entries", async () => {
+    const composition = await resolvePanelComposition({
+      parentModel: "openai/gpt-5.5",
+      executor: opencodeModelsExecutor([
+        "openai/gpt-5.5",
+        "openai/gpt-5.4",
+        "opencode/deepseek-v4-flash-free",
+      ]),
+    });
+
+    expect(
+      composition.resolvedModels.map((model) => model.resolvedModelId),
+    ).toEqual([
+      "openai/gpt-5.5",
+      "openai/gpt-5.4",
+      "opencode/deepseek-v4-flash-free",
+    ]);
+  });
+
+  test("keeps duplicate models only for explicit selection", async () => {
+    const composition = await resolvePanelComposition({
+      models: [
+        "opencode:opencode/deepseek-v4-flash-free",
+        "opencode:opencode/deepseek-v4-flash-free",
+      ],
+      executor: opencodeModelsExecutor(["opencode/deepseek-v4-flash-free"]),
+    });
+
+    expect(composition.panelSpec.workerCount).toBe(2);
+    expect(
+      composition.resolvedModels.map((model) => model.resolvedModelId),
+    ).toEqual([
+      "opencode/deepseek-v4-flash-free",
+      "opencode/deepseek-v4-flash-free",
+    ]);
+  });
+
+  test("rejects unrecognized model entries instead of guessing", async () => {
+    await expect(
+      resolvePanelComposition({ models: ["mystery-model"] }),
+    ).rejects.toThrow("Unrecognized Fusion model entry");
   });
 });
 
@@ -409,6 +537,32 @@ function workerRequest(): WorkerRequest {
     ...request,
     modelPreference: { provider: "openai", model: "gpt-5.5" },
     environment: { workspaceRoot: "/workspace" },
+  };
+}
+
+function expectedRenderedPrompt(request: WorkerRequest): string {
+  return [
+    request.prompt,
+    "",
+    "You are one independent Fusion panel worker.",
+    "Do not mention or infer peer worker outputs, draft synthesis, or panel conclusions.",
+    "Return only the requested answer; do not include hidden chain-of-thought.",
+    "",
+    "Shared context:",
+    request.sharedContext.text ?? "",
+  ].join("\n");
+}
+
+function opencodeModelsExecutor(models: string[]): CommandExecutor {
+  return async (execution: CommandExecution) => {
+    expect(execution.command).toBe("opencode");
+    expect(execution.args).toEqual(["models"]);
+    return {
+      exitCode: 0,
+      stdout: `${models.join("\n")}\n`,
+      stderr: "",
+      durationMs: 1,
+    };
   };
 }
 

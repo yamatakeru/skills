@@ -6,5 +6,9 @@
     "moduleResolution": "bundler",
     "types": ["node", "bun-types"]
   },
-  "include": ["skills/fusion/lib/**/*.ts", "skills/fusion/test/**/*.ts"]
+  "include": [
+    "skills/fusion/bin/**/*.ts",
+    "skills/fusion/lib/**/*.ts",
+    "skills/fusion/test/**/*.ts"
+  ]
 }

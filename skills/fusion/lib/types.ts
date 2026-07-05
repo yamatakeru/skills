@@ -27,7 +27,13 @@ export interface PanelRequest {
   panelSpec: PanelSpec;
   harnessSelectionPolicy: HarnessSelectionPolicy;
   synthesisContract: SynthesisContract;
+  synthesizer?: SynthesizerPreference;
   provenancePolicy?: ProvenancePolicy;
+}
+
+export interface SynthesizerPreference {
+  strategy: "parent-agent" | "deterministic" | HarnessKind;
+  model?: ModelPreference;
 }
 
 export interface PanelResult {
@@ -93,6 +99,7 @@ export interface ContextManifest {
 export interface PanelSpec {
   workerCount: number;
   modelPreferences?: ModelPreference[];
+  parentModel?: ModelPreference;
 }
 
 export interface HarnessSelectionPolicy {

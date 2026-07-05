@@ -14,10 +14,11 @@ panel decision without persisting secrets or unnecessary private data.
   chain-of-thought and full reasoning traces.
 - Concise reasoning summaries, evidence, sources, tool-result references,
   assumptions, uncertainties, and verification notes when provided.
-- Structured synthesis.
-- Final answer.
+- CLI deterministic audit synthesis.
+- Parent-authored synthesis and final answer, if separately captured by the
+  parent agent.
 - Verification commands and results, if any.
-- Degraded-mode notes, such as missing subagents or unavailable models.
+- Degraded-mode notes, such as CLI fallback use or unavailable models.
 
 ## Suggested Location
 

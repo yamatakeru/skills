@@ -16,10 +16,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "path",
-              "digest"
-            ],
+            "required": ["path", "digest"],
             "type": "object"
           },
           "type": "array"
@@ -35,10 +32,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "label",
-              "digest"
-            ],
+            "required": ["label", "digest"],
             "type": "object"
           },
           "type": "array"
@@ -53,10 +47,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "renderedPromptHash",
-        "sharedContextHash"
-      ],
+      "required": ["renderedPromptHash", "sharedContextHash"],
       "type": "object"
     },
     "FindingKind": {
@@ -75,12 +66,7 @@
           "type": "string"
         },
         {
-          "enum": [
-            "opencode",
-            "cursor-cli",
-            "claude-code",
-            "pi"
-          ],
+          "enum": ["opencode", "cursor-cli", "claude-code", "pi"],
           "type": "string"
         }
       ]
@@ -157,6 +143,9 @@
         },
         "synthesisContract": {
           "$ref": "#/definitions/SynthesisContract"
+        },
+        "synthesizer": {
+          "$ref": "#/definitions/SynthesizerPreference"
         }
       },
       "required": [
@@ -179,13 +168,14 @@
           },
           "type": "array"
         },
+        "parentModel": {
+          "$ref": "#/definitions/ModelPreference"
+        },
         "workerCount": {
           "type": "number"
         }
       },
-      "required": [
-        "workerCount"
-      ],
+      "required": ["workerCount"],
       "type": "object"
     },
     "ProvenancePolicy": {
@@ -237,9 +227,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "path"
-            ],
+            "required": ["path"],
             "type": "object"
           },
           "type": "array"
@@ -258,9 +246,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "label"
-            ],
+            "required": ["label"],
             "type": "object"
           },
           "type": "array"
@@ -278,10 +264,7 @@
           "type": "boolean"
         },
         "format": {
-          "enum": [
-            "markdown",
-            "json"
-          ],
+          "enum": ["markdown", "json"],
           "type": "string"
         },
         "requireAttribution": {
@@ -300,6 +283,31 @@
         "allowPartial",
         "requireAttribution"
       ],
+      "type": "object"
+    },
+    "SynthesizerPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "$ref": "#/definitions/ModelPreference"
+        },
+        "strategy": {
+          "anyOf": [
+            {
+              "const": "parent-agent",
+              "type": "string"
+            },
+            {
+              "const": "deterministic",
+              "type": "string"
+            },
+            {
+              "$ref": "#/definitions/HarnessKind"
+            }
+          ]
+        }
+      },
+      "required": ["strategy"],
       "type": "object"
     }
   }

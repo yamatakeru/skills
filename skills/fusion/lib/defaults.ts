@@ -19,6 +19,8 @@ export const defaultPolicies: DefaultPolicies = {
   },
   tools: {
     mode: "read-only",
+    allow: ["Read", "Grep", "Glob", "LS", "WebSearch", "WebFetch"],
+    deny: ["Write", "Edit", "MultiEdit", "Bash", "Task", "NotebookEdit"],
     headlessAskBehavior: "deny",
     parity: "same-by-default",
   },

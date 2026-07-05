@@ -11,8 +11,20 @@ import type {
 import { validatePanelSpec } from "./validation";
 
 export const defaultHarnessSelector: HarnessSelector = {
-  selectHarness({ modelPreference, policy }): HarnessDescriptor {
+  selectHarness({ workerId, modelPreference, policy }): HarnessDescriptor {
     const availableHarnesses = policy.availableHarnesses;
+    const forcedHarness = forcedHarnessForWorker(workerId, policy.userPolicy);
+    if (forcedHarness !== undefined) {
+      if (!isHarnessAvailable(forcedHarness, availableHarnesses)) {
+        throw new RangeError(
+          `Forced Fusion harness is not available for ${workerId}: ${forcedHarness}`,
+        );
+      }
+      return {
+        kind: forcedHarness,
+        invocation: "headless",
+      };
+    }
 
     if (
       isClaudeModelPreference(modelPreference) &&
@@ -72,7 +84,76 @@ function isClaudeModelIdentifier(value: string | undefined): boolean {
   }
 
   const normalized = value.toLowerCase();
-  return normalized.includes("claude") || normalized.includes("anthropic");
+  return (
+    normalized.includes("claude") ||
+    normalized.includes("anthropic") ||
+    ["fable", "opus", "sonnet", "haiku"].includes(normalized)
+  );
+}
+
+function forcedHarnessForWorker(
+  workerId: string,
+  userPolicy: Record<string, unknown> | undefined,
+): HarnessKind | undefined {
+  const forcedHarnesses = userPolicy?.fusionForcedHarnesses;
+  if (
+    forcedHarnesses === undefined ||
+    forcedHarnesses === null ||
+    typeof forcedHarnesses !== "object" ||
+    Array.isArray(forcedHarnesses)
+  ) {
+    return undefined;
+  }
+
+  const forcedHarness = (forcedHarnesses as Record<string, unknown>)[workerId];
+  return typeof forcedHarness === "string" ? forcedHarness : undefined;
+}
+
+function workerEnvironmentFromPolicy(
+  userPolicy: Record<string, unknown> | undefined,
+): WorkerRequest["environment"] {
+  const environment = userPolicy?.fusionWorkerEnvironment;
+  if (
+    environment === undefined ||
+    environment === null ||
+    typeof environment !== "object" ||
+    Array.isArray(environment)
+  ) {
+    return undefined;
+  }
+
+  const record = environment as Record<string, unknown>;
+  return {
+    workspaceRoot:
+      typeof record.workspaceRoot === "string"
+        ? record.workspaceRoot
+        : undefined,
+    workingDirectory:
+      typeof record.workingDirectory === "string"
+        ? record.workingDirectory
+        : undefined,
+    envProfile:
+      typeof record.envProfile === "string" ? record.envProfile : undefined,
+  };
+}
+
+function workerBudgetFromPolicy(
+  userPolicy: Record<string, unknown> | undefined,
+): WorkerRequest["budget"] {
+  const budget = userPolicy?.fusionWorkerBudget;
+  if (
+    budget === undefined ||
+    budget === null ||
+    typeof budget !== "object" ||
+    Array.isArray(budget)
+  ) {
+    return undefined;
+  }
+
+  const timeoutMs = (budget as Record<string, unknown>).timeoutMs;
+  return typeof timeoutMs === "number" && Number.isFinite(timeoutMs)
+    ? { timeoutMs }
+    : undefined;
 }
 
 export function buildWorkerRequests(
@@ -83,6 +164,12 @@ export function buildWorkerRequests(
   validatePanelSpec(request.panelSpec);
 
   const policies = mergeDefaultPolicies(defaults);
+  const environment = workerEnvironmentFromPolicy(
+    request.harnessSelectionPolicy.userPolicy,
+  );
+  const budget = workerBudgetFromPolicy(
+    request.harnessSelectionPolicy.userPolicy,
+  );
   return Array.from({ length: request.panelSpec.workerCount }, (_, index) => {
     const workerId = `worker-${index + 1}`;
     const modelPreference = request.panelSpec.modelPreferences?.[index];
@@ -105,6 +192,8 @@ export function buildWorkerRequests(
       blindnessPolicy: policies.blindness,
       workerPolicy: policies.worker,
       toolsPolicy: policies.tools,
+      environment,
+      budget,
       outputContract: policies.output,
       provenancePolicy: request.provenancePolicy ?? policies.provenance,
     };

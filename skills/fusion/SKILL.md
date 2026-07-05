@@ -1,190 +1,151 @@
 ---
 name: fusion
 description: >-
-  A lightweight, Fusion-inspired blind-panel skill for complex research,
-  architecture, design review, code review and other high-stakes or ambiguous
-  tasks. Multiple neutral panelists receive the same prompt independently, and
-  the parent agent synthesizes consensus, contradictions, partial coverage,
-  unique insights and blind spots. It is inspired by OpenRouter Fusion's
-  panel-and-synthesis workflow, but it is not an OpenRouter Fusion API wrapper.
+  Fusion-inspired blind-panel deliberation for complex research, architecture,
+  design review, code review, and other high-stakes or ambiguous tasks. The
+  bundled Bun CLI runs neutral same-prompt workers, then the parent agent writes
+  the five-finding synthesis and final answer from the panel report.
 license: MIT
 compatibility: >-
-  SKILL.md-compatible agents; optimized for OpenCode. Uses hidden subagents
-  when available; falls back to internal independent passes otherwise.
+  SKILL.md-compatible agents with shell access and Bun installed. Uses the
+  bundled self-contained TypeScript CLI; no node_modules are required inside the
+  skill directory.
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
   kind: "blind-panel synthesis"
   mode: "blind"
-  primary-client: "opencode"
-  fallback-mode: "internal"
-  optional-subagents: "fusion-panelist,fusion-panelist-gpt,fusion-panelist-kimi,fusion-panelist-deepseek,fusion-panelist-glm,fusion-panelist-composer"
+  canonical-runtime: "bun-cli"
 ---
 
 # Fusion
 
 Fusion is a skill-level blind-panel deliberation protocol inspired by
-OpenRouter Fusion's panel-and-synthesis workflow. It is **not** an OpenRouter
+OpenRouter Fusion's panel-and-synthesis workflow. It is not an OpenRouter
 Fusion API wrapper and does not call the OpenRouter Fusion API directly.
 
-Fusion's core behavior is same-prompt independent synthesis: give multiple
-neutral panelists the full task, keep them independent, then synthesize their
-answers into structured findings before writing the final response.
+Use Fusion for ambiguous, high-stakes, open-ended, or explicitly requested
+panel/ensemble/fusion tasks. Answer trivial or narrow tasks directly.
 
-For role-divided review using scout, architect, critic and verifier agents, use
-the separate `council` skill instead.
+## Canonical Execution Path
 
-## Runtime Rules
+The bundled CLI is the single canonical panel execution path. Run it through
+the parent harness shell tool:
 
-These rules are authoritative even if supplementary files are not read:
-
-* Use Fusion only for ambiguous, high-stakes, open-ended, or explicitly
-  requested panel/ensemble/fusion tasks. Answer trivial or narrow tasks
-  directly.
-* Give every panelist the same full user task and essential shared context. Do
-  not pre-digest the task into a preferred answer.
-* Do not assign roles, personas, debate positions, or specialty lenses to
-  panelists.
-* Model-specific panelist agents are allowed and preferred when available, but
-  model choice is only a diversity mechanism. It must not change the prompt,
-  role, persona, or expected output format for that panelist.
-* Keep panelists independent: do not show one panelist another panelist's
-  output before synthesis.
-* Panelists are read-only by default. They may inspect context or propose
-  verification, but they must not edit files.
-* Do not recursively spawn additional panels or councils from any panelist.
-* Do not request, expose, synthesize or record private chain-of-thought.
-  Panelists should provide concise reasoning summaries, evidence, sources, tool
-  results, assumptions, uncertainties and verification notes instead.
-* The final answer must be grounded in the synthesis, not copied from one
-  panelist verbatim.
-
-## Invocation Options
-
-Users may specify lightweight CLI-style options in natural language. Treat
-these as preferences, not as a strict parser contract:
-
-```text
-fusion --panelists 3 --record で、この設計をレビューして。
-fusion --verify で、このバグ修正方針を独立に評価して。
-fusion --models gpt,kimi,deepseek で、このAPI設計を評価して。
+```bash
+bun <skill-dir>/bin/fusion-run.ts --parent-model <its own model id> "task"
 ```
 
-Supported options:
+`<skill-dir>` is the installed Fusion skill directory. Pass the parent agent's
+own model as `--parent-model` whenever it can be expressed as a supported model
+entry. If the parent model is unavailable, omit it; the CLI will warn and
+refill the slot from fallback lists.
 
-* `--panelists <n>`, `-p <n>`: number of independent panelists to spawn when
-  available. Prefer 2-4; avoid more unless the user explicitly accepts higher
-  cost and latency.
-* `--models <list>`, `-m <list>`: comma-separated model-specific panelist names
-  or short aliases to prefer, such as `gpt,kimi,deepseek,glm,composer`. This
-  selects panelist implementations, not roles. Give each selected panelist the
-  same prompt and output expectations.
-* `--record`: save provenance under `.fusion-runs/` when the environment and
-  permissions permit it.
-* `--verify`: ask panelists to include verification plans or commands where
-  safe and relevant. The parent agent decides what to run.
+Bun is required. If `bun` is missing, produce a clear error with installation
+guidance, for example: "Fusion requires Bun. Install it from
+https://bun.sh/docs/installation and rerun the CLI." Do not silently fall back.
 
-Ignore role options such as `--roles`; if the user asks for role-divided review,
-recommend or invoke `council` instead.
+## Parent-Agent Synthesis
 
-Model aliases map to neutral panelist agents when available:
+Read the CLI report, then the parent agent must author the synthesis and final
+answer. Use these five findings:
 
-* `gpt` -> `fusion-panelist-gpt`
-* `kimi` -> `fusion-panelist-kimi`
-* `deepseek` -> `fusion-panelist-deepseek`
-* `glm` -> `fusion-panelist-glm`
-* `composer` -> `fusion-panelist-composer`
+1. **Consensus**: what independent workers converged on.
+2. **Contradictions**: mutually exclusive claims or recommendations.
+3. **Partial coverage**: important topics only some workers covered.
+4. **Unique insights**: valuable single-worker observations.
+5. **Blind spots**: relevant questions or evidence nobody addressed.
 
-If both `--panelists` and `--models` are provided, use the requested models in
-order first, then fill remaining slots with other neutral panelists. If
-`--models` names more panelists than `--panelists`, prefer the explicit model
-list and treat it as the effective panel size unless cost or latency would be
-unreasonable. If a named model-specific panelist is unavailable, mention the
-degraded selection when relevant and substitute another neutral panelist or use
-Tier 1.
+The CLI always emits deterministic synthesis as an audit reference. When
+`--synthesizer parent-agent` is used, which is the default, do not treat that
+deterministic text as the final answer. The parent agent authors the final
+answer grounded in the worker outputs and the five findings.
 
-## When To Use
+## Default Panel Composition
 
-Use Fusion when one or more of the following hold:
+The default panel has three workers. Same-harness panels are allowed. Default
+slots are filled in this priority order:
 
-1. The question is open-ended, ambiguous, or requires judgment.
-2. Incorrect answers would be costly.
-3. The problem has multiple plausible approaches or tradeoffs.
-4. The user explicitly asks for a fusion, panel, ensemble, or multi-model
-   answer.
+1. Parent model slot from `--parent-model`.
+2. Current OpenAI flagship through OpenCode via the `openai-flagship` alias.
+3. Cheap-but-capable budget model through OpenCode via the `budget-smart`
+   alias.
 
-For routine coding tasks, small bug fixes, or simple factual questions, answer
-directly without invoking a panel.
+If `--parent-model` is missing, the CLI warns and refills that slot from the
+bundled alias fallback lists. Default duplicate model IDs are deduped and
+refilled so the default panel has distinct models. Repeating a model is allowed
+only through explicit `--models` selection.
 
-## Execution Tiers
+## Model Selection
 
-Choose the lightest tier that preserves quality:
+`--models <comma-list>` replaces the default composition entirely.
 
-### Tier 0 - Direct Answer
+Model entry routing:
 
-If the question is narrow and well scoped, answer directly. Do not
-over-deliberate trivial prompts.
+- `provider/model` routes to OpenCode.
+- Claude aliases `fable`, `opus`, `sonnet`, `haiku`, and `claude-*` IDs route
+  to Claude Code.
+- `openai-flagship` and `budget-smart` resolve through the bundled alias table.
+- `opencode:<entry>` and `claude-code:<entry>` force the harness.
+- Unknown entries are errors, not guesses.
 
-### Tier 1 - Internal Blind Panel
+OpenCode-backed entries are checked against `opencode models`. Claude Code has
+no model enumeration command; Claude-backed entries use latest aliases and
+`--fallback-model`, then are validated by the worker attempt.
 
-If hidden subagents are unavailable or disabled, perform a lightweight internal
-blind panel: make two or more independent passes over the same task and
-synthesize them into the same five findings. Do not recursively spawn more
+## CLI Options
+
+- `--parent-model <id>`: parent model for the default panel slot.
+- `--models <comma-list>`: explicit model list; replaces default composition.
+- `--panelists <n>`: panel size for default composition; default is 3.
+- `--record`: write split artifacts under `.fusion-runs/<panelRunId>/` when
+  the directory is git-ignored.
+- `--json`: print the complete `PanelResult` JSON instead of Markdown.
+- `--synthesizer <parent-agent|deterministic|harness-kind>`: default is
+  `parent-agent`; `deterministic` is implemented; harness-kind synthesis is
+  contract-reserved and must error as not implemented yet.
+- `--timeout-ms <n>`: per-worker timeout.
+
+Default Markdown output starts with run status, compliance tier, and warnings,
+then lists each worker's full output with worker id, model, harness, and
+status, then the deterministic audit synthesis, then recording status. Exit
+code is 0 for `ok` and `partial`, and 1 for `failed` or usage errors.
+
+## Worker Rules
+
+All workers must receive the same full task prompt and shared context. Do not
+assign roles, personas, debate positions, or specialty lenses. Do not show any
+worker peer outputs, draft synthesis, or panel conclusions before it returns.
+Do not request, expose, synthesize, or record private chain-of-thought; workers
+should provide concise reasoning summaries, evidence, sources, assumptions,
+uncertainties, and verification notes instead.
+
+Default worker tools are read-only local access plus web search and web fetch
+where the harness provides them. Workers must not edit or write files, run
+destructive commands, spawn subagents, delegate subtasks, or recursively invoke
 panels.
 
-### Tier 2 - Hidden Panelists
+## Partial Results
 
-When subagents are available, spawn 2-4 neutral panelists. Prefer a diverse set
-of model-specific agents such as `fusion-panelist-gpt`,
-`fusion-panelist-kimi`, `fusion-panelist-deepseek`, `fusion-panelist-glm` and
-`fusion-panelist-composer` when they are configured and available. Use the
-generic `fusion-panelist` as a fallback or filler.
+Partial failure is allowed by default. If at least one worker succeeds, the CLI
+continues with status `partial` and discloses failed workers and reasons. If
+all workers fail, the run status is `failed`. The parent-authored synthesis and
+final answer must acknowledge missing workers and must not present partial
+results as full-panel consensus.
 
-Model diversity must preserve the blind-panel contract: every panelist receives
-the same prompt and essential shared context, with no assigned role, no persona,
-no model-specific instruction, and no visibility into other panelists' outputs.
-If a requested model-specific panelist is unavailable, replace it with another
-neutral panelist or degrade to Tier 1 rather than changing the task.
-Independent runs may use the same underlying model multiple times when each run
-remains blind and independent. Diversity from stochastic reasoning paths and
-tool use is valid, though distinct models are preferred when available.
+## Emergency Fallback
 
-## Synthesis
-
-Structure the synthesis with these five findings:
-
-1. **Consensus**: shared facts or recommendations that independent panelists
-   converged on.
-2. **Contradictions**: mutually exclusive claims; do not smooth them away.
-3. **Partial coverage**: important aspects only some panelists covered.
-4. **Unique insights**: valuable single-panelist observations.
-5. **Blind spots**: relevant questions or perspectives nobody addressed.
-
-Attribute important points to their source. For code or artifact tasks, prefer
-executed verification over persuasive prose and state what was or was not
-verified. For research or design tasks, lead with consensus, preserve
-contradictions and blind spots, and make recommendations only when supported.
-
-## Provenance And Record Keeping
-
-If `--record` is requested and safe, save prompt and options, panelist
-identifiers when known, each panelist's returned structured output excluding
-private chain-of-thought, synthesis, final answer, verification evidence,
-tool-result references, assumptions, uncertainties and degraded-mode notes under
-`.fusion-runs/`. Do not persist secrets, unnecessary private data or full
-reasoning traces. If recording is unavailable, mention that when relevant.
-
-## Cost And Latency
-
-Invoking a panel increases token usage and latency. Use the smallest useful
-panel, avoid broad verification unless justified, and answer directly when
-deliberation is not worth the cost.
+If the CLI cannot run at all, for example because Bun is missing or no usable
+harness exists, an internal same-agent blind-panel simulation is permitted only
+as an emergency fallback. Announce the degraded status before producing
+results. Keep the same prompt separated across passes, preserve the five
+findings, and state that this is not a full-compliance Fusion panel. Removal of
+this fallback will be reconsidered once the skill matures.
 
 ## Supplementary Details
 
-The runtime protocol above is complete and authoritative. The following files
-are optional guidance for deeper operation and must not be required for
-correctness:
+The runtime protocol above is complete and authoritative. These files are
+optional background and must not contradict the CLI path:
 
-* `details/blind-panel.md`
-* `details/synthesis.md`
-* `details/provenance.md`
+- `details/blind-panel.md`
+- `details/synthesis.md`
+- `details/provenance.md`

@@ -8,3 +8,4 @@ export * from "./recorder";
 export * from "./deterministic-synthesizer";
 export * from "./adapter-registry";
 export * from "./headless-cli-adapters";
+export * from "./panel-composition";
