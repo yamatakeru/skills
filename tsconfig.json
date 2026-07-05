@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "es2020",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node", "bun-types"]
+  },
+  "include": ["skills/fusion/lib/**/*.ts", "skills/fusion/test/**/*.ts"]
+}

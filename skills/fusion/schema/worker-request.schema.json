@@ -1,0 +1,485 @@
+{
+  "$ref": "#/definitions/WorkerRequest",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "BlindnessPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "noDraftSynthesis": {
+          "type": "boolean"
+        },
+        "noPanelConclusions": {
+          "type": "boolean"
+        },
+        "noPeerOutputs": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "noPeerOutputs",
+        "noDraftSynthesis",
+        "noPanelConclusions"
+      ],
+      "type": "object"
+    },
+    "ContextManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "digest"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "references": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "label",
+              "digest"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "renderedPromptHash": {
+          "type": "string"
+        },
+        "sharedContextHash": {
+          "type": "string"
+        },
+        "userTaskHash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "renderedPromptHash",
+        "sharedContextHash"
+      ],
+      "type": "object"
+    },
+    "HarnessKind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "enum": [
+            "opencode",
+            "cursor-cli",
+            "claude-code",
+            "pi"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "HarnessPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "invocation": {
+          "$ref": "#/definitions/InvocationMode"
+        },
+        "kind": {
+          "$ref": "#/definitions/HarnessKind"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InvocationMode": {
+      "enum": [
+        "headless",
+        "subagent",
+        "cli",
+        "api"
+      ],
+      "type": "string"
+    },
+    "IsolationPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowUnverifiedReuse": {
+          "type": "boolean"
+        },
+        "requireIndependentInvocation": {
+          "type": "boolean"
+        },
+        "requireIsolatedContext": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requireIndependentInvocation",
+        "requireIsolatedContext",
+        "allowUnverifiedReuse"
+      ],
+      "type": "object"
+    },
+    "ModelPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fallbacks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "OutputContract": {
+      "additionalProperties": false,
+      "properties": {
+        "forbidChainOfThought": {
+          "type": "boolean"
+        },
+        "format": {
+          "enum": [
+            "markdown",
+            "json"
+          ],
+          "type": "string"
+        },
+        "requiredSections": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "schemaName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "forbidChainOfThought"
+      ],
+      "type": "object"
+    },
+    "ProvenancePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "eventLog": {
+          "type": "boolean"
+        },
+        "includeModelMetadata": {
+          "type": "boolean"
+        },
+        "includeToolLogs": {
+          "type": "boolean"
+        },
+        "record": {
+          "type": "boolean"
+        },
+        "redactSecrets": {
+          "type": "boolean"
+        },
+        "requireMinimumEventsForFullCompliance": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "record",
+        "redactSecrets",
+        "eventLog",
+        "requireMinimumEventsForFullCompliance",
+        "includeToolLogs",
+        "includeModelMetadata"
+      ],
+      "type": "object"
+    },
+    "SessionMode": {
+      "enum": [
+        "fresh",
+        "fork",
+        "resume"
+      ],
+      "type": "string"
+    },
+    "SessionPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/definitions/SessionMode"
+        },
+        "parentSessionId": {
+          "type": "string"
+        },
+        "reusePolicy": {
+          "enum": [
+            "none",
+            "same-worker-lineage",
+            "explicit-user-opt-in"
+          ],
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "SharedContext": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "digest": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "references": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "label"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ToolsPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ask": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deny": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "headlessAskBehavior": {
+          "enum": [
+            "deny",
+            "error",
+            "prompt-if-policy-allows"
+          ],
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "none",
+            "read-only",
+            "limited",
+            "full"
+          ],
+          "type": "string"
+        },
+        "parity": {
+          "enum": [
+            "same-by-default",
+            "strict-same-required",
+            "harness-default"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "WorkerBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "maxInputTokens": {
+          "type": "number"
+        },
+        "maxOutputTokens": {
+          "type": "number"
+        },
+        "maxToolCalls": {
+          "type": "number"
+        },
+        "maxTurns": {
+          "type": "number"
+        },
+        "timeoutMs": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerEnvironment": {
+      "additionalProperties": false,
+      "properties": {
+        "envProfile": {
+          "type": "string"
+        },
+        "workingDirectory": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowRecursiveDelegation": {
+          "type": "boolean"
+        },
+        "denyPanelSpawning": {
+          "type": "boolean"
+        },
+        "denySubtaskDelegation": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "allowRecursiveDelegation",
+        "denyPanelSpawning"
+      ],
+      "type": "object"
+    },
+    "WorkerRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "blindnessPolicy": {
+          "$ref": "#/definitions/BlindnessPolicy"
+        },
+        "budget": {
+          "$ref": "#/definitions/WorkerBudget"
+        },
+        "contextManifest": {
+          "$ref": "#/definitions/ContextManifest"
+        },
+        "environment": {
+          "$ref": "#/definitions/WorkerEnvironment"
+        },
+        "harness": {
+          "$ref": "#/definitions/HarnessPreference"
+        },
+        "isolationPolicy": {
+          "$ref": "#/definitions/IsolationPolicy"
+        },
+        "modelPreference": {
+          "$ref": "#/definitions/ModelPreference"
+        },
+        "outputContract": {
+          "$ref": "#/definitions/OutputContract"
+        },
+        "panelRunId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "provenancePolicy": {
+          "$ref": "#/definitions/ProvenancePolicy"
+        },
+        "session": {
+          "$ref": "#/definitions/SessionPolicy"
+        },
+        "sharedContext": {
+          "$ref": "#/definitions/SharedContext"
+        },
+        "toolsPolicy": {
+          "$ref": "#/definitions/ToolsPolicy"
+        },
+        "workerId": {
+          "type": "string"
+        },
+        "workerPolicy": {
+          "$ref": "#/definitions/WorkerPolicy"
+        }
+      },
+      "required": [
+        "panelRunId",
+        "workerId",
+        "prompt",
+        "sharedContext",
+        "session",
+        "isolationPolicy",
+        "blindnessPolicy",
+        "workerPolicy",
+        "outputContract"
+      ],
+      "type": "object"
+    }
+  }
+}

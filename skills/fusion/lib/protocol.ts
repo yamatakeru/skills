@@ -4,3 +4,7 @@ export * from "./manifest";
 export * from "./worker-requests";
 export * from "./compliance";
 export * from "./run-panel";
+export * from "./recorder";
+export * from "./deterministic-synthesizer";
+export * from "./adapter-registry";
+export * from "./headless-cli-adapters";

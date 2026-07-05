@@ -1,0 +1,16 @@
+{
+  "name": "skills",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "schema:fusion": "mkdir -p skills/fusion/schema && ts-json-schema-generator --path skills/fusion/lib/types.ts --type PanelRequest --tsconfig tsconfig.json --out skills/fusion/schema/panel-request.schema.json && ts-json-schema-generator --path skills/fusion/lib/types.ts --type WorkerRequest --tsconfig tsconfig.json --out skills/fusion/schema/worker-request.schema.json && ts-json-schema-generator --path skills/fusion/lib/types.ts --type WorkerResult --tsconfig tsconfig.json --out skills/fusion/schema/worker-result.schema.json && ts-json-schema-generator --path skills/fusion/lib/types.ts --type PanelResult --tsconfig tsconfig.json --out skills/fusion/schema/panel-result.schema.json",
+    "test": "bun test",
+    "typecheck:fusion": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "bun-types": "latest",
+    "ts-json-schema-generator": "^2.9.0",
+    "typescript": "latest"
+  }
+}

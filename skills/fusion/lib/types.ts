@@ -3,8 +3,10 @@ export type SessionMode = "fresh" | "fork" | "resume";
 export type ComplianceTier =
   "full" | "full-reused-isolated-session" | "degraded" | "non-compliant";
 
+type ExtensibleString = string & {};
+
 export type HarnessKind =
-  "opencode" | "cursor-cli" | "claude-code" | "pi" | string;
+  "opencode" | "cursor-cli" | "claude-code" | "pi" | ExtensibleString;
 export type InvocationMode = "headless" | "subagent" | "cli" | "api";
 export type PanelStatus = "ok" | "partial" | "failed";
 export type WorkerStatus =
@@ -193,7 +195,7 @@ export interface ProvenanceEvent {
   eventId: string;
   panelRunId: string;
   workerId?: string;
-  type: ProvenanceEventType | string;
+  type: ProvenanceEventType | ExtensibleString;
   timestamp: string;
   data?: Record<string, unknown>;
 }
@@ -258,6 +260,7 @@ export interface UsageSummary {
 export interface SynthesisResult {
   synthesis: string;
   finalAnswer?: string;
+  strategy?: string;
   warnings?: string[];
   errors?: string[];
 }
@@ -287,10 +290,26 @@ export interface HarnessSelectionInput {
   policy: HarnessSelectionPolicy;
 }
 
+export type RecordingStatus =
+  "not-recorded" | "partial" | "complete" | "failed";
+
+export interface RunRecorder {
+  readonly status: RecordingStatus;
+  recordRequest?(request: PanelRequest): Promise<void> | void;
+  recordManifest?(manifest: ContextManifest): Promise<void> | void;
+  recordEvent?(event: ProvenanceEvent): Promise<void> | void;
+  recordWorkerRequests?(requests: WorkerRequest[]): Promise<void> | void;
+  recordWorkerResults?(results: WorkerResult[]): Promise<void> | void;
+  recordSynthesis?(result: SynthesisResult): Promise<void> | void;
+  recordCompliance?(summary: ComplianceSummary): Promise<void> | void;
+  recordResult?(result: PanelResult): Promise<void> | void;
+}
+
 export interface PanelRunOptions {
   runner: WorkerRunner;
   synthesizer: Synthesizer;
   harnessSelector?: HarnessSelector;
+  recorder?: RunRecorder;
   defaults?: Partial<DefaultPolicies>;
   now?: () => Date;
   idFactory?: () => string;

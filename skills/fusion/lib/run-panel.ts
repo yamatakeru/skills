@@ -15,6 +15,12 @@ import type {
 import { validatePanelSpec } from "./validation";
 import { buildWorkerRequests, defaultHarnessSelector } from "./worker-requests";
 
+type EmitEvent = (
+  type: ProvenanceEventType,
+  data?: Record<string, unknown>,
+  workerId?: string,
+) => Promise<void>;
+
 export async function runPanel(
   request: PanelRequest,
   options: PanelRunOptions,
@@ -25,24 +31,32 @@ export async function runPanel(
   const idFactory = options.idFactory ?? createEventIdFactory();
   const events: ProvenanceEvent[] = [];
   const warnings: string[] = [];
+  const recorderWarnings: string[] = [];
   const errors: string[] = [];
-  const emit = (
-    type: ProvenanceEventType,
-    data?: Record<string, unknown>,
-    workerId?: string,
-  ) => {
-    events.push({
+  const recorder = options.recorder;
+  const emit: EmitEvent = async (type, data, workerId) => {
+    const event = {
       eventId: idFactory(),
       panelRunId: request.panelRunId,
       workerId,
       type,
       timestamp: now().toISOString(),
       data,
-    });
+    };
+    events.push(event);
+    await recordSafely(recorderWarnings, () => recorder?.recordEvent?.(event));
   };
 
-  emit("panel.started", { workerCount: request.panelSpec.workerCount });
-  emit("context.manifested", { contextManifest: request.contextManifest });
+  await recordSafely(recorderWarnings, () =>
+    recorder?.recordRequest?.(request),
+  );
+  await recordSafely(recorderWarnings, () =>
+    recorder?.recordManifest?.(request.contextManifest),
+  );
+  await emit("panel.started", { workerCount: request.panelSpec.workerCount });
+  await emit("context.manifested", {
+    contextManifest: request.contextManifest,
+  });
 
   const workerRequests = buildWorkerRequests(
     request,
@@ -51,24 +65,31 @@ export async function runPanel(
   );
 
   for (const workerRequest of workerRequests) {
-    emit(
+    await emit(
       "harness.selected",
       { harness: workerRequest.harness },
       workerRequest.workerId,
     );
-    emit(
+    await emit(
       "worker.invocation.requested",
       { request: redactWorkerRequest(workerRequest) },
       workerRequest.workerId,
     );
   }
+  await recordSafely(recorderWarnings, () =>
+    recorder?.recordWorkerRequests?.(workerRequests),
+  );
 
   const workerResults = await Promise.all(
     workerRequests.map(async (workerRequest): Promise<WorkerResult> => {
-      emit("worker.invocation.started", undefined, workerRequest.workerId);
+      await emit(
+        "worker.invocation.started",
+        undefined,
+        workerRequest.workerId,
+      );
       try {
         const result = await options.runner.runWorker(workerRequest);
-        emit(
+        await emit(
           "worker.invocation.completed",
           { status: result.status },
           workerRequest.workerId,
@@ -76,7 +97,7 @@ export async function runPanel(
         return result;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        emit(
+        await emit(
           "worker.invocation.failed",
           { error: message },
           workerRequest.workerId,
@@ -84,6 +105,9 @@ export async function runPanel(
         return failedWorkerResult(workerRequest, message);
       }
     }),
+  );
+  await recordSafely(recorderWarnings, () =>
+    recorder?.recordWorkerResults?.(workerResults),
   );
 
   const synthesisResult = await runSynthesisIfAllowed(
@@ -96,9 +120,12 @@ export async function runPanel(
   );
   warnings.push(...(synthesisResult.warnings ?? []));
   errors.push(...(synthesisResult.errors ?? []));
+  await recordSafely(recorderWarnings, () =>
+    recorder?.recordSynthesis?.(synthesisResult),
+  );
 
   const complianceEventIndex = events.length;
-  emit("compliance.evaluated");
+  await emit("compliance.evaluated");
   const finalComplianceSummary = evaluateCompliance({
     panelRequest: request,
     workerRequests,
@@ -107,8 +134,11 @@ export async function runPanel(
     synthesisPresent: synthesisResult.synthesis.length > 0,
   });
   events[complianceEventIndex].data = { tier: finalComplianceSummary.tier };
+  await recordSafely(recorderWarnings, () =>
+    recorder?.recordCompliance?.(finalComplianceSummary),
+  );
 
-  return {
+  const result: PanelResult = {
     panelRunId: request.panelRunId,
     status: determinePanelStatus(
       workerResults,
@@ -120,9 +150,22 @@ export async function runPanel(
     finalAnswer: synthesisResult.finalAnswer,
     complianceSummary: finalComplianceSummary,
     events: request.provenancePolicy?.eventLog === false ? undefined : events,
-    warnings: [...warnings, ...(finalComplianceSummary.notes ?? [])],
+    warnings: buildWarnings(
+      warnings,
+      finalComplianceSummary.notes,
+      recorderWarnings,
+    ),
     errors: errors.length === 0 ? undefined : errors,
   };
+  await recordSafely(recorderWarnings, () => recorder?.recordResult?.(result));
+  if (recorderWarnings.length > 0) {
+    result.warnings = buildWarnings(
+      warnings,
+      finalComplianceSummary.notes,
+      recorderWarnings,
+    );
+  }
+  return result;
 }
 
 async function runSynthesisIfAllowed(
@@ -131,11 +174,7 @@ async function runSynthesisIfAllowed(
   workerRequests: WorkerRequest[],
   workerResults: WorkerResult[],
   events: ProvenanceEvent[],
-  emit: (
-    type: ProvenanceEventType,
-    data?: Record<string, unknown>,
-    workerId?: string,
-  ) => void,
+  emit: EmitEvent,
 ): Promise<SynthesisResult> {
   const okWorkerResults = workerResults.filter(
     (result) => result.status === "ok",
@@ -147,15 +186,11 @@ async function runSynthesisIfAllowed(
   if (!canSynthesize) {
     return {
       synthesis: "",
-      errors: [
-        okWorkerResults.length === 0
-          ? "Synthesis skipped because no workers returned ok."
-          : "Synthesis skipped because partial synthesis is disabled and at least one worker failed.",
-      ],
+      errors: [skippedSynthesisReason(okWorkerResults.length)],
     };
   }
 
-  emit("synthesis.started", {
+  await emit("synthesis.started", {
     workerResultIds: workerResults.map((result) => result.workerId),
   });
   try {
@@ -163,15 +198,43 @@ async function runSynthesisIfAllowed(
       panelRequest: request,
       workerRequests,
       workerResults,
-      events,
+      events: [...events],
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { synthesis: "", errors: [message] };
   } finally {
-    emit("synthesis.completed", {
+    await emit("synthesis.completed", {
       workerResultIds: workerResults.map((result) => result.workerId),
     });
+  }
+}
+
+function skippedSynthesisReason(okWorkerCount: number): string {
+  if (okWorkerCount === 0) {
+    return "Synthesis skipped because no workers returned ok.";
+  }
+
+  return "Synthesis skipped because partial synthesis is disabled and at least one worker failed.";
+}
+
+function buildWarnings(
+  warnings: string[],
+  complianceNotes: string[] | undefined,
+  recorderWarnings: string[],
+): string[] {
+  return [...warnings, ...(complianceNotes ?? []), ...recorderWarnings];
+}
+
+async function recordSafely(
+  warnings: string[],
+  record: () => Promise<void> | void | undefined,
+): Promise<void> {
+  try {
+    await record();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    warnings.push(`Run recorder failed: ${message}`);
   }
 }
 

@@ -1,0 +1,306 @@
+{
+  "$ref": "#/definitions/PanelRequest",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ContextManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "digest"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "references": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "label",
+              "digest"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "renderedPromptHash": {
+          "type": "string"
+        },
+        "sharedContextHash": {
+          "type": "string"
+        },
+        "userTaskHash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "renderedPromptHash",
+        "sharedContextHash"
+      ],
+      "type": "object"
+    },
+    "FindingKind": {
+      "enum": [
+        "consensus",
+        "contradictions",
+        "partial-coverage",
+        "unique-insights",
+        "blind-spots"
+      ],
+      "type": "string"
+    },
+    "HarnessKind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "enum": [
+            "opencode",
+            "cursor-cli",
+            "claude-code",
+            "pi"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "HarnessSelectionPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "availableHarnesses": {
+          "items": {
+            "$ref": "#/definitions/HarnessKind"
+          },
+          "type": "array"
+        },
+        "requiredCapabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "userPolicy": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "ModelPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fallbacks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PanelRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contextManifest": {
+          "$ref": "#/definitions/ContextManifest"
+        },
+        "harnessSelectionPolicy": {
+          "$ref": "#/definitions/HarnessSelectionPolicy"
+        },
+        "panelRunId": {
+          "type": "string"
+        },
+        "panelSpec": {
+          "$ref": "#/definitions/PanelSpec"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "provenancePolicy": {
+          "$ref": "#/definitions/ProvenancePolicy"
+        },
+        "sharedContext": {
+          "$ref": "#/definitions/SharedContext"
+        },
+        "synthesisContract": {
+          "$ref": "#/definitions/SynthesisContract"
+        }
+      },
+      "required": [
+        "panelRunId",
+        "prompt",
+        "sharedContext",
+        "contextManifest",
+        "panelSpec",
+        "harnessSelectionPolicy",
+        "synthesisContract"
+      ],
+      "type": "object"
+    },
+    "PanelSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "modelPreferences": {
+          "items": {
+            "$ref": "#/definitions/ModelPreference"
+          },
+          "type": "array"
+        },
+        "workerCount": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "workerCount"
+      ],
+      "type": "object"
+    },
+    "ProvenancePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "eventLog": {
+          "type": "boolean"
+        },
+        "includeModelMetadata": {
+          "type": "boolean"
+        },
+        "includeToolLogs": {
+          "type": "boolean"
+        },
+        "record": {
+          "type": "boolean"
+        },
+        "redactSecrets": {
+          "type": "boolean"
+        },
+        "requireMinimumEventsForFullCompliance": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "record",
+        "redactSecrets",
+        "eventLog",
+        "requireMinimumEventsForFullCompliance",
+        "includeToolLogs",
+        "includeModelMetadata"
+      ],
+      "type": "object"
+    },
+    "SharedContext": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "digest": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "references": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "label"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "SynthesisContract": {
+      "additionalProperties": false,
+      "properties": {
+        "allowPartial": {
+          "type": "boolean"
+        },
+        "format": {
+          "enum": [
+            "markdown",
+            "json"
+          ],
+          "type": "string"
+        },
+        "requireAttribution": {
+          "type": "boolean"
+        },
+        "requiredFindings": {
+          "items": {
+            "$ref": "#/definitions/FindingKind"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requiredFindings",
+        "format",
+        "allowPartial",
+        "requireAttribution"
+      ],
+      "type": "object"
+    }
+  }
+}
