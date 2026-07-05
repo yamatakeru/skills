@@ -229,7 +229,9 @@ recorder refuses to write otherwise without an explicit override.
 
 1. Stronger compliance evidence toward `full` tier: tool-policy proof for
    OpenCode workers, session/tool-event capture, SDK transports where they
-   provide better evidence.
+   provide better evidence. SDK transport must also handle worker permission
+   requests programmatically; the CLI path's auto-reject currently aborts
+   the agent loop and drops the worker (see milestone 6).
 2. CI automation of the smoke matrix (needs credential management and paid
    calls in CI; deferred by the acceptance criteria).
 3. Consider removing the emergency internal fallback once the skill matures
@@ -241,16 +243,25 @@ recorder refuses to write otherwise without an explicit override.
 5. Judge-quality comparison round: same task with judge vs parent-agent
    synthesis to quantify the default's value (upstream DRACO methodology as
    reference).
-6. Investigate OpenCode adapter invalid-output for cheap models: in two
-   recorded dogfooding panels (2026-07-05, `--effort xhigh`),
-   `opencode-go/deepseek-v4-flash` failed 2/2 and
-   `xai/grok-composer-2.5-fast` failed 1/2 with the same error
-   ("opencode returned invalid JSON output: no result text found"), while
-   `openai/gpt-5.5` succeeded 2/2. The identical error signature suggests an
-   adapter/model output-format incompatibility rather than model flakiness.
-   Same runs also produced the first live judge-quote verification warning
-   (ADR 0024 substring check caught a fabricated quote); artifacts are under
-   `.fusion-runs/`.
+6. Fix OpenCode worker dropouts caused by permission auto-reject aborting
+   the agent loop. Root cause diagnosed 2026-07-06 by replaying the recorded
+   worker-2 prompt from `.fusion-runs/fusion-e7eb8340-*`: when a worker's
+   tool call is permission-rejected (here an `external_directory` read of a
+   path mentioned in the shared context), headless `opencode run` ends the
+   turn at `step_finish reason: tool-calls` without a final text step and
+   exits 0, so the adapter reports "opencode returned invalid JSON output:
+   no result text found". Controls: a successful tool call continues to a
+   text-bearing second step; a single rejected call reproduces the dropout
+   deterministically. This corrects the earlier output-format-incompatibility
+   hypothesis; model dependence (`deepseek-v4-flash` 2/2, `grok-composer-2.5-fast`
+   1/2 failed, `gpt-5.5` 0/2) reflects only how eagerly each model reads
+   external paths. The durable fix belongs in the SDK-transport work
+   (milestone 1): handle permission requests programmatically — pre-grant
+   the read-only policy or return denials to the model as structured tool
+   errors so the loop continues. Avoiding external-path mentions in worker
+   context is a stopgap only. The same dogfooding runs also produced the
+   first live judge-quote verification warning (ADR 0024 substring check
+   caught a fabricated quote); artifacts are under `.fusion-runs/`.
 
 ## Useful Commands
 
