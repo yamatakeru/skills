@@ -6,7 +6,7 @@ This handoff captures the state of the Fusion runtime after the usable
 milestone, the worker-investigation round, and the harness-backed judge round
 (judge as default synthesizer, upstream-superset judge output contract,
 per-module test split, simplify cleanup). The design authority is
-`docs/fusion/` (spec, domain model, glossary, ADR 0001-0024).
+`docs/fusion/` (spec, domain model, glossary, ADR 0001-0025).
 
 ## Current Status: Harness-Backed Judge Round Complete
 
@@ -241,6 +241,16 @@ recorder refuses to write otherwise without an explicit override.
 5. Judge-quality comparison round: same task with judge vs parent-agent
    synthesis to quantify the default's value (upstream DRACO methodology as
    reference).
+6. Investigate OpenCode adapter invalid-output for cheap models: in two
+   recorded dogfooding panels (2026-07-05, `--effort xhigh`),
+   `opencode-go/deepseek-v4-flash` failed 2/2 and
+   `xai/grok-composer-2.5-fast` failed 1/2 with the same error
+   ("opencode returned invalid JSON output: no result text found"), while
+   `openai/gpt-5.5` succeeded 2/2. The identical error signature suggests an
+   adapter/model output-format incompatibility rather than model flakiness.
+   Same runs also produced the first live judge-quote verification warning
+   (ADR 0024 substring check caught a fabricated quote); artifacts are under
+   `.fusion-runs/`.
 
 ## Useful Commands
 

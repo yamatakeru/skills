@@ -1,8 +1,9 @@
 ---
 name: fusion
 description: >-
-  Fusion-inspired blind-panel deliberation for complex research, architecture,
-  design review, code review, and other high-stakes or ambiguous tasks. The
+  Fusion-inspired blind-panel deliberation for comparison-shaped tasks—deep
+  research, architecture, design review, code review, and other work where
+  independent perspectives are likely to change or sharpen the conclusion. The
   bundled Bun CLI runs neutral same-prompt workers, then a harness-backed judge
   compares worker outputs so the parent agent can write the final answer.
 license: MIT
@@ -23,8 +24,13 @@ Fusion is a skill-level blind-panel deliberation protocol inspired by
 OpenRouter Fusion's panel-and-synthesis workflow. It is not an OpenRouter
 Fusion API wrapper and does not call the OpenRouter Fusion API directly.
 
-Use Fusion for ambiguous, high-stakes, open-ended, or explicitly requested
-panel/ensemble/fusion tasks. Answer trivial or narrow tasks directly.
+Use Fusion for comparison-shaped tasks—deep research, design exploration,
+review-angle sweeps, and other ambiguous or open-ended work where independent
+perspectives are likely to change or sharpen the conclusion—or when a panel is
+explicitly requested. Match the panel to the stakes: cheap-model panels make
+casual use reasonable for exploratory work, while flagship-mixed panels suit
+high-stakes or hard-to-reverse decisions. Answer trivial or narrow tasks
+directly.
 
 ## Canonical Execution Path
 
