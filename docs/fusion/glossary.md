@@ -177,11 +177,47 @@ A partial runtime that validates contracts or one harness path but is not yet th
 usable Fusion skill. In the current plan, OpenCode-only execution is a preview
 until Claude Code execution also satisfies the same worker contract.
 
+## Transport
+
+The adapter axis (`cli` or `sdk`) naming which surface of a harness the
+worker runner consumes. It is defined by the protocol surface and the
+evidence it yields, not by process boundaries. Transport is selected at
+composition time (`--transport`, default `sdk`) uniformly for workers and
+judge, with no automatic fallback between transports, and the transport
+actually used is recorded in the harness evidence (ADR 0028).
+
 ## SDK Transport
 
-A harness invocation path that uses a harness SDK or API rather than plain CLI
-stdout. SDK transport is preferred for headless adapters when it provides better
-session, permission, event, usage, and metadata evidence.
+The default transport: the adapter consumes the harness's structured machine
+protocol — the OpenCode server API (REST + SSE against a self-spawned,
+run-scoped `opencode serve`) or the Claude Code stream-json agent protocol —
+implemented with zero npm runtime dependencies. It provides observed model,
+session id, usage, tool events, permission outcomes, and effective tool
+policy evidence that plain CLI stdout cannot (ADR 0028).
+
+## CLI Transport
+
+The legacy plain-stdout adapters, retained only under an explicit
+`--transport cli` opt-in. On OpenCode this path cannot enforce or prove tool
+policy (ADR 0022) and remains degraded-compliance; there is no silent
+fallback onto it (ADR 0028).
+
+## Read Root
+
+A directory the parent explicitly declares readable (recursively) for a
+panel run, beyond the workspace: `environment.readRoots` in the worker
+contract, repeatable `--read-root` on the CLI. Read roots are part of the
+pre-granted permission set; external paths outside them are denied with a
+structured error the worker can react to (ADR 0029).
+
+## Permission Pre-Decision
+
+The permission-handling design in which every tool call is decided before
+the run — pre-granted (read-only policy, read roots, web tools) or denied as
+a structured, model-visible tool error — so headless approval asks are never
+entered. It is the durable fix for the permission-abort dropout class: an
+out-of-policy request degrades the answer visibly instead of dropping the
+worker (ADR 0029).
 
 ## Capability-Based Harness Selection
 
