@@ -1,7 +1,6 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-06 (upstream fidelity round — docs complete, implementation
-pending)
+Date: 2026-07-06 (upstream fidelity round — complete)
 
 This handoff captures the state of the Fusion runtime after the usable
 milestone, the worker-investigation round, the harness-backed judge round
@@ -10,7 +9,7 @@ per-module test split, simplify cleanup), and the docs half of the upstream
 fidelity round. The design authority is `docs/fusion/` (spec, domain model,
 glossary, ADR 0001-0027).
 
-## Upstream Fidelity Round (2026-07-06): Docs Done, Implementation Pending
+## Upstream Fidelity Round (2026-07-06): Complete
 
 Trigger: upstream re-research plus a recorded cheap-panel Fusion run
 (gpt-5.5 / deepseek-v4-flash / grok-composer-2.5, judge fable, artifacts under
@@ -44,24 +43,36 @@ Docs updated in this round: ADR 0026/0027 added; ADR 0023/0024 status
 back-references; spec (Reference Synthesis Policy), glossary (Harness-Backed
 Judge, Judge Analysis), domain model (Synthesis).
 
-Remaining work in this round (stopped deliberately before implementation for
-a manual context compaction):
+Implementation (Codex, same day): `normalizeFinding` accepts the two
+upstream finding shapes via section-scoped exact-key checks, `normalizeStance`
+promotes a stance `model` to attribution when no explicit attribution is
+present, and model names resolve against `WorkerResult.modelUsed` through an
+exact-only ladder — raw exact, case-insensitive exact, provider-prefix-
+stripped bare-name exact. Unknown or ambiguous names degrade to unattributed
+with a warning. Worker model candidates are computed once per validation.
 
-1. Delegate to Codex: implement ADR 0027 in
-   `skills/fusion/lib/judge-analysis.ts` — extend `normalizeFinding` to
-   accept the two upstream finding shapes, extend `normalizeStance` to
-   promote `model` to attribution, add the model-name→workerId resolution
-   helper using the `workerResults` already passed to
-   `parseJudgeAnalysisOutput`, warnings per ADR 0027. Add
-   `test/judge-analysis.test.ts` fixtures: the three upstream shapes pass
-   (with resolved attribution), ambiguous/unknown model names warn without
-   failing, unrelated object shapes still fail.
-2. CodeRabbit review on the diff (AGENTS.md requires at least one per
-   implementation task) plus a simplify pass consideration.
-3. Verify: `bun test`, `bun run typecheck:fusion`, `bun run schema:fusion`
-   (expect no schema diff), then one cheap `--record` live smoke to confirm
-   the default path is unaffected (upstream shapes themselves are covered by
-   unit fixtures only).
+Review round: CodeRabbit reported zero findings on the initial diff; per the
+comparison-shaped-task policy the zero-findings verdict was re-examined by a
+recorded cheap Fusion panel (gpt-5.5 + grok-composer-2.5-fast effective;
+deepseek dropped with invalid output), which unanimously overturned it. The
+panel's confirmed Warning — a bidirectional containment tier silently
+misattributed partial model names (`gpt-4` → `openai/gpt-4-turbo`) — was
+fixed by removing the containment tier, plus the agreed simplification
+(candidate hoisting). Skeleton `{ text }` objects keep tolerating extra keys:
+ruled a pre-existing ADR 0024 tolerance, not an ADR 0027 boundary violation.
+CodeRabbit re-ran clean on the final diff.
+
+Verification: `bun test` 63 pass across 11 files (8 new fixtures),
+`bun run typecheck:fusion` green, `bun run schema:fusion` semantically
+no-diff (the regenerated files differ only in JSON formatting from the
+checked-in prettier-style output — pre-existing toolchain quirk, schemas
+restored to HEAD).
+
+Loose ends noted for later rounds: the CLAUDE.md shorthand `-m
+gpt,deepseek,composer` is not accepted by the model alias table (only
+`openai-flagship`/`budget-smart` aliases exist; panels were run with
+provider-qualified IDs), and deepseek-v4-flash-free produced invalid output
+in this round's panel (cheap-worker dropout class, disclosed in the report).
 
 ## Current Status: Harness-Backed Judge Round Complete
 
@@ -273,9 +284,11 @@ recorder refuses to write otherwise without an explicit override.
 - The judge runs with no tools — a deliberate, provisional divergence from
   upstream's web-tools judge with a mandatory re-decision when the SDK
   transport lands (ADR 0026).
-- Until the ADR 0027 implementation lands, judge core validation hard-fails
-  faithful upstream-shaped `partial_coverage`/`unique_insights` items and
-  silently drops stance `model` attribution.
+- Judge model-name attribution resolution is exact-only (raw, then
+  case-insensitive, then provider-prefix-stripped bare name); partial names
+  like `gpt-4` against `openai/gpt-4-turbo` degrade to unattributed with a
+  warning by design — a containment tier was implemented and then removed
+  after a review panel showed it silently misattributes model variants.
 - Judge quote verification is substring matching; paraphrased quotes surface
   as warnings even when semantically faithful.
 - Forced per-worker harness routing travels through

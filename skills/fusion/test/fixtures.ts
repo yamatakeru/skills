@@ -128,6 +128,17 @@ export function okWorkerResult(
   };
 }
 
+export function okWorkerResultWithModel(
+  workerId: string,
+  modelUsed: string,
+): WorkerResult {
+  const request = workerRequest();
+  return {
+    ...okWorkerResult({ ...request, workerId }),
+    modelUsed,
+  };
+}
+
 export function judgeRunner(
   options: {
     judgeOutput?: string;

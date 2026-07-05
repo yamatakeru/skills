@@ -55,7 +55,7 @@ export function parseJudgeAnalysisOutput(
   }
 
   const warnings: string[] = [];
-  const analysis = validateJudgeAnalysis(parsed, warnings);
+  const analysis = validateJudgeAnalysis(parsed, warnings, workerResults);
   warnings.push(...verifyJudgeQuotes(analysis, workerResults));
   return { analysis, warnings };
 }
@@ -63,8 +63,10 @@ export function parseJudgeAnalysisOutput(
 export function validateJudgeAnalysis(
   value: unknown,
   warnings: string[] = [],
+  workerResults: WorkerResult[] = [],
 ): JudgeAnalysis {
   const record = expectRecord(value, "analysis");
+  const modelCandidates = workerModelCandidates(workerResults);
   const keys = Object.keys(record);
   const unexpectedKeys = keys.filter(
     (key) => !judgeCoreKeys.includes(key as JudgeCoreKey),
@@ -88,7 +90,7 @@ export function validateJudgeAnalysis(
   const findings = Object.fromEntries(
     judgeFindingSections.map(({ key }) => [
       key,
-      normalizeFindingArray(record[key], key, warnings),
+      normalizeFindingArray(record[key], key, warnings, modelCandidates, key),
     ]),
   ) as Pick<JudgeAnalysis, JudgeFindingKey>;
   return {
@@ -97,6 +99,7 @@ export function validateJudgeAnalysis(
       record.contradictions,
       "contradictions",
       warnings,
+      modelCandidates,
     ),
     partial_coverage: findings.partial_coverage,
     unique_insights: findings.unique_insights,
@@ -174,12 +177,20 @@ function normalizeFindingArray(
   value: unknown,
   path: string,
   warnings: string[],
+  modelCandidates: WorkerModelCandidate[],
+  sectionKey: JudgeFindingKey,
 ): JudgeFinding[] {
   if (!Array.isArray(value)) {
     throw new JudgeAnalysisValidationError(`${path} must be an array.`);
   }
   return value.map((item, index) =>
-    normalizeFinding(item, `${path}[${index}]`, warnings),
+    normalizeFinding(
+      item,
+      `${path}[${index}]`,
+      warnings,
+      modelCandidates,
+      sectionKey,
+    ),
   );
 }
 
@@ -187,25 +198,101 @@ function normalizeFinding(
   value: unknown,
   path: string,
   warnings: string[],
+  modelCandidates: WorkerModelCandidate[],
+  sectionKey: JudgeFindingKey,
 ): JudgeFinding {
   if (typeof value === "string") {
     return value;
   }
   const record = expectRecord(value, path);
-  if (typeof record.text !== "string") {
-    throw new JudgeAnalysisValidationError(
-      `${path} must be a string or an object with text.`,
+  if (typeof record.text === "string") {
+    const finding: JudgeAnnotatedFinding = { text: record.text };
+    const attribution = optionalAttribution(record.attribution, path, warnings);
+    if (attribution !== undefined) {
+      finding.attribution = attribution;
+    }
+    const quotes = optionalQuotes(record.quotes, path, warnings);
+    if (quotes !== undefined) {
+      finding.quotes = quotes;
+    }
+    return finding;
+  }
+
+  if (
+    sectionKey === "partial_coverage" &&
+    hasExactKeys(record, ["models", "point"])
+  ) {
+    return normalizeUpstreamPartialCoverageFinding(
+      record,
+      path,
+      warnings,
+      modelCandidates,
     );
   }
 
-  const finding: JudgeAnnotatedFinding = { text: record.text };
-  const attribution = optionalAttribution(record.attribution, path, warnings);
+  if (
+    sectionKey === "unique_insights" &&
+    hasExactKeys(record, ["model", "insight"])
+  ) {
+    return normalizeUpstreamUniqueInsightFinding(
+      record,
+      path,
+      warnings,
+      modelCandidates,
+    );
+  }
+
+  throw new JudgeAnalysisValidationError(
+    `${path} must be a string or an object with text.`,
+  );
+}
+
+function normalizeUpstreamPartialCoverageFinding(
+  record: Record<string, unknown>,
+  path: string,
+  warnings: string[],
+  modelCandidates: WorkerModelCandidate[],
+): JudgeFinding {
+  const models = expectStringArray(record.models, `${path}.models`);
+  if (typeof record.point !== "string") {
+    throw new JudgeAnalysisValidationError(`${path}.point must be a string.`);
+  }
+
+  const finding: JudgeAnnotatedFinding = { text: record.point };
+  const attribution = resolveModelAttributions(
+    models,
+    `${path}.models`,
+    warnings,
+    modelCandidates,
+  );
   if (attribution !== undefined) {
     finding.attribution = attribution;
   }
-  const quotes = optionalQuotes(record.quotes, path, warnings);
-  if (quotes !== undefined) {
-    finding.quotes = quotes;
+  return finding;
+}
+
+function normalizeUpstreamUniqueInsightFinding(
+  record: Record<string, unknown>,
+  path: string,
+  warnings: string[],
+  modelCandidates: WorkerModelCandidate[],
+): JudgeFinding {
+  if (typeof record.model !== "string") {
+    throw new JudgeAnalysisValidationError(`${path}.model must be a string.`);
+  }
+  if (typeof record.insight !== "string") {
+    throw new JudgeAnalysisValidationError(`${path}.insight must be a string.`);
+  }
+
+  const finding: JudgeAnnotatedFinding = { text: record.insight };
+  const attribution = resolveModelAttribution(
+    record.model,
+    `${path}.model`,
+    warnings,
+    modelCandidates,
+  );
+  if (attribution !== undefined) {
+    finding.attribution = [attribution];
   }
   return finding;
 }
@@ -214,12 +301,18 @@ function normalizeContradictions(
   value: unknown,
   path: string,
   warnings: string[],
+  modelCandidates: WorkerModelCandidate[],
 ): JudgeContradiction[] {
   if (!Array.isArray(value)) {
     throw new JudgeAnalysisValidationError(`${path} must be an array.`);
   }
   return value.map((item, index) =>
-    normalizeContradiction(item, `${path}[${index}]`, warnings),
+    normalizeContradiction(
+      item,
+      `${path}[${index}]`,
+      warnings,
+      modelCandidates,
+    ),
   );
 }
 
@@ -227,6 +320,7 @@ function normalizeContradiction(
   value: unknown,
   path: string,
   warnings: string[],
+  modelCandidates: WorkerModelCandidate[],
 ): JudgeContradiction {
   const record = expectRecord(value, path);
   if (typeof record.topic !== "string") {
@@ -234,7 +328,12 @@ function normalizeContradiction(
   }
   const contradiction: JudgeContradiction = {
     topic: record.topic,
-    stances: normalizeStances(record.stances, `${path}.stances`, warnings),
+    stances: normalizeStances(
+      record.stances,
+      `${path}.stances`,
+      warnings,
+      modelCandidates,
+    ),
   };
 
   const attribution = optionalAttribution(record.attribution, path, warnings);
@@ -252,10 +351,11 @@ function normalizeStances(
   value: unknown,
   path: string,
   warnings: string[],
+  modelCandidates: WorkerModelCandidate[],
 ): JudgeStances {
   if (Array.isArray(value)) {
     return value.map((stance, index) =>
-      normalizeStance(stance, `${path}[${index}]`, warnings),
+      normalizeStance(stance, `${path}[${index}]`, warnings, modelCandidates),
     );
   }
 
@@ -276,6 +376,7 @@ function normalizeStance(
   value: unknown,
   path: string,
   warnings: string[],
+  modelCandidates: WorkerModelCandidate[],
 ): JudgeStance {
   if (typeof value === "string") {
     return value;
@@ -298,12 +399,168 @@ function normalizeStance(
   const attribution = optionalAttribution(record.attribution, path, warnings);
   if (attribution !== undefined) {
     stance.attribution = attribution;
+  } else if (
+    typeof record.workerId !== "string" &&
+    typeof record.model === "string"
+  ) {
+    const modelAttribution = resolveModelAttribution(
+      record.model,
+      `${path}.model`,
+      warnings,
+      modelCandidates,
+    );
+    if (modelAttribution !== undefined) {
+      stance.attribution = [modelAttribution];
+    }
   }
   const quotes = optionalQuotes(record.quotes, path, warnings);
   if (quotes !== undefined) {
     stance.quotes = quotes;
   }
   return stance;
+}
+
+interface WorkerModelCandidate {
+  workerId: string;
+  modelUsed: string;
+  normalizedModel: string;
+  normalizedBareModel: string;
+}
+
+function resolveModelAttributions(
+  modelNames: string[],
+  path: string,
+  warnings: string[],
+  candidates: WorkerModelCandidate[],
+): JudgeAttribution[] | undefined {
+  const attribution = modelNames
+    .map((modelName, index) =>
+      resolveModelAttribution(
+        modelName,
+        `${path}[${index}]`,
+        warnings,
+        candidates,
+      ),
+    )
+    .filter((item): item is JudgeAttribution => item !== undefined);
+  const uniqueAttribution = uniqueJudgeAttributions(attribution);
+  return uniqueAttribution.length === 0 ? undefined : uniqueAttribution;
+}
+
+function resolveModelAttribution(
+  modelName: string,
+  path: string,
+  warnings: string[],
+  candidates: WorkerModelCandidate[],
+): JudgeAttribution | undefined {
+  const normalizedModel = normalizeModelName(modelName);
+  const normalizedBareModel = bareModelName(normalizedModel);
+  const matchGroups = [
+    candidates.filter((candidate) => candidate.modelUsed === modelName),
+    candidates.filter(
+      (candidate) => candidate.normalizedModel === normalizedModel,
+    ),
+    normalizedBareModel.length === 0
+      ? []
+      : candidates.filter(
+          (candidate) =>
+            candidate.normalizedBareModel === normalizedBareModel,
+        ),
+  ];
+
+  for (const matches of matchGroups) {
+    if (matches.length === 1) {
+      return candidateAttribution(matches[0]);
+    }
+    if (matches.length > 1) {
+      warnings.push(
+        `${path} was ignored because model "${modelName}" matched multiple workers: ${matches
+          .map((match) => match.workerId)
+          .join(", ")}.`,
+      );
+      return undefined;
+    }
+  }
+
+  warnings.push(
+    `${path} was ignored because model "${modelName}" did not match any worker modelUsed value.`,
+  );
+  return undefined;
+}
+
+function workerModelCandidates(
+  workerResults: WorkerResult[],
+): WorkerModelCandidate[] {
+  return workerResults
+    .flatMap((worker) => {
+      if (typeof worker.modelUsed !== "string") {
+        return [];
+      }
+      const normalizedModel = normalizeModelName(worker.modelUsed);
+      if (normalizedModel.length === 0) {
+        return [];
+      }
+      return {
+        workerId: worker.workerId,
+        modelUsed: worker.modelUsed,
+        normalizedModel,
+        normalizedBareModel: bareModelName(normalizedModel),
+      };
+    });
+}
+
+function candidateAttribution(
+  candidate: WorkerModelCandidate,
+): JudgeAttribution {
+  return {
+    workerId: candidate.workerId,
+    modelUsed: candidate.modelUsed,
+  };
+}
+
+function uniqueJudgeAttributions(
+  attribution: JudgeAttribution[],
+): JudgeAttribution[] {
+  const seen = new Set<string>();
+  return attribution.filter((item) => {
+    const key = `${item.workerId}\0${item.modelUsed ?? ""}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizeModelName(modelName: string): string {
+  return modelName.trim().toLowerCase();
+}
+
+function bareModelName(normalizedModelName: string): string {
+  const separatorIndex = normalizedModelName.lastIndexOf("/");
+  return separatorIndex === -1
+    ? normalizedModelName
+    : normalizedModelName.slice(separatorIndex + 1);
+}
+
+function expectStringArray(value: unknown, path: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new JudgeAnalysisValidationError(
+      `${path} must be an array of strings.`,
+    );
+  }
+  return value;
+}
+
+function hasExactKeys(
+  record: Record<string, unknown>,
+  expectedKeys: string[],
+): boolean {
+  const keys = Object.keys(record);
+  return (
+    keys.length === expectedKeys.length &&
+    expectedKeys.every((key) => key in record)
+  );
 }
 
 function optionalAttribution(

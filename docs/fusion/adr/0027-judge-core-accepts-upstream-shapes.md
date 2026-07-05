@@ -7,7 +7,10 @@ Accepted
 Amends ADR 0024: corrects its upstream schema description and restores its
 stated fidelity property at the validation boundary.
 
-Implementation pending as of 2026-07-06 (see the runtime handoff).
+Implemented 2026-07-06. The best-effort resolution ladder is exact-only
+(raw exact, case-insensitive exact, provider-prefix-stripped bare-name
+exact); a containment tier was reviewed out because it silently
+misattributed partial model names to different model variants.
 
 ## Context
 
