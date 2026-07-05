@@ -4,6 +4,15 @@
 
 Accepted
 
+Amended by ADR 0026: the no-tools judge decision below is now recorded as a
+deliberate, provisional divergence — upstream grants the judge the panel's
+web tools, a fact this ADR's context did not record.
+
+Amended by ADR 0027: this ADR's upstream schema description was inaccurate —
+upstream `partial_coverage` and `unique_insights` items carry model
+attribution, not plain strings — and core validation now accepts the
+documented upstream shapes so the fidelity consequence below holds.
+
 ## Context
 
 Upstream OpenRouter Fusion publishes the judge's output schema (server-tool

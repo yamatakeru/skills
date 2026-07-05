@@ -205,10 +205,19 @@ The judge output contract is a superset of the published upstream schema
 `topic`/`stances`, `partial_coverage`, `unique_insights`, `blind_spots`) is
 required and validated after tolerant extraction; worker attribution on all
 sections and verbatim supporting quotes are optional additive extensions.
-Present quotes are verified by substring match against worker outputs, with
-mismatches recorded as warnings. The judge has no resolution field and runs
-with no tools; verification is layered as runtime quote matching plus the
-parent agent's own read-tool checks before it writes the final answer.
+Core validation also accepts exactly the documented upstream item shapes —
+`partial_coverage` `{models, point}`, `unique_insights` `{model, insight}`,
+contradiction stances `{model, stance}` — normalized into the internal
+analysis with best-effort worker attribution resolved against the panel's
+observed models; other object shapes still fail (ADR 0027). Present quotes
+are verified by substring match against worker outputs, with mismatches
+recorded as warnings. The judge has no resolution field and runs with no
+tools — a deliberate, provisional divergence from upstream, which grants the
+judge the panel's web tools; the divergence carries a mandatory re-decision
+once the SDK transport provides programmatic permission handling and
+enforceable judge tool policy, informed by a measured judge-quality
+comparison (ADR 0026). Verification is layered as runtime quote matching plus
+the parent agent's own read-tool checks before it writes the final answer.
 
 Judge failure (invocation error, timeout, or invalid core output) follows
 upstream semantics: the panel result stays `ok`, the analysis is omitted, the

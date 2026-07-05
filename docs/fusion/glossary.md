@@ -227,7 +227,9 @@ adapter path, that compares completed worker outputs without merging them and
 returns the structured judge analysis. The judge model defaults to the parent
 model and is overridable via `--judge-model`. It is not subject to worker
 blindness because synthesis occurs after worker results are returned, but
-recursion denial still applies, it runs with no tools, and it records its own
+recursion denial still applies, it runs with no tools — a deliberate,
+provisional divergence from upstream's web-tools judge, with a mandatory
+re-decision once the SDK transport lands (ADR 0026) — and it records its own
 provenance and evidence (ADR 0023/0024).
 
 ## Judge Analysis
@@ -236,9 +238,11 @@ The structured JSON comparison the judge returns: the upstream five-key core
 (`consensus`, `contradictions` with `topic` and `stances`,
 `partial_coverage`, `unique_insights`, `blind_spots`) required for validity,
 plus optional additive extensions (worker attribution on all sections and
-verbatim supporting quotes, runtime-verified by substring match). It contains
-no resolution or verdict; the parent agent writes the final answer from it
-(ADR 0024).
+verbatim supporting quotes, runtime-verified by substring match). Core
+validation accepts the documented upstream item shapes as well, normalized
+with best-effort worker attribution; other object shapes still fail
+(ADR 0027). It contains no resolution or verdict; the parent agent writes the
+final answer from it (ADR 0024).
 
 ## Synthesizer Preference
 

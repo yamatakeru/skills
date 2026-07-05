@@ -1,12 +1,67 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-05 (harness-backed judge round)
+Date: 2026-07-06 (upstream fidelity round — docs complete, implementation
+pending)
 
 This handoff captures the state of the Fusion runtime after the usable
-milestone, the worker-investigation round, and the harness-backed judge round
+milestone, the worker-investigation round, the harness-backed judge round
 (judge as default synthesizer, upstream-superset judge output contract,
-per-module test split, simplify cleanup). The design authority is
-`docs/fusion/` (spec, domain model, glossary, ADR 0001-0025).
+per-module test split, simplify cleanup), and the docs half of the upstream
+fidelity round. The design authority is `docs/fusion/` (spec, domain model,
+glossary, ADR 0001-0027).
+
+## Upstream Fidelity Round (2026-07-06): Docs Done, Implementation Pending
+
+Trigger: upstream re-research plus a recorded cheap-panel Fusion run
+(gpt-5.5 / deepseek-v4-flash / grok-composer-2.5, judge fable, artifacts under
+`.fusion-runs/`) re-examining the no-tools judge. Two decisions were grilled
+and recorded:
+
+- ADR 0026: the no-tools judge is kept as a deliberate, provisional
+  divergence — upstream grants the judge `web_search`/`web_fetch` on both
+  panel and judge calls, a fact ADR 0023/0024 had not recorded. The
+  infrastructure rationales (permission-abort dropout risk, opencode tool
+  policy unenforceable) expire with the SDK transport (milestone 1), which
+  triggers a mandatory re-decision informed by a measured tools-on/tools-off
+  judge-quality comparison (milestone 5). Split per-harness judge policy
+  rejected for the provisional period; tool-free grounding reserved as a
+  comparison-round arm. Upstream judge temperature 0 is recorded as an
+  unmappable harness limitation, not a no-tools justification.
+- ADR 0027: judge core validation must also accept exactly the documented
+  upstream item shapes — `partial_coverage` `{models, point}`,
+  `unique_insights` `{model, insight}`, contradiction stances
+  `{model, stance}` — normalized into the existing internal types with
+  best-effort attribution (model names resolved against
+  `WorkerResult.modelUsed`; unresolvable/ambiguous names degrade to
+  unattributed with a warning). ADR 0024's context misdescribed these
+  sections as plain string arrays, and the current validator hard-fails
+  faithful upstream shapes (`normalizeFinding` accepts only string/`{text}`)
+  and silently drops stance `model` attribution. Acceptance stays exactly
+  "our skeleton shapes ∪ documented upstream shapes"; everything else still
+  fails. Types unchanged, so `schema:fusion` should be a no-diff check.
+
+Docs updated in this round: ADR 0026/0027 added; ADR 0023/0024 status
+back-references; spec (Reference Synthesis Policy), glossary (Harness-Backed
+Judge, Judge Analysis), domain model (Synthesis).
+
+Remaining work in this round (stopped deliberately before implementation for
+a manual context compaction):
+
+1. Delegate to Codex: implement ADR 0027 in
+   `skills/fusion/lib/judge-analysis.ts` — extend `normalizeFinding` to
+   accept the two upstream finding shapes, extend `normalizeStance` to
+   promote `model` to attribution, add the model-name→workerId resolution
+   helper using the `workerResults` already passed to
+   `parseJudgeAnalysisOutput`, warnings per ADR 0027. Add
+   `test/judge-analysis.test.ts` fixtures: the three upstream shapes pass
+   (with resolved attribution), ambiguous/unknown model names warn without
+   failing, unrelated object shapes still fail.
+2. CodeRabbit review on the diff (AGENTS.md requires at least one per
+   implementation task) plus a simplify pass consideration.
+3. Verify: `bun test`, `bun run typecheck:fusion`, `bun run schema:fusion`
+   (expect no schema diff), then one cheap `--record` live smoke to confirm
+   the default path is unaffected (upstream shapes themselves are covered by
+   unit fixtures only).
 
 ## Current Status: Harness-Backed Judge Round Complete
 
@@ -215,6 +270,12 @@ recorder refuses to write otherwise without an explicit override.
 - The judge is one invocation of the parent-model-by-default; a weak judge
   model degrades analysis quality. Judge validation failures fall back
   gracefully but forfeit the structured analysis for that run.
+- The judge runs with no tools — a deliberate, provisional divergence from
+  upstream's web-tools judge with a mandatory re-decision when the SDK
+  transport lands (ADR 0026).
+- Until the ADR 0027 implementation lands, judge core validation hard-fails
+  faithful upstream-shaped `partial_coverage`/`unique_insights` items and
+  silently drops stance `model` attribution.
 - Judge quote verification is substring matching; paraphrased quotes surface
   as warnings even when semantically faithful.
 - Forced per-worker harness routing travels through
@@ -231,7 +292,9 @@ recorder refuses to write otherwise without an explicit override.
    OpenCode workers, session/tool-event capture, SDK transports where they
    provide better evidence. SDK transport must also handle worker permission
    requests programmatically; the CLI path's auto-reject currently aborts
-   the agent loop and drops the worker (see milestone 6).
+   the agent loop and drops the worker (see milestone 6). Landing this
+   expires the infrastructure rationales of ADR 0026 and triggers the
+   mandatory re-decision on judge tools.
 2. CI automation of the smoke matrix (needs credential management and paid
    calls in CI; deferred by the acceptance criteria).
 3. Consider removing the emergency internal fallback once the skill matures
@@ -242,7 +305,9 @@ recorder refuses to write otherwise without an explicit override.
    no output contract; the divergence is now known, not just suspected.
 5. Judge-quality comparison round: same task with judge vs parent-agent
    synthesis to quantify the default's value (upstream DRACO methodology as
-   reference).
+   reference). Also the mandatory measurement input for the ADR 0026 judge-
+   tools re-decision (tools-on vs tools-off arms, plus the reserved
+   tool-free-grounding arm).
 6. Fix OpenCode worker dropouts caused by permission auto-reject aborting
    the agent loop. Root cause diagnosed 2026-07-06 by replaying the recorded
    worker-2 prompt from `.fusion-runs/fusion-e7eb8340-*`: when a worker's

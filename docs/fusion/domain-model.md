@@ -38,13 +38,16 @@ synthesis contract requires attribution.
 The default author is the harness-backed judge: a separate invocation through
 the worker adapter path that compares worker outputs without merging them and
 returns the structured judge analysis (upstream five-key core plus optional
-attribution and quote extensions). The judge sees all worker outputs, so
-blindness does not apply to it, but recursion denial does; it runs with no
-tools and records its own provenance and evidence. Judge failure keeps the
-panel `ok` with the analysis omitted and disclosed, degrading to
-parent-agent authorship. `parent-agent` and `deterministic` remain
-explicit-only strategies; the deterministic synthesizer is an audit reference
-and fallback, not the final answer-quality target (ADR 0023/0024).
+attribution and quote extensions; documented upstream item shapes are
+accepted and normalized with best-effort attribution, ADR 0027). The judge
+sees all worker outputs, so blindness does not apply to it, but recursion
+denial does; it runs with no tools — a deliberate, provisional divergence
+from upstream's web-tools judge with a mandatory re-decision once the SDK
+transport lands (ADR 0026) — and records its own provenance and evidence.
+Judge failure keeps the panel `ok` with the analysis omitted and disclosed,
+degrading to parent-agent authorship. `parent-agent` and `deterministic`
+remain explicit-only strategies; the deterministic synthesizer is an audit
+reference and fallback, not the final answer-quality target (ADR 0023/0024).
 
 ### FinalAnswer
 

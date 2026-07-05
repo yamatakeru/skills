@@ -4,6 +4,9 @@
 
 Accepted
 
+Divergence inventory corrected by ADR 0026: the no-tools judge is a further
+deliberate divergence from upstream, unrecorded when this ADR was written.
+
 ## Context
 
 ADR 0016 deferred the harness-backed judge and let the parent agent author
