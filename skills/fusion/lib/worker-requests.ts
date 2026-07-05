@@ -12,7 +12,7 @@ import type {
 } from "./types";
 import { validatePanelSpec } from "./validation";
 
-type WorkerRequestBuildInput = Omit<PanelRequest, "contextManifest"> & {
+export type WorkerRequestBuildInput = Omit<PanelRequest, "contextManifest"> & {
   contextManifest?: ContextManifest;
 };
 
@@ -139,24 +139,44 @@ export function buildWorkerRequests(
       policy: request.harnessSelectionPolicy,
     });
 
-    return {
-      panelRunId: request.panelRunId,
+    return buildWorkerRequestBase({
+      request,
+      policies,
       workerId,
       prompt: renderedPrompt,
-      sharedContext: request.sharedContext,
-      contextManifest: request.contextManifest,
       modelPreference,
       harness,
-      session: policies.session,
-      isolationPolicy: policies.isolation,
-      blindnessPolicy: policies.blindness,
-      workerPolicy: policies.worker,
-      toolsPolicy: policies.tools,
-      reasoning: request.reasoning,
-      environment: request.workerEnvironment,
-      budget: request.workerBudget,
-      outputContract: policies.output,
-      provenancePolicy: request.provenancePolicy ?? policies.provenance,
-    };
+    });
   });
+}
+
+export function buildWorkerRequestBase(input: {
+  request: WorkerRequestBuildInput;
+  policies: DefaultPolicies;
+  workerId: string;
+  prompt: string;
+  modelPreference?: ModelPreference;
+  harness?: HarnessDescriptor;
+  contextManifest?: WorkerRequest["contextManifest"];
+}): WorkerRequest {
+  return {
+    panelRunId: input.request.panelRunId,
+    workerId: input.workerId,
+    prompt: input.prompt,
+    sharedContext: input.request.sharedContext,
+    contextManifest: input.contextManifest ?? input.request.contextManifest,
+    modelPreference: input.modelPreference,
+    harness: input.harness,
+    session: input.policies.session,
+    isolationPolicy: input.policies.isolation,
+    blindnessPolicy: input.policies.blindness,
+    workerPolicy: input.policies.worker,
+    toolsPolicy: input.policies.tools,
+    reasoning: input.request.reasoning,
+    environment: input.request.workerEnvironment,
+    budget: input.request.workerBudget,
+    outputContract: input.policies.output,
+    provenancePolicy:
+      input.request.provenancePolicy ?? input.policies.provenance,
+  };
 }

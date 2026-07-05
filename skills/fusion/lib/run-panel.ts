@@ -1,7 +1,8 @@
 import { evaluateCompliance } from "./compliance";
+import { errorMessage } from "./errors";
+import { normalizeHarnessDescriptor } from "./harness";
+import { describeJudgeInvocation } from "./judge-synthesizer";
 import type {
-  HarnessDescriptor,
-  HarnessPreference,
   PanelRequest,
   PanelResult,
   PanelRunOptions,
@@ -98,7 +99,7 @@ export async function runPanel(
         );
         return result;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         await emit(
           "worker.invocation.failed",
           { error: message },
@@ -133,7 +134,7 @@ export async function runPanel(
     workerRequests,
     workerResults,
     events,
-    synthesisPresent: synthesisResult.synthesis.length > 0,
+    synthesisResult,
   });
   events[complianceEventIndex].data = { tier: finalComplianceSummary.tier };
   await recordSafely(recorderWarnings, () =>
@@ -148,8 +149,11 @@ export async function runPanel(
       errors,
     ),
     workerResults,
+    analysis: synthesisResult.analysis,
     synthesis: synthesisResult.synthesis,
     finalAnswer: synthesisResult.finalAnswer,
+    strategy: synthesisResult.strategy,
+    fallbackReason: synthesisResult.fallbackReason,
     complianceSummary: finalComplianceSummary,
     events: request.provenancePolicy?.eventLog === false ? undefined : events,
     warnings: buildWarnings(
@@ -194,9 +198,13 @@ async function runSynthesisIfAllowed(
 
   await emit("synthesis.started", {
     workerResultIds: workerResults.map((result) => result.workerId),
+    strategy: request.synthesizer?.strategy,
+    modelPreference: request.synthesizer?.model,
   });
+  let synthesisResult: SynthesisResult | undefined;
+  let thrownMessage: string | undefined;
   try {
-    const synthesisResult = await options.synthesizer.synthesize({
+    synthesisResult = await options.synthesizer.synthesize({
       panelRequest: request,
       workerRequests,
       workerResults,
@@ -205,16 +213,22 @@ async function runSynthesisIfAllowed(
     if (request.synthesizer?.strategy === "parent-agent") {
       // Parent-agent strategy: synthesis stays as an audit reference, but the
       // final answer must be authored by the parent agent, not the synthesizer.
-      return { ...synthesisResult, finalAnswer: undefined };
+      return {
+        ...synthesisResult,
+        strategy: "parent-agent",
+        finalAnswer: undefined,
+      };
     }
     return synthesisResult;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
+    thrownMessage = message;
     return { synthesis: "", errors: [message] };
   } finally {
-    await emit("synthesis.completed", {
-      workerResultIds: workerResults.map((result) => result.workerId),
-    });
+    await emit(
+      "synthesis.completed",
+      synthesisCompletedData(workerResults, synthesisResult, thrownMessage),
+    );
   }
 }
 
@@ -234,6 +248,30 @@ function buildWarnings(
   return [...warnings, ...(complianceNotes ?? []), ...recorderWarnings];
 }
 
+function synthesisCompletedData(
+  workerResults: WorkerResult[],
+  synthesisResult: SynthesisResult | undefined,
+  error: string | undefined,
+): Record<string, unknown> {
+  const judge = describeJudgeInvocation(synthesisResult);
+  const judgeRequest = synthesisResult?.judgeRequest;
+  return {
+    workerResultIds: workerResults.map((result) => result.workerId),
+    strategy: synthesisResult?.strategy,
+    analysisPresent: synthesisResult?.analysis !== undefined,
+    fallbackReason: synthesisResult?.fallbackReason,
+    error,
+    judge:
+      judge.workerId && judgeRequest
+        ? {
+            ...judge,
+            modelPreference: judgeRequest.modelPreference,
+            usage: synthesisResult?.judgeResult?.usage,
+          }
+        : undefined,
+  };
+}
+
 async function recordSafely(
   warnings: string[],
   record: () => Promise<void> | void | undefined,
@@ -241,8 +279,7 @@ async function recordSafely(
   try {
     await record();
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    warnings.push(`Run recorder failed: ${message}`);
+    warnings.push(`Run recorder failed: ${errorMessage(error)}`);
   }
 }
 
@@ -297,19 +334,6 @@ function redactWorkerRequest(request: WorkerRequest): Record<string, unknown> {
     workerPolicy: request.workerPolicy,
     toolsPolicy: request.toolsPolicy,
     outputContract: request.outputContract,
-  };
-}
-
-function normalizeHarnessDescriptor(
-  harness: HarnessPreference | undefined,
-): HarnessDescriptor | undefined {
-  if (harness?.kind === undefined || harness.invocation === undefined) {
-    return undefined;
-  }
-  return {
-    kind: harness.kind,
-    invocation: harness.invocation,
-    version: harness.version,
   };
 }
 

@@ -1,28 +1,82 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-05 (worker-investigation round)
+Date: 2026-07-05 (harness-backed judge round)
 
 This handoff captures the state of the Fusion runtime after the usable
-milestone and the follow-up worker-investigation round (portable worker
-instructions, reasoning pass-through, read-only bash, shared-context flags).
-The design authority is `docs/fusion/` (spec, domain model, glossary,
-ADR 0001-0022).
+milestone, the worker-investigation round, and the harness-backed judge round
+(judge as default synthesizer, upstream-superset judge output contract,
+per-module test split, simplify cleanup). The design authority is
+`docs/fusion/` (spec, domain model, glossary, ADR 0001-0024).
 
-## Current Status: Usable Milestone + Worker-Investigation Round
+## Current Status: Harness-Backed Judge Round Complete
 
 The usable milestone (all four acceptance criteria from `docs/fusion/spec.md`)
-was observed on this machine on 2026-07-05. After the worker-investigation
-round the following were re-verified on the same day:
+was observed on this machine on 2026-07-05. After the judge round the
+following were re-verified on the same day:
 
 1. Default three-worker panel from a Claude Code parent (claude-code x1 +
-   opencode x2), every worker `status: "ok"`, correct Markdown report.
+   opencode x2), every worker `status: "ok"`, judge invocation `ok` via
+   claude-code with a validated five-key analysis (attribution + quotes
+   extensions present), zero warnings, correct Markdown report.
 2. Panel invoked from an OpenCode parent with a claude-code worker included
    (verified at the usable milestone; not re-run after this round).
-3. `bun test` (42 pass), `bun run typecheck:fusion`, and `bun run schema:fusion`
-   all green.
+3. `bun test` (55 pass across 11 files), `bun run typecheck:fusion`, and
+   `bun run schema:fusion` all green.
 4. A `--record` run wrote the full split artifact set (8 files) under
-   `.fusion-runs/<panelRunId>/`, and the recorded `ContextManifest` hash
-   (fnv1a32) was independently recomputed from the rendered prompt and matched.
+   `.fusion-runs/<panelRunId>/` with `result.json` carrying
+   `strategy: "claude-code"`, no `fallbackReason`, and the structured
+   `analysis`.
+
+## What Changed in the Harness-Backed Judge Round
+
+Design (grilled, recorded in ADR 0023/0024 and the revised spec sections):
+
+- The harness-backed judge is now the default synthesizer, closing the
+  largest recorded divergence from upstream OpenRouter Fusion (three-stage:
+  blind panel → separate judge comparison → parent agent authors the final
+  answer). Judge model defaults to the parent model; `--judge-model
+  <model-entry>` overrides via the same model-entry routing as panel
+  composition. `--synthesizer parent-agent|deterministic` are explicit-only
+  escapes.
+- Judge output contract is an upstream-superset (ADR 0024): the five-key core
+  (`consensus`, `contradictions` with `topic`/`stances`, `partial_coverage`,
+  `unique_insights`, `blind_spots`) is validated after tolerant extraction;
+  worker attribution and verbatim quotes are optional additive extensions,
+  quote mismatches are warnings. No resolution field; judge runs with no
+  tools.
+- Judge failure follows upstream semantics: run stays `ok`, analysis omitted,
+  warning disclosed, parent-agent authorship as fallback. Verified live: the
+  first smoke run failed validation (judge invented a `stances_text` key) and
+  fell back exactly as designed; the judge prompt now embeds an explicit JSON
+  skeleton and the second smoke run validated cleanly.
+- Judge provenance rides `synthesis.started`/`synthesis.completed` with
+  model/harness/usage evidence; recorded runs include the judge request and
+  result; compliance reports the judge separately (`judgeCompliance`).
+- `PanelResult` gained `strategy` and `fallbackReason`; schemas regenerated
+  (including new `judge-analysis` and `synthesis-result` schemas).
+
+Implementation (delegated to Codex, reviewed and verified locally):
+
+- New `skills/fusion/lib/judge-analysis.ts` (types, tolerant extraction,
+  core validation, quote verification, Markdown rendering) and
+  `skills/fusion/lib/judge-synthesizer.ts` (judge invocation through the
+  worker adapter path, prompt with JSON skeleton, fallback handling).
+- `test/runtime.test.ts` split into per-module test files plus shared
+  `test/fixtures.ts` (11 files).
+- CodeRabbit review ran (3 findings): 1 major falsified by subagent
+  adjudication (proposed fix would have broken ADR 0023 fallback), 2 minor
+  fixed (conflict-error wording, judge tools-policy note).
+- Simplify round (4-angle subagent review) applied 13 cleanups: helper
+  dedupe (`modelPreferenceToModel`, `normalizeHarnessDescriptor`,
+  `errorMessage`), shared `describeJudgeInvocation` for event/compliance
+  parity, single strategy-classification predicate, `PanelResult.strategy`
+  propagation, elimination of a duplicate `opencode models` spawn at CLI
+  startup, `buildWorkerRequestBase` extraction so judge requests inherit new
+  worker fields automatically, no-tools deny list derived from defaults, and
+  test fixture consolidation. Skipped by design: unifying judge harness
+  selection into `buildJudgeRequest` (would change the documented
+  `SynthesizerPreference` contract).
+- `skills/fusion/SKILL.md` v0.7.0.
 
 ## What Changed in the Worker-Investigation Round
 
@@ -91,14 +145,25 @@ CLI verification (`opencode --variant` is silently ignored when unsupported;
 - Worker tool defaults: read-only local access, the read-only bash allowlist,
   plus WebSearch/WebFetch; edit/write/destructive/delegation tools denied
   (ADR 0018/0022).
+- `skills/fusion/lib/judge-synthesizer.ts` + `judge-analysis.ts`: the default
+  harness-backed judge — invocation through the worker adapter path, prompt
+  with explicit JSON skeleton, tolerant extraction, strict five-key core
+  validation, optional attribution/quote extensions with substring
+  verification, Markdown rendering, and graceful fallback (ADR 0023/0024).
 - Contract additions: `SynthesizerPreference`, `PanelRequest.synthesizer`,
   `PanelSpec.parentModel` (ADR 0016); `ReasoningPreference`,
-  `PanelRequest.reasoning`, `WorkerRequest.reasoning` (ADR 0021); schemas
+  `PanelRequest.reasoning`, `WorkerRequest.reasoning` (ADR 0021);
+  `JudgeAnalysis`, `SynthesisResult`, `PanelResult.strategy`/`fallbackReason`/
+  `analysis`, `ComplianceSummary.judgeCompliance` (ADR 0023/0024); schemas
   regenerated.
 - Partial-failure defaults are OpenRouter-aligned: `allowPartial: true`,
-  continue-and-disclose, `failed` only when every worker fails (ADR 0019).
-- `skills/fusion/SKILL.md` v0.6.0: CLI path and parent-agent synthesis, new
-  context/effort/budget flags, parent-agent guidance (ADR 0017/0020-0022).
+  continue-and-disclose, `failed` only when every worker fails (ADR 0019);
+  judge failure keeps the run `ok` with the analysis omitted and disclosed
+  (ADR 0023).
+- `skills/fusion/SKILL.md` v0.7.0: CLI path, judge-backed synthesis by
+  default, `--judge-model`, context/effort/budget flags, parent-agent
+  guidance including read-tool verification before the final answer
+  (ADR 0017/0020-0024).
 
 ## Smoke Procedure (re-runnable)
 
@@ -114,8 +179,11 @@ bun skills/fusion/bin/fusion-run.ts --parent-model fable --record \
   --timeout-ms 240000 \
   "Return exactly the string: fusion-smoke-ok. Do not add any other text."
 # Expect: Run status ok; workers claude-code x1 + opencode x2 all ok;
-# 8 artifacts under .fusion-runs/<panelRunId>/ (request, manifest, events,
-# worker-requests, worker-results, synthesis, compliance, result).
+# Judge: ok with a validated "## Judge Analysis" section and zero warnings;
+# result.json carries strategy plus the structured analysis, no
+# fallbackReason; 8 artifacts under .fusion-runs/<panelRunId>/ (request,
+# manifest, events, worker-requests, worker-results, synthesis, compliance,
+# result).
 
 # Criterion 2: invocation from an OpenCode parent with a claude-code worker.
 opencode run --model openai/gpt-5.5 'Use your bash tool to run this exact \
@@ -137,34 +205,42 @@ recorder refuses to write otherwise without an explicit override.
 - `--reasoning-max-tokens` and `--max-turns` currently map to no harness CLI
   mechanism; they are honest warnings, not effective knobs, until the CLIs
   grow support.
-- New flags (`--effort`, `--context`, `--context-file`, `--max-turns`,
-  `--reasoning-max-tokens`) are unit-tested; only the default path has been
-  smoke-run end-to-end with real models.
+- Non-default flags (`--effort`, `--context`, `--context-file`, `--max-turns`,
+  `--reasoning-max-tokens`, `--judge-model`, `--synthesizer`) are unit-tested;
+  only the default path (which now includes the judge) has been smoke-run
+  end-to-end with real models.
 - The alias table (`openai-flagship`, `budget-smart`) pins current model IDs;
   generation changes are absorbed by editing
   `skills/fusion/lib/panel-composition.ts` in a skill update.
-- `--synthesizer` accepts `parent-agent` (default) and `deterministic`;
-  harness-kind values error as not implemented (contract-reserved).
+- The judge is one invocation of the parent-model-by-default; a weak judge
+  model degrades analysis quality. Judge validation failures fall back
+  gracefully but forfeit the structured analysis for that run.
+- Judge quote verification is substring matching; paraphrased quotes surface
+  as warnings even when semantically faithful.
 - Forced per-worker harness routing travels through
   `harnessSelectionPolicy.userPolicy.fusionForcedHarnesses` because `PanelSpec`
   has no per-worker harness field; revisit if the portable contract grows one.
-- The deterministic synthesis in the report is an audit reference; answer
-  quality depends on the parent agent authoring the five-finding synthesis.
+- Judge harness selection is resolved eagerly in the CLI
+  (`resolveSynthesizerPreference`) rather than inside `buildJudgeRequest`;
+  unifying it would change the documented `SynthesizerPreference` contract
+  and was deliberately skipped in the simplify round.
 
 ## Next Milestones (reserved)
 
-1. Harness-backed judge: implement `--synthesizer <harness-kind>` as a separate
-   worker invocation with its own provenance and evidence (ADR 0016).
-2. CI automation of the smoke matrix (needs credential management and paid
-   calls in CI; deferred by the acceptance criteria).
-3. Stronger compliance evidence toward `full` tier: tool-policy proof for
+1. Stronger compliance evidence toward `full` tier: tool-policy proof for
    OpenCode workers, session/tool-event capture, SDK transports where they
    provide better evidence.
-4. Consider removing the emergency internal fallback once the skill matures
+2. CI automation of the smoke matrix (needs credential management and paid
+   calls in CI; deferred by the acceptance criteria).
+3. Consider removing the emergency internal fallback once the skill matures
    (ADR 0017).
-5. Revisit the portable-worker-instructions trade-off against upstream
+4. Revisit the portable-worker-instructions trade-off against upstream
    fidelity once upstream Fusion's prompt policy is observable again
-   (ADR 0020).
+   (ADR 0020). Upstream research (2026-07-05) confirmed the panel receives
+   no output contract; the divergence is now known, not just suspected.
+5. Judge-quality comparison round: same task with judge vs parent-agent
+   synthesis to quantify the default's value (upstream DRACO methodology as
+   reference).
 
 ## Useful Commands
 

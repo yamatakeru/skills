@@ -41,6 +41,7 @@ export interface ResolvePanelCompositionOptions {
   opencodeCommand?: string;
   executor?: CommandExecutor;
   cwd?: string;
+  opencodeModels?: string[];
 }
 
 export interface ResolvedPanelModel {
@@ -58,6 +59,13 @@ export interface ResolvedPanelComposition {
   resolvedModels: ResolvedPanelModel[];
   warnings: string[];
   opencodeModels: string[];
+}
+
+export interface ResolveModelEntryOptions {
+  opencodeCommand?: string;
+  executor?: CommandExecutor;
+  cwd?: string;
+  opencodeModels?: string[];
 }
 
 interface ModelSource {
@@ -133,6 +141,23 @@ export async function resolvePanelComposition(
     warnings,
     opencodeModels: opencodeModels.snapshot(),
   };
+}
+
+export async function resolveModelEntry(
+  entry: string,
+  options: ResolveModelEntryOptions = {},
+): Promise<ResolvedPanelModel> {
+  const opencodeModels = new LazyOpenCodeModels(options);
+  const model = await tryResolveSource(
+    sourceFromEntry("explicit", entry),
+    new Set(),
+    opencodeModels,
+    { allowDuplicate: true, required: true },
+  );
+  if (model === undefined) {
+    throw new Error(`Unable to resolve Fusion model entry: ${entry}`);
+  }
+  return model;
 }
 
 async function resolveExplicitModels(
@@ -415,7 +440,12 @@ function unique<T>(values: T[]): T[] {
 class LazyOpenCodeModels {
   private loadedModels: string[] | undefined;
 
-  constructor(private readonly options: ResolvePanelCompositionOptions) {}
+  constructor(
+    private readonly options:
+      ResolvePanelCompositionOptions | ResolveModelEntryOptions,
+  ) {
+    this.loadedModels = options.opencodeModels;
+  }
 
   async includes(modelId: string): Promise<boolean> {
     const models = await this.load();

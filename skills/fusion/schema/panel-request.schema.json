@@ -117,6 +117,10 @@
       },
       "type": "object"
     },
+    "NonJudgeSynthesizerStrategy": {
+      "enum": ["parent-agent", "deterministic"],
+      "type": "string"
+    },
     "PanelRequest": {
       "additionalProperties": false,
       "properties": {
@@ -316,12 +320,7 @@
         "strategy": {
           "anyOf": [
             {
-              "const": "parent-agent",
-              "type": "string"
-            },
-            {
-              "const": "deterministic",
-              "type": "string"
+              "$ref": "#/definitions/NonJudgeSynthesizerStrategy"
             },
             {
               "$ref": "#/definitions/HarnessKind"

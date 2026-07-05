@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { errorMessage } from "./errors";
 import type {
   ComplianceSummary,
   ContextManifest,
@@ -226,8 +227,4 @@ async function readGitignore(workspaceRoot: string): Promise<string> {
 
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

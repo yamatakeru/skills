@@ -1,68 +1,70 @@
 {
-  "$ref": "#/definitions/PanelResult",
+  "$ref": "#/definitions/SynthesisResult",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
-    "ComplianceSummary": {
+    "BlindnessPolicy": {
       "additionalProperties": false,
       "properties": {
-        "degradedWorkers": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+        "noDraftSynthesis": {
+          "type": "boolean"
         },
-        "failedWorkers": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+        "noPanelConclusions": {
+          "type": "boolean"
         },
-        "judgeCompliance": {
-          "$ref": "#/definitions/JudgeCompliance"
-        },
-        "missingRequiredEvents": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "notes": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "tier": {
-          "$ref": "#/definitions/ComplianceTier"
-        },
-        "workerCompliance": {
+        "noPeerOutputs": {
+          "type": "boolean"
+        }
+      },
+      "required": ["noPeerOutputs", "noDraftSynthesis", "noPanelConclusions"],
+      "type": "object"
+    },
+    "ContextManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
           "items": {
             "additionalProperties": false,
             "properties": {
-              "compliance": {
-                "$ref": "#/definitions/WorkerCompliance"
+              "digest": {
+                "type": "string"
               },
-              "workerId": {
+              "path": {
                 "type": "string"
               }
             },
-            "required": ["workerId", "compliance"],
+            "required": ["path", "digest"],
             "type": "object"
           },
           "type": "array"
+        },
+        "references": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": ["label", "digest"],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "renderedPromptHash": {
+          "type": "string"
+        },
+        "sharedContextHash": {
+          "type": "string"
+        },
+        "userTaskHash": {
+          "type": "string"
         }
       },
-      "required": ["tier", "workerCompliance"],
+      "required": ["renderedPromptHash", "sharedContextHash"],
       "type": "object"
-    },
-    "ComplianceTier": {
-      "enum": [
-        "full",
-        "full-reused-isolated-session",
-        "degraded",
-        "non-compliant"
-      ],
-      "type": "string"
     },
     "HarnessDescriptor": {
       "additionalProperties": false,
@@ -91,9 +93,44 @@
         }
       ]
     },
+    "HarnessPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "invocation": {
+          "$ref": "#/definitions/InvocationMode"
+        },
+        "kind": {
+          "$ref": "#/definitions/HarnessKind"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "InvocationMode": {
       "enum": ["headless", "subagent", "cli", "api"],
       "type": "string"
+    },
+    "IsolationPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowUnverifiedReuse": {
+          "type": "boolean"
+        },
+        "requireIndependentInvocation": {
+          "type": "boolean"
+        },
+        "requireIsolatedContext": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requireIndependentInvocation",
+        "requireIsolatedContext",
+        "allowUnverifiedReuse"
+      ],
+      "type": "object"
     },
     "JudgeAnalysis": {
       "additionalProperties": false,
@@ -201,34 +238,6 @@
       "required": ["workerId"],
       "type": "object"
     },
-    "JudgeCompliance": {
-      "additionalProperties": false,
-      "properties": {
-        "harnessUsed": {
-          "$ref": "#/definitions/HarnessDescriptor"
-        },
-        "modelUsed": {
-          "type": "string"
-        },
-        "notes": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "status": {
-          "$ref": "#/definitions/WorkerStatus"
-        },
-        "toolsPolicy": {
-          "$ref": "#/definitions/ToolsPolicy"
-        },
-        "workerId": {
-          "type": "string"
-        }
-      },
-      "required": ["workerId"],
-      "type": "object"
-    },
     "JudgeContradiction": {
       "additionalProperties": false,
       "properties": {
@@ -303,24 +312,178 @@
         }
       ]
     },
-    "PanelResult": {
+    "ModelPreference": {
       "additionalProperties": false,
       "properties": {
-        "analysis": {
-          "$ref": "#/definitions/JudgeAnalysis"
-        },
-        "complianceSummary": {
-          "$ref": "#/definitions/ComplianceSummary"
-        },
-        "errors": {
+        "aliases": {
           "items": {
             "type": "string"
           },
           "type": "array"
         },
-        "events": {
+        "fallbacks": {
           "items": {
-            "$ref": "#/definitions/ProvenanceEvent"
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "OutputContract": {
+      "additionalProperties": false,
+      "properties": {
+        "forbidChainOfThought": {
+          "type": "boolean"
+        },
+        "format": {
+          "enum": ["markdown", "json"],
+          "type": "string"
+        },
+        "requiredSections": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "schemaName": {
+          "type": "string"
+        }
+      },
+      "required": ["format", "forbidChainOfThought"],
+      "type": "object"
+    },
+    "ProvenancePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "eventLog": {
+          "type": "boolean"
+        },
+        "includeModelMetadata": {
+          "type": "boolean"
+        },
+        "includeToolLogs": {
+          "type": "boolean"
+        },
+        "record": {
+          "type": "boolean"
+        },
+        "redactSecrets": {
+          "type": "boolean"
+        },
+        "requireMinimumEventsForFullCompliance": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "record",
+        "redactSecrets",
+        "eventLog",
+        "requireMinimumEventsForFullCompliance",
+        "includeToolLogs",
+        "includeModelMetadata"
+      ],
+      "type": "object"
+    },
+    "ReasoningPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "enum": ["low", "medium", "high", "xhigh"],
+          "type": "string"
+        },
+        "maxTokens": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "SessionMode": {
+      "enum": ["fresh", "fork", "resume"],
+      "type": "string"
+    },
+    "SessionPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/definitions/SessionMode"
+        },
+        "parentSessionId": {
+          "type": "string"
+        },
+        "reusePolicy": {
+          "enum": ["none", "same-worker-lineage", "explicit-user-opt-in"],
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": ["mode"],
+      "type": "object"
+    },
+    "SharedContext": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "digest": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": ["path"],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "references": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": ["label"],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "SynthesisResult": {
+      "additionalProperties": false,
+      "properties": {
+        "analysis": {
+          "$ref": "#/definitions/JudgeAnalysis"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
           },
           "type": "array"
         },
@@ -330,11 +493,14 @@
         "finalAnswer": {
           "type": "string"
         },
-        "panelRunId": {
-          "type": "string"
+        "judgeRequest": {
+          "$ref": "#/definitions/WorkerRequest"
         },
-        "status": {
-          "$ref": "#/definitions/PanelStatus"
+        "judgeResult": {
+          "$ref": "#/definitions/WorkerResult"
+        },
+        "referenceSynthesis": {
+          "type": "string"
         },
         "strategy": {
           "type": "string"
@@ -347,78 +513,10 @@
             "type": "string"
           },
           "type": "array"
-        },
-        "workerResults": {
-          "items": {
-            "$ref": "#/definitions/WorkerResult"
-          },
-          "type": "array"
         }
       },
-      "required": [
-        "panelRunId",
-        "status",
-        "workerResults",
-        "synthesis",
-        "complianceSummary"
-      ],
+      "required": ["synthesis"],
       "type": "object"
-    },
-    "PanelStatus": {
-      "enum": ["ok", "partial", "failed"],
-      "type": "string"
-    },
-    "ProvenanceEvent": {
-      "additionalProperties": false,
-      "properties": {
-        "data": {
-          "additionalProperties": {},
-          "type": "object"
-        },
-        "eventId": {
-          "type": "string"
-        },
-        "panelRunId": {
-          "type": "string"
-        },
-        "timestamp": {
-          "type": "string"
-        },
-        "type": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/ProvenanceEventType"
-            },
-            {
-              "type": "string"
-            }
-          ]
-        },
-        "workerId": {
-          "type": "string"
-        }
-      },
-      "required": ["eventId", "panelRunId", "type", "timestamp"],
-      "type": "object"
-    },
-    "ProvenanceEventType": {
-      "enum": [
-        "panel.started",
-        "context.manifested",
-        "harness.selected",
-        "worker.invocation.requested",
-        "worker.invocation.started",
-        "worker.invocation.completed",
-        "worker.invocation.failed",
-        "synthesis.started",
-        "synthesis.completed",
-        "compliance.evaluated"
-      ],
-      "type": "string"
-    },
-    "SessionMode": {
-      "enum": ["fresh", "fork", "resume"],
-      "type": "string"
     },
     "ToolUseSummary": {
       "additionalProperties": false,
@@ -509,50 +607,25 @@
       },
       "type": "object"
     },
-    "WorkerCompliance": {
+    "WorkerBudget": {
       "additionalProperties": false,
       "properties": {
-        "blind": {
-          "type": "boolean"
+        "maxInputTokens": {
+          "type": "number"
         },
-        "degradedReason": {
-          "type": "string"
+        "maxOutputTokens": {
+          "type": "number"
         },
-        "independentInvocation": {
-          "type": "boolean"
+        "maxToolCalls": {
+          "type": "number"
         },
-        "isolatedContext": {
-          "type": "boolean"
+        "maxTurns": {
+          "type": "number"
         },
-        "noDraftSynthesis": {
-          "type": "boolean"
-        },
-        "noPanelConclusions": {
-          "type": "boolean"
-        },
-        "noPeerOutputs": {
-          "type": "boolean"
-        },
-        "sessionMode": {
-          "$ref": "#/definitions/SessionMode"
-        },
-        "tier": {
-          "$ref": "#/definitions/ComplianceTier"
-        },
-        "toolPolicyMatchedPanelDefault": {
-          "type": "boolean"
+        "timeoutMs": {
+          "type": "number"
         }
       },
-      "required": [
-        "tier",
-        "independentInvocation",
-        "blind",
-        "noPeerOutputs",
-        "noDraftSynthesis",
-        "noPanelConclusions",
-        "isolatedContext",
-        "sessionMode"
-      ],
       "type": "object"
     },
     "WorkerComplianceEvidence": {
@@ -583,6 +656,105 @@
           "$ref": "#/definitions/ToolsPolicy"
         }
       },
+      "type": "object"
+    },
+    "WorkerEnvironment": {
+      "additionalProperties": false,
+      "properties": {
+        "envProfile": {
+          "type": "string"
+        },
+        "workingDirectory": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowRecursiveDelegation": {
+          "type": "boolean"
+        },
+        "denyPanelSpawning": {
+          "type": "boolean"
+        },
+        "denySubtaskDelegation": {
+          "type": "boolean"
+        }
+      },
+      "required": ["allowRecursiveDelegation", "denyPanelSpawning"],
+      "type": "object"
+    },
+    "WorkerRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "blindnessPolicy": {
+          "$ref": "#/definitions/BlindnessPolicy"
+        },
+        "budget": {
+          "$ref": "#/definitions/WorkerBudget"
+        },
+        "contextManifest": {
+          "$ref": "#/definitions/ContextManifest"
+        },
+        "environment": {
+          "$ref": "#/definitions/WorkerEnvironment"
+        },
+        "harness": {
+          "$ref": "#/definitions/HarnessPreference"
+        },
+        "isolationPolicy": {
+          "$ref": "#/definitions/IsolationPolicy"
+        },
+        "modelPreference": {
+          "$ref": "#/definitions/ModelPreference"
+        },
+        "outputContract": {
+          "$ref": "#/definitions/OutputContract"
+        },
+        "panelRunId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "provenancePolicy": {
+          "$ref": "#/definitions/ProvenancePolicy"
+        },
+        "reasoning": {
+          "$ref": "#/definitions/ReasoningPreference"
+        },
+        "session": {
+          "$ref": "#/definitions/SessionPolicy"
+        },
+        "sharedContext": {
+          "$ref": "#/definitions/SharedContext"
+        },
+        "toolsPolicy": {
+          "$ref": "#/definitions/ToolsPolicy"
+        },
+        "workerId": {
+          "type": "string"
+        },
+        "workerPolicy": {
+          "$ref": "#/definitions/WorkerPolicy"
+        }
+      },
+      "required": [
+        "panelRunId",
+        "workerId",
+        "prompt",
+        "sharedContext",
+        "session",
+        "isolationPolicy",
+        "blindnessPolicy",
+        "workerPolicy",
+        "outputContract"
+      ],
       "type": "object"
     },
     "WorkerResult": {

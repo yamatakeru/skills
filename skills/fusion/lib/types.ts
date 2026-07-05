@@ -11,6 +11,8 @@ export type InvocationMode = "headless" | "subagent" | "cli" | "api";
 export type PanelStatus = "ok" | "partial" | "failed";
 export type WorkerStatus =
   "ok" | "timeout" | "error" | "invalid-output" | "refused";
+export type NonJudgeSynthesizerStrategy = "parent-agent" | "deterministic";
+export type ImplementedJudgeHarness = "opencode" | "claude-code";
 
 export type FindingKind =
   | "consensus"
@@ -35,7 +37,7 @@ export interface PanelRequest {
 }
 
 export interface SynthesizerPreference {
-  strategy: "parent-agent" | "deterministic" | HarnessKind;
+  strategy: NonJudgeSynthesizerStrategy | HarnessKind;
   model?: ModelPreference;
 }
 
@@ -48,8 +50,11 @@ export interface PanelResult {
   panelRunId: string;
   status: PanelStatus;
   workerResults: WorkerResult[];
+  analysis?: JudgeAnalysis;
   synthesis: string;
   finalAnswer?: string;
+  strategy?: string;
+  fallbackReason?: string;
   complianceSummary: ComplianceSummary;
   events?: ProvenanceEvent[];
   warnings?: string[];
@@ -122,6 +127,51 @@ export interface SynthesisContract {
   format: "markdown" | "json";
   allowPartial: boolean;
   requireAttribution: boolean;
+}
+
+export interface JudgeAnalysis {
+  consensus: JudgeFinding[];
+  contradictions: JudgeContradiction[];
+  partial_coverage: JudgeFinding[];
+  unique_insights: JudgeFinding[];
+  blind_spots: JudgeFinding[];
+}
+
+export type JudgeFinding = string | JudgeAnnotatedFinding;
+
+export interface JudgeAnnotatedFinding {
+  text: string;
+  attribution?: JudgeAttribution[];
+  quotes?: JudgeQuote[];
+}
+
+export interface JudgeAttribution {
+  workerId: string;
+  modelUsed?: string;
+}
+
+export interface JudgeQuote {
+  workerId: string;
+  quote: string;
+}
+
+export interface JudgeContradiction {
+  topic: string;
+  stances: JudgeStances;
+  attribution?: JudgeAttribution[];
+  quotes?: JudgeQuote[];
+}
+
+export type JudgeStances = Record<string, string> | JudgeStance[];
+
+export type JudgeStance = string | JudgeAttributedStance;
+
+export interface JudgeAttributedStance {
+  stance: string;
+  workerId?: string;
+  modelUsed?: string;
+  attribution?: JudgeAttribution[];
+  quotes?: JudgeQuote[];
 }
 
 export interface ModelPreference {
@@ -255,9 +305,19 @@ export interface WorkerCompliance {
 export interface ComplianceSummary {
   tier: ComplianceTier;
   workerCompliance: Array<{ workerId: string; compliance: WorkerCompliance }>;
+  judgeCompliance?: JudgeCompliance;
   degradedWorkers?: string[];
   failedWorkers?: string[];
   missingRequiredEvents?: string[];
+  notes?: string[];
+}
+
+export interface JudgeCompliance {
+  workerId: string;
+  status?: WorkerStatus;
+  modelUsed?: string;
+  harnessUsed?: HarnessDescriptor;
+  toolsPolicy?: ToolsPolicy;
   notes?: string[];
 }
 
@@ -275,9 +335,14 @@ export interface UsageSummary {
 }
 
 export interface SynthesisResult {
+  analysis?: JudgeAnalysis;
   synthesis: string;
   finalAnswer?: string;
   strategy?: string;
+  judgeRequest?: WorkerRequest;
+  judgeResult?: WorkerResult;
+  referenceSynthesis?: string;
+  fallbackReason?: string;
   warnings?: string[];
   errors?: string[];
 }
@@ -353,3 +418,21 @@ export const minimumRequiredEventsForFullCompliance = [
   "synthesis.completed when synthesis is present",
   "compliance.evaluated",
 ] as const;
+
+export function isNonJudgeSynthesizerStrategy(
+  strategy: string | undefined,
+): strategy is NonJudgeSynthesizerStrategy {
+  return strategy === "parent-agent" || strategy === "deterministic";
+}
+
+export function isImplementedJudgeHarness(
+  strategy: string | undefined,
+): strategy is ImplementedJudgeHarness {
+  return strategy === "opencode" || strategy === "claude-code";
+}
+
+export function isHarnessSynthesizerStrategy(
+  strategy: SynthesizerPreference["strategy"] | undefined,
+): strategy is HarnessKind {
+  return strategy !== undefined && !isNonJudgeSynthesizerStrategy(strategy);
+}

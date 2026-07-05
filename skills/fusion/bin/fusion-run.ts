@@ -8,16 +8,24 @@ import {
   buildWorkerRequests,
   createContextManifest,
   defaultPolicies,
+  defaultHarnessSelector,
   DeterministicSynthesizer,
+  errorMessage,
   FileRunRecorder,
+  HarnessBackedJudgeSynthesizer,
   NoopRunRecorder,
   OpenCodeHeadlessCliAdapter,
+  resolveModelEntry,
   resolvePanelComposition,
   runPanel,
+  isImplementedJudgeHarness,
+  isNonJudgeSynthesizerStrategy,
   type PanelResult,
   type PanelRequest,
   type ProvenancePolicy,
   type ReasoningPreference,
+  type ResolvedPanelComposition,
+  type ResolvedPanelModel,
   type RunRecorder,
   type SharedContext,
   type WorkerBudget,
@@ -35,7 +43,8 @@ export interface CliOptions {
   maxTurns?: number;
   record: boolean;
   json: boolean;
-  synthesizer: string;
+  synthesizer?: string;
+  judgeModel?: string;
   timeoutMs?: number;
   prompt: string;
 }
@@ -56,15 +65,6 @@ async function main(): Promise<number> {
   try {
     assertBunRuntime();
     const options = parseArgs(Bun.argv.slice(2));
-    if (
-      options.synthesizer !== "parent-agent" &&
-      options.synthesizer !== "deterministic"
-    ) {
-      throw new UsageError(
-        `Synthesizer strategy "${options.synthesizer}" not implemented yet.`,
-      );
-    }
-
     const prepared = await preparePanelRequest(options, { cwd: process.cwd() });
     const request = prepared.request;
 
@@ -82,7 +82,7 @@ async function main(): Promise<number> {
       runner: registry,
       harnessSelector: registry,
       workerRequests: prepared.workerRequests,
-      synthesizer: new DeterministicSynthesizer(),
+      synthesizer: createSynthesizer(request.synthesizer?.strategy, registry),
       recorder,
     });
     if (prepared.warnings.length > 0) {
@@ -95,7 +95,7 @@ async function main(): Promise<number> {
       process.stdout.write(
         renderMarkdownReport(result, {
           recordingStatus: recorder.status,
-          synthesizer: options.synthesizer,
+          synthesizer: request.synthesizer?.strategy ?? "judge",
         }),
       );
     }
@@ -105,7 +105,7 @@ async function main(): Promise<number> {
       process.stdout.write(`${usage()}\n`);
       return 0;
     }
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     process.stderr.write(`${message}\n`);
     if (error instanceof UsageError) {
       process.stderr.write(`\n${usage()}\n`);
@@ -129,6 +129,11 @@ export async function preparePanelRequest(
   const contextResult = await buildSharedContext(options, cwd);
   const workerBudget = buildWorkerBudget(options);
   const panelRunId = input.panelRunId ?? `fusion-${randomUUID()}`;
+  const synthesizerResult = await resolveSynthesizerPreference(
+    options,
+    composition,
+    cwd,
+  );
   const requestWithoutManifest = {
     panelRunId,
     prompt: options.prompt,
@@ -147,7 +152,7 @@ export async function preparePanelRequest(
       allowPartial: true,
       requireAttribution: true,
     },
-    synthesizer: { strategy: options.synthesizer },
+    synthesizer: synthesizerResult.preference,
     reasoning: options.reasoning,
     workerEnvironment: {
       workspaceRoot: cwd,
@@ -176,7 +181,11 @@ export async function preparePanelRequest(
   return {
     request,
     workerRequests: manifestedWorkerRequests,
-    warnings: [...composition.warnings, ...contextResult.warnings],
+    warnings: [
+      ...composition.warnings,
+      ...contextResult.warnings,
+      ...synthesizerResult.warnings,
+    ],
   };
 }
 
@@ -248,7 +257,6 @@ export function parseArgs(args: string[]): CliOptions {
     contextFiles: [],
     record: false,
     json: false,
-    synthesizer: "parent-agent",
   };
   const promptParts: string[] = [];
 
@@ -327,6 +335,9 @@ export function parseArgs(args: string[]): CliOptions {
       case "--synthesizer":
         options.synthesizer = takeValue();
         break;
+      case "--judge-model":
+        options.judgeModel = takeValue();
+        break;
       case "--timeout-ms":
         options.timeoutMs = parsePositiveInteger(flag, takeValue());
         break;
@@ -383,11 +394,121 @@ function provenancePolicy(record: boolean): ProvenancePolicy {
   };
 }
 
-function renderMarkdownReport(
+function createSynthesizer(
+  strategy: NonNullable<PanelRequest["synthesizer"]>["strategy"] | undefined,
+  registry: AdapterRegistry,
+): DeterministicSynthesizer | HarnessBackedJudgeSynthesizer {
+  if (isNonJudgeSynthesizerStrategy(strategy)) {
+    return new DeterministicSynthesizer();
+  }
+
+  return new HarnessBackedJudgeSynthesizer({
+    runner: registry,
+    harnessSelector: registry,
+  });
+}
+
+async function resolveSynthesizerPreference(
+  options: CliOptions,
+  composition: ResolvedPanelComposition,
+  cwd: string,
+): Promise<{
+  preference: NonNullable<PanelRequest["synthesizer"]>;
+  warnings: string[];
+}> {
+  if (isNonJudgeSynthesizerStrategy(options.synthesizer)) {
+    if (options.judgeModel !== undefined) {
+      throw new UsageError(
+        "--judge-model only applies to the harness-backed judge synthesizer.",
+      );
+    }
+    return { preference: { strategy: options.synthesizer }, warnings: [] };
+  }
+
+  if (
+    options.synthesizer !== undefined &&
+    !isImplementedJudgeHarness(options.synthesizer)
+  ) {
+    throw new UsageError(
+      `Synthesizer strategy "${options.synthesizer}" is not implemented by this CLI.`,
+    );
+  }
+
+  const explicitStrategy = options.synthesizer;
+  const resolved = await resolveJudgeModel(options, composition, cwd);
+  if (resolved !== undefined) {
+    const strategy = explicitStrategy ?? resolved.harness;
+    if (strategy !== resolved.harness) {
+      const modelSource =
+        options.judgeModel !== undefined ? "Judge model" : "Parent model";
+      const modelEntry = options.judgeModel ?? options.parentModel;
+      throw new UsageError(
+        `${modelSource} "${modelEntry}" routes to ${resolved.harness}, which conflicts with --synthesizer ${strategy}.`,
+      );
+    }
+    return {
+      preference: { strategy, model: resolved.modelPreference },
+      warnings: [],
+    };
+  }
+
+  const harness = defaultHarnessSelector.selectHarness({
+    workerId: "judge",
+    policy: composition.harnessSelectionPolicy,
+  }).kind;
+  return {
+    preference: { strategy: explicitStrategy ?? harness },
+    warnings: [
+      "No --parent-model or --judge-model was provided; the judge will use the selected harness default model.",
+    ],
+  };
+}
+
+async function resolveJudgeModel(
+  options: CliOptions,
+  composition: ResolvedPanelComposition,
+  cwd: string,
+): Promise<ResolvedPanelModel | undefined> {
+  if (options.judgeModel !== undefined) {
+    return resolveModelEntry(options.judgeModel, {
+      cwd,
+      opencodeModels: knownOpenCodeModels(composition),
+    });
+  }
+
+  if (options.parentModel === undefined) {
+    return undefined;
+  }
+
+  const parentSlot = composition.resolvedModels.find(
+    (model) => model.slot === "parent",
+  );
+  if (parentSlot !== undefined) {
+    return parentSlot;
+  }
+
+  return resolveModelEntry(options.parentModel, {
+    cwd,
+    opencodeModels: knownOpenCodeModels(composition),
+  });
+}
+
+function knownOpenCodeModels(
+  composition: ResolvedPanelComposition,
+): string[] | undefined {
+  return composition.opencodeModels.length === 0
+    ? undefined
+    : composition.opencodeModels;
+}
+
+export function renderMarkdownReport(
   result: PanelResult,
   options: { recordingStatus: string; synthesizer: string },
 ): string {
-  const isParentAgent = options.synthesizer === "parent-agent";
+  const parentMustAuthor = result.finalAnswer === undefined;
+  const strategy = result.strategy ?? options.synthesizer;
+  const renderedJudgeAnalysis =
+    strategy !== undefined && !isNonJudgeSynthesizerStrategy(strategy);
   const warnings = result.warnings ?? [];
   const errors = result.errors ?? [];
   const lines = [
@@ -397,9 +518,13 @@ function renderMarkdownReport(
     `- Compliance tier: ${result.complianceSummary.tier}`,
     `- Synthesizer option: ${options.synthesizer}`,
   ];
-  if (isParentAgent) {
+  const judgeCompliance = result.complianceSummary.judgeCompliance;
+  if (judgeCompliance !== undefined) {
+    lines.push(`- ${renderJudgeStatusLine(result)}`);
+  }
+  if (parentMustAuthor) {
     lines.push(
-      "- Final answer: unset; the parent agent must author synthesis and final answer from this report.",
+      "- Final answer: unset; the parent agent must author the final answer from this report.",
     );
   }
   lines.push("");
@@ -437,13 +562,18 @@ function renderMarkdownReport(
     lines.push("", worker.output.trim() || "[no output]", "");
   }
 
-  const synthesisLabel = isParentAgent
-    ? "## Reference Deterministic Synthesis (Audit Reference)"
-    : "## Deterministic Synthesis";
+  const synthesisLabel = renderedJudgeAnalysis
+    ? "## Judge Analysis"
+    : parentMustAuthor
+      ? "## Reference Deterministic Synthesis (Audit Reference)"
+      : "## Deterministic Synthesis";
+  const synthesisStrategy = renderedJudgeAnalysis
+    ? `Strategy: ${strategy}.`
+    : `Strategy: ${strategy ?? "deterministic"}${parentMustAuthor ? "; audit reference only" : ""}.`;
   lines.push(
     synthesisLabel,
     "",
-    `Strategy: deterministic${isParentAgent ? "; audit reference only" : ""}.`,
+    synthesisStrategy,
     "",
     result.synthesis.trim() || "[no synthesis]",
     "",
@@ -454,6 +584,20 @@ function renderMarkdownReport(
   );
 
   return `${lines.join("\n")}\n`;
+}
+
+function renderJudgeStatusLine(result: PanelResult): string {
+  const judgeCompliance = result.complianceSummary.judgeCompliance;
+  if (judgeCompliance === undefined) {
+    return "Judge: not-run";
+  }
+  const status =
+    judgeCompliance.status === "ok" &&
+    result.analysis === undefined &&
+    result.fallbackReason !== undefined
+      ? "invocation ok, output failed validation (fell back to parent-agent)"
+      : (judgeCompliance.status ?? "not-returned");
+  return `Judge: ${status} via ${judgeCompliance.harnessUsed?.kind ?? "unknown"} (${judgeCompliance.modelUsed ?? "unknown model"})`;
 }
 
 function assertBunRuntime(): void {
@@ -480,7 +624,8 @@ export function usage(): string {
     "  --max-turns <n>           Per-worker turn budget where supported.",
     "  --record                  Write .fusion-runs/<panelRunId>/ artifacts.",
     "  --json                    Print complete PanelResult JSON.",
-    "  --synthesizer <strategy>  parent-agent or deterministic.",
+    "  --judge-model <entry>     Override the default parent-model judge.",
+    "  --synthesizer <strategy>  parent-agent, deterministic, opencode, or claude-code.",
     "  --timeout-ms <n>          Per-worker timeout.",
   ].join("\n");
 }

@@ -3,15 +3,15 @@ name: fusion
 description: >-
   Fusion-inspired blind-panel deliberation for complex research, architecture,
   design review, code review, and other high-stakes or ambiguous tasks. The
-  bundled Bun CLI runs neutral same-prompt workers, then the parent agent writes
-  the five-finding synthesis and final answer from the panel report.
+  bundled Bun CLI runs neutral same-prompt workers, then a harness-backed judge
+  compares worker outputs so the parent agent can write the final answer.
 license: MIT
 compatibility: >-
   SKILL.md-compatible agents with shell access and Bun installed. Uses the
   bundled self-contained TypeScript CLI; no node_modules are required inside the
   skill directory.
 metadata:
-  version: "0.6.0"
+  version: "0.7.0"
   kind: "blind-panel synthesis"
   mode: "blind"
   canonical-runtime: "bun-cli"
@@ -52,10 +52,15 @@ https://bun.sh/docs/installation and rerun the CLI." Never substitute another
 execution path silently; the only permitted degradation is the announced
 Emergency Fallback described below.
 
-## Parent-Agent Synthesis
+## Judge-Backed Synthesis
 
-Read the CLI report, then the parent agent must author the synthesis and final
-answer. Use these five findings:
+By default the CLI runs the panel, then invokes a separate no-tools judge
+through the same headless adapter path. The judge compares worker outputs; it
+does not merge them, choose a winner, or write the final answer.
+
+Read the CLI report, verify load-bearing claims with your own read tools where
+needed, then the parent agent must author the final answer grounded in the
+judge analysis and worker outputs. The judge analysis uses these five findings:
 
 1. **Consensus**: what independent workers converged on.
 2. **Contradictions**: mutually exclusive claims or recommendations.
@@ -63,10 +68,11 @@ answer. Use these five findings:
 4. **Unique insights**: valuable single-worker observations.
 5. **Blind spots**: relevant questions or evidence nobody addressed.
 
-The CLI always emits deterministic synthesis as an audit reference. When
-`--synthesizer parent-agent` is used, which is the default, do not treat that
-deterministic text as the final answer. The parent agent authors the final
-answer grounded in the worker outputs and the five findings.
+If the judge fails, times out, or returns invalid core JSON, the run remains
+usable: the report warns, omits structured `analysis`, and falls back to the
+previous parent-agent flow using raw worker outputs plus deterministic audit
+synthesis. Explicit `--synthesizer parent-agent` and `--synthesizer
+deterministic` remain escape hatches.
 
 ## Default Panel Composition
 
@@ -100,6 +106,10 @@ OpenCode-backed entries are checked against `opencode models`. Claude Code has
 no model enumeration command; Claude-backed entries use latest aliases and
 `--fallback-model`, then are validated by the worker attempt.
 
+The judge model defaults to the parent model. Use `--judge-model <entry>` to
+override it; judge model entries use the same routing rules as panel model
+entries.
+
 ## CLI Options
 
 - `--parent-model <id>`: parent model for the default panel slot.
@@ -114,9 +124,11 @@ no model enumeration command; Claude-backed entries use latest aliases and
 - `--record`: write split artifacts under `.fusion-runs/<panelRunId>/` when
   the directory is git-ignored.
 - `--json`: print the complete `PanelResult` JSON instead of Markdown.
-- `--synthesizer <parent-agent|deterministic|harness-kind>`: default is
-  `parent-agent`; `deterministic` is implemented; harness-kind synthesis is
-  contract-reserved and must error as not implemented yet.
+- `--judge-model <entry>`: override the judge model; defaults to
+  `--parent-model` when available.
+- `--synthesizer <parent-agent|deterministic|opencode|claude-code>`:
+  harness-backed judge is the default; `parent-agent` and `deterministic` are
+  explicit-only escapes.
 - `--timeout-ms <n>`: per-worker timeout.
 
 Reasoning and budget options a harness cannot honor are reported as warnings
@@ -124,8 +136,9 @@ in the panel report, never silently dropped.
 
 Default Markdown output starts with run status, compliance tier, and warnings,
 then lists each worker's full output with worker id, model, harness, and
-status, then the deterministic audit synthesis, then recording status. Exit
-code is 0 for `ok` and `partial`, and 1 for `failed` or usage errors.
+status, then the judge analysis. When the judge did not run or failed, the
+report shows deterministic audit synthesis instead. Exit code is 0 for `ok`
+and `partial`, and 1 for `failed` or usage errors.
 
 ## Worker Rules
 

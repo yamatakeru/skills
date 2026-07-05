@@ -1,11 +1,14 @@
 import { stableStringify } from "./manifest";
+import { describeJudgeInvocation } from "./judge-synthesizer";
 import type {
   ComplianceSummary,
   ComplianceTier,
+  JudgeCompliance,
   PanelRequest,
   ProvenanceEvent,
   ProvenanceEventType,
   SessionMode,
+  SynthesisResult,
   ToolsPolicy,
   WorkerCompliance,
   WorkerComplianceEvidence,
@@ -18,7 +21,7 @@ export function evaluateCompliance(input: {
   workerRequests: WorkerRequest[];
   workerResults: WorkerResult[];
   events: ProvenanceEvent[];
-  synthesisPresent: boolean;
+  synthesisResult?: SynthesisResult;
 }): ComplianceSummary {
   const missingRequiredEvents = findMissingRequiredEvents(input);
   const failedWorkers = input.workerResults
@@ -74,11 +77,38 @@ export function evaluateCompliance(input: {
   return {
     tier,
     workerCompliance,
+    judgeCompliance: evaluateJudgeCompliance(input.synthesisResult),
     degradedWorkers: degradedWorkers.length === 0 ? undefined : degradedWorkers,
     failedWorkers: failedWorkers.length === 0 ? undefined : failedWorkers,
     missingRequiredEvents:
       missingRequiredEvents.length === 0 ? undefined : missingRequiredEvents,
     notes: notes.length === 0 ? undefined : notes,
+  };
+}
+
+function evaluateJudgeCompliance(
+  synthesisResult: SynthesisResult | undefined,
+): JudgeCompliance | undefined {
+  const judgeRequest = synthesisResult?.judgeRequest;
+  if (judgeRequest === undefined) {
+    return undefined;
+  }
+  const judge = describeJudgeInvocation(synthesisResult);
+
+  return {
+    workerId: judgeRequest.workerId,
+    status: judge.status,
+    modelUsed: judge.modelUsed,
+    harnessUsed: judge.harnessUsed,
+    toolsPolicy: judgeRequest.toolsPolicy,
+    notes: [
+      "Judge invocation is recorded separately from blind panel worker compliance.",
+      judgeRequest.toolsPolicy === undefined
+        ? "Judge tools policy was not recorded on the request."
+        : judgeRequest.toolsPolicy.mode === "none"
+          ? "Judge requested a no-tools policy."
+          : "Judge requested a non-no-tools policy.",
+    ],
   };
 }
 
@@ -169,7 +199,7 @@ function determineComplianceTier(input: {
 function findMissingRequiredEvents(input: {
   workerRequests: WorkerRequest[];
   events: ProvenanceEvent[];
-  synthesisPresent: boolean;
+  synthesisResult?: SynthesisResult;
 }): string[] {
   const missing: string[] = [];
   for (const eventType of ["panel.started", "context.manifested"] as const) {
@@ -201,7 +231,7 @@ function findMissingRequiredEvents(input: {
     }
   }
   if (
-    input.synthesisPresent &&
+    (input.synthesisResult?.synthesis.length ?? 0) > 0 &&
     !hasEvent(input.events, "synthesis.completed")
   ) {
     missing.push("synthesis.completed");
