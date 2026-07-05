@@ -40,9 +40,11 @@ own model as `--parent-model` whenever it can be expressed as a supported model
 entry. If the parent model is unavailable, omit it; the CLI will warn and
 refill the slot from fallback lists.
 
-Bun is required. If `bun` is missing, produce a clear error with installation
-guidance, for example: "Fusion requires Bun. Install it from
-https://bun.sh/docs/installation and rerun the CLI." Do not silently fall back.
+Bun is required. If `bun` is missing, first surface a clear error with
+installation guidance, for example: "Fusion requires Bun. Install it from
+https://bun.sh/docs/installation and rerun the CLI." Never substitute another
+execution path silently; the only permitted degradation is the announced
+Emergency Fallback described below.
 
 ## Parent-Agent Synthesis
 
@@ -134,9 +136,10 @@ results as full-panel consensus.
 
 ## Emergency Fallback
 
-If the CLI cannot run at all, for example because Bun is missing or no usable
-harness exists, an internal same-agent blind-panel simulation is permitted only
-as an emergency fallback. Announce the degraded status before producing
+If the CLI cannot run at all, for example because Bun is missing (after
+surfacing the installation error above) or no usable harness exists, an
+internal same-agent blind-panel simulation is permitted only as an emergency
+fallback. Announce the degraded status before producing
 results. Keep the same prompt separated across passes, preserve the five
 findings, and state that this is not a full-compliance Fusion panel. Removal of
 this fallback will be reconsidered once the skill matures.

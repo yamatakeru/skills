@@ -253,7 +253,7 @@ function renderWorkerPrompt(request: WorkerRequest): string {
   ].join("\n");
 }
 
-function modelPreferenceToModel(
+export function modelPreferenceToModel(
   modelPreference: ModelPreference | undefined,
 ): string | undefined {
   if (
@@ -365,7 +365,7 @@ function textFromContentPart(part: unknown): string | undefined {
   return String(part.text);
 }
 
-function snippet(value: string): string {
+export function snippet(value: string): string {
   const trimmed = value.trim();
   return trimmed.length === 0 ? "no stderr/stdout" : trimmed.slice(0, 500);
 }

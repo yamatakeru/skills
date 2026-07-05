@@ -1,10 +1,16 @@
-import { executeCommand, type CommandExecutor } from "./headless-cli-adapters";
+import {
+  executeCommand,
+  modelPreferenceToModel,
+  snippet,
+  type CommandExecutor,
+} from "./headless-cli-adapters";
 import type {
   HarnessKind,
   HarnessSelectionPolicy,
   ModelPreference,
   PanelSpec,
 } from "./types";
+import { claudeModelAliases } from "./worker-requests";
 
 export const DEFAULT_PANEL_SIZE = 3;
 
@@ -143,14 +149,16 @@ async function resolveExplicitModels(
 
   const resolved: ResolvedPanelModel[] = [];
   for (const entry of entries) {
-    resolved.push(
-      await resolveSource(
-        sourceFromEntry("explicit", entry),
-        new Set(),
-        opencodeModels,
-        { allowDuplicate: true, required: true },
-      ),
+    const model = await tryResolveSource(
+      sourceFromEntry("explicit", entry),
+      new Set(),
+      opencodeModels,
+      { allowDuplicate: true, required: true },
     );
+    if (model === undefined) {
+      throw new Error(`Unable to resolve Fusion model entry: ${entry}`);
+    }
+    resolved.push(model);
   }
   return resolved;
 }
@@ -215,24 +223,6 @@ async function resolveDefaultModels(
   }
 
   return resolved.slice(0, panelists);
-}
-
-async function resolveSource(
-  source: ModelSource,
-  used: Set<string>,
-  opencodeModels: LazyOpenCodeModels,
-  options: { allowDuplicate: boolean; required: boolean },
-): Promise<ResolvedPanelModel> {
-  const resolved = await tryResolveSource(
-    source,
-    used,
-    opencodeModels,
-    options,
-  );
-  if (resolved !== undefined) {
-    return resolved;
-  }
-  throw new Error(`Unable to resolve Fusion model entry: ${source.entry}`);
 }
 
 async function tryResolveSource(
@@ -382,10 +372,7 @@ function modelPreferenceFromModelId(
 }
 
 function modelIdFromPreference(preference: ModelPreference): string {
-  if (preference.provider !== undefined && preference.model !== undefined) {
-    return `${preference.provider}/${preference.model}`;
-  }
-  const modelId = preference.model ?? preference.aliases?.[0];
+  const modelId = modelPreferenceToModel(preference);
   if (modelId === undefined) {
     throw new Error("ModelPreference must include a model or alias.");
   }
@@ -396,8 +383,13 @@ function isProviderQualifiedModel(entry: string): boolean {
   return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.:@+-]+$/u.test(entry);
 }
 
+const claudeModelIdPattern = new RegExp(
+  `^(?:${claudeModelAliases.join("|")}|claude-[A-Za-z0-9_.:-]+)$`,
+  "iu",
+);
+
 function isClaudeModelId(entry: string): boolean {
-  return /^(?:fable|opus|sonnet|haiku|claude-[A-Za-z0-9_.:-]+)$/iu.test(entry);
+  return claudeModelIdPattern.test(entry);
 }
 
 function claudeFallbacksForModelId(modelId: string): string[] {
@@ -469,9 +461,4 @@ function parseOpenCodeModels(stdout: string): string[] {
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/gu, "");
-}
-
-function snippet(value: string): string {
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? "no stderr/stdout" : trimmed.slice(0, 500);
 }

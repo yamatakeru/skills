@@ -15,9 +15,6 @@ import {
   type PanelRequest,
   type ProvenancePolicy,
   type RunRecorder,
-  type Synthesizer,
-  type SynthesisInput,
-  type SynthesisResult,
 } from "../lib/protocol";
 
 interface CliOptions {
@@ -33,6 +30,8 @@ interface CliOptions {
 }
 
 class UsageError extends Error {}
+
+class HelpRequested extends Error {}
 
 async function main(): Promise<number> {
   try {
@@ -54,18 +53,6 @@ async function main(): Promise<number> {
       panelistsExplicit: options.panelistsExplicit,
       cwd: process.cwd(),
     });
-    const userPolicy = {
-      ...(composition.harnessSelectionPolicy.userPolicy ?? {}),
-      fusionWorkerEnvironment: {
-        workspaceRoot: process.cwd(),
-        workingDirectory: process.cwd(),
-      },
-      fusionWorkerBudget:
-        options.timeoutMs === undefined
-          ? undefined
-          : { timeoutMs: options.timeoutMs },
-    };
-
     const sharedContext = {
       text: `Workspace root: ${process.cwd()}`,
     };
@@ -79,10 +66,7 @@ async function main(): Promise<number> {
         sharedContext,
       }),
       panelSpec: composition.panelSpec,
-      harnessSelectionPolicy: {
-        ...composition.harnessSelectionPolicy,
-        userPolicy,
-      },
+      harnessSelectionPolicy: composition.harnessSelectionPolicy,
       synthesisContract: {
         requiredFindings: [
           "consensus",
@@ -96,6 +80,14 @@ async function main(): Promise<number> {
         requireAttribution: true,
       },
       synthesizer: { strategy: options.synthesizer },
+      workerEnvironment: {
+        workspaceRoot: process.cwd(),
+        workingDirectory: process.cwd(),
+      },
+      workerBudget:
+        options.timeoutMs === undefined
+          ? undefined
+          : { timeoutMs: options.timeoutMs },
       provenancePolicy: provenancePolicy(options.record),
     };
 
@@ -112,12 +104,12 @@ async function main(): Promise<number> {
     const result = await runPanel(request, {
       runner: registry,
       harnessSelector: registry,
-      synthesizer: new CliSynthesizer(
-        options.synthesizer,
-        composition.warnings,
-      ),
+      synthesizer: new DeterministicSynthesizer(),
       recorder,
     });
+    if (composition.warnings.length > 0) {
+      result.warnings = [...composition.warnings, ...(result.warnings ?? [])];
+    }
 
     if (options.json) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -131,31 +123,16 @@ async function main(): Promise<number> {
     }
     return result.status === "failed" ? 1 : 0;
   } catch (error) {
+    if (error instanceof HelpRequested) {
+      process.stdout.write(`${usage()}\n`);
+      return 0;
+    }
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${message}\n`);
     if (error instanceof UsageError) {
       process.stderr.write(`\n${usage()}\n`);
     }
     return 1;
-  }
-}
-
-class CliSynthesizer implements Synthesizer {
-  private readonly deterministic = new DeterministicSynthesizer();
-
-  constructor(
-    private readonly strategy: string,
-    private readonly compositionWarnings: string[],
-  ) {}
-
-  async synthesize(input: SynthesisInput): Promise<SynthesisResult> {
-    const result = await this.deterministic.synthesize(input);
-    return {
-      ...result,
-      finalAnswer:
-        this.strategy === "parent-agent" ? undefined : result.finalAnswer,
-      warnings: [...this.compositionWarnings, ...(result.warnings ?? [])],
-    };
   }
 }
 
@@ -181,34 +158,38 @@ function parseArgs(args: string[]): CliOptions {
     }
 
     const [flag, inlineValue] = splitFlag(arg);
+    // Returns the inline `--flag=value` form or consumes the next argv slot.
+    const takeValue = (): string => {
+      if (inlineValue !== undefined) {
+        if (inlineValue.length === 0) {
+          throw new UsageError(`${flag} requires a value.`);
+        }
+        return inlineValue;
+      }
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new UsageError(`${flag} requires a value.`);
+      }
+      index += 1;
+      return value;
+    };
+
     switch (flag) {
       case "--parent-model":
-        options.parentModel = requiredValue(flag, inlineValue, args, ++index);
-        if (inlineValue !== undefined) {
-          index -= 1;
-        }
+        options.parentModel = takeValue();
         break;
       case "--models":
-        options.models = requiredValue(flag, inlineValue, args, ++index)
+        options.models = takeValue()
           .split(",")
           .map((model) => model.trim())
           .filter((model) => model.length > 0);
-        if (inlineValue !== undefined) {
-          index -= 1;
-        }
         if (options.models.length === 0) {
           throw new UsageError("--models must include at least one model.");
         }
         break;
       case "--panelists":
-        options.panelists = parsePositiveInteger(
-          flag,
-          requiredValue(flag, inlineValue, args, ++index),
-        );
+        options.panelists = parsePositiveInteger(flag, takeValue());
         options.panelistsExplicit = true;
-        if (inlineValue !== undefined) {
-          index -= 1;
-        }
         break;
       case "--record":
         options.record = true;
@@ -217,22 +198,13 @@ function parseArgs(args: string[]): CliOptions {
         options.json = true;
         break;
       case "--synthesizer":
-        options.synthesizer = requiredValue(flag, inlineValue, args, ++index);
-        if (inlineValue !== undefined) {
-          index -= 1;
-        }
+        options.synthesizer = takeValue();
         break;
       case "--timeout-ms":
-        options.timeoutMs = parsePositiveInteger(
-          flag,
-          requiredValue(flag, inlineValue, args, ++index),
-        );
-        if (inlineValue !== undefined) {
-          index -= 1;
-        }
+        options.timeoutMs = parsePositiveInteger(flag, takeValue());
         break;
       case "--help":
-        throw new UsageError(usage());
+        throw new HelpRequested();
       default:
         throw new UsageError(`Unknown Fusion option: ${flag}`);
     }
@@ -254,25 +226,6 @@ function splitFlag(arg: string): [string, string | undefined] {
   return [arg.slice(0, equalsIndex), arg.slice(equalsIndex + 1)];
 }
 
-function requiredValue(
-  flag: string,
-  inlineValue: string | undefined,
-  args: string[],
-  index: number,
-): string {
-  if (inlineValue !== undefined) {
-    if (inlineValue.length === 0) {
-      throw new UsageError(`${flag} requires a value.`);
-    }
-    return inlineValue;
-  }
-  const value = args[index];
-  if (value === undefined || value.startsWith("--")) {
-    throw new UsageError(`${flag} requires a value.`);
-  }
-  return value;
-}
-
 function parsePositiveInteger(flag: string, value: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) {
@@ -292,6 +245,7 @@ function renderMarkdownReport(
   result: PanelResult,
   options: { recordingStatus: string; synthesizer: string },
 ): string {
+  const isParentAgent = options.synthesizer === "parent-agent";
   const warnings = result.warnings ?? [];
   const errors = result.errors ?? [];
   const lines = [
@@ -301,7 +255,7 @@ function renderMarkdownReport(
     `- Compliance tier: ${result.complianceSummary.tier}`,
     `- Synthesizer option: ${options.synthesizer}`,
   ];
-  if (options.synthesizer === "parent-agent") {
+  if (isParentAgent) {
     lines.push(
       "- Final answer: unset; the parent agent must author synthesis and final answer from this report.",
     );
@@ -341,14 +295,13 @@ function renderMarkdownReport(
     lines.push("", worker.output.trim() || "[no output]", "");
   }
 
-  const synthesisLabel =
-    options.synthesizer === "parent-agent"
-      ? "## Reference Deterministic Synthesis (Audit Reference)"
-      : "## Deterministic Synthesis";
+  const synthesisLabel = isParentAgent
+    ? "## Reference Deterministic Synthesis (Audit Reference)"
+    : "## Deterministic Synthesis";
   lines.push(
     synthesisLabel,
     "",
-    `Strategy: deterministic${options.synthesizer === "parent-agent" ? "; audit reference only" : ""}.`,
+    `Strategy: deterministic${isParentAgent ? "; audit reference only" : ""}.`,
     "",
     result.synthesis.trim() || "[no synthesis]",
     "",

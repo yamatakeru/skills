@@ -146,6 +146,12 @@
         },
         "synthesizer": {
           "$ref": "#/definitions/SynthesizerPreference"
+        },
+        "workerBudget": {
+          "$ref": "#/definitions/WorkerBudget"
+        },
+        "workerEnvironment": {
+          "$ref": "#/definitions/WorkerEnvironment"
         }
       },
       "required": [
@@ -308,6 +314,42 @@
         }
       },
       "required": ["strategy"],
+      "type": "object"
+    },
+    "WorkerBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "maxInputTokens": {
+          "type": "number"
+        },
+        "maxOutputTokens": {
+          "type": "number"
+        },
+        "maxToolCalls": {
+          "type": "number"
+        },
+        "maxTurns": {
+          "type": "number"
+        },
+        "timeoutMs": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerEnvironment": {
+      "additionalProperties": false,
+      "properties": {
+        "envProfile": {
+          "type": "string"
+        },
+        "workingDirectory": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        }
+      },
       "type": "object"
     }
   }

@@ -28,6 +28,8 @@ export interface PanelRequest {
   harnessSelectionPolicy: HarnessSelectionPolicy;
   synthesisContract: SynthesisContract;
   synthesizer?: SynthesizerPreference;
+  workerEnvironment?: WorkerEnvironment;
+  workerBudget?: WorkerBudget;
   provenancePolicy?: ProvenancePolicy;
 }
 

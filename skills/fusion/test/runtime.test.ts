@@ -358,6 +358,19 @@ describe("Fusion panel runtime", () => {
     );
   });
 
+  test("parent-agent strategy keeps synthesis but unsets the final answer", async () => {
+    const result = await runPanel(
+      { ...panelRequest(), synthesizer: { strategy: "parent-agent" } },
+      {
+        runner: okRunner(),
+        synthesizer: new DeterministicSynthesizer(),
+      },
+    );
+
+    expect(result.synthesis).toContain("# Fusion Synthesis");
+    expect(result.finalAnswer).toBeUndefined();
+  });
+
   test("downgrades resumed sessions without clean lineage evidence", async () => {
     const result = await runPanel(panelRequest(), {
       runner: okRunner({ sessionMode: "resume" }),

@@ -194,12 +194,18 @@ async function runSynthesisIfAllowed(
     workerResultIds: workerResults.map((result) => result.workerId),
   });
   try {
-    return await options.synthesizer.synthesize({
+    const synthesisResult = await options.synthesizer.synthesize({
       panelRequest: request,
       workerRequests,
       workerResults,
       events: [...events],
     });
+    if (request.synthesizer?.strategy === "parent-agent") {
+      // Parent-agent strategy: synthesis stays as an audit reference, but the
+      // final answer must be authored by the parent agent, not the synthesizer.
+      return { ...synthesisResult, finalAnswer: undefined };
+    }
+    return synthesisResult;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { synthesis: "", errors: [message] };
