@@ -4,6 +4,9 @@
 
 Accepted
 
+Amended by ADR 0018: the default read-only policy now includes web search and
+web fetch where the harness provides them.
+
 ## Context
 
 Fusion workers may run through different harnesses and models. If workers in the

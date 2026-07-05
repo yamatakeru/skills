@@ -143,7 +143,10 @@ deployments may override this policy.
 
 The first runtime milestone where Fusion can execute through the library API with
 both OpenCode and Claude Code worker adapters. Before both adapters exist, the
-skill is an implementation preview rather than a generally usable tool.
+skill is an implementation preview rather than a generally usable tool. The
+milestone is accepted through the smoke matrix in the spec: default panel from a
+Claude Code parent, a claude-code-including panel from an OpenCode parent, green
+test/typecheck/schema runs, and a verified `--record` artifact set.
 
 ## Implementation Preview
 
@@ -180,14 +183,66 @@ override, use restrictive permissions where possible, and report recording statu
 
 A local fallback synthesizer that produces predictable synthesis from worker
 outputs without invoking another model. It exists to make early runs executable
-and tests stable; it is not the final quality target.
+and tests stable; it is not the final quality target. Its output stays in panel
+reports and recorded artifacts as an audit reference even when the parent agent
+authors the synthesis.
+
+## Parent-Agent Synthesis
+
+The usable-milestone synthesis strategy: the parent agent reads the panel
+report and authors the five-finding synthesis and the final answer itself,
+without an additional model invocation. It corresponds to OpenRouter Fusion's
+outer-model authorship, but merges the judge role into the parent agent.
 
 ## Harness-Backed Synthesizer
 
-A future synthesizer implementation that uses a concrete harness, such as
-OpenCode, to produce higher-quality synthesis from completed worker outputs. It
-is not subject to worker blindness because synthesis occurs after worker results
-are returned, but it still needs provenance and delegation controls.
+The planned successor synthesis strategy (also called the harness-backed
+judge): a separate worker invocation through a concrete harness, such as
+OpenCode or Claude Code, that produces the structured comparison from completed
+worker outputs. Selected through `SynthesizerPreference`. It is not subject to
+worker blindness because synthesis occurs after worker results are returned,
+but it still needs provenance and delegation controls.
+
+## Synthesizer Preference
+
+The contract field naming who authors the synthesis: `parent-agent`,
+`deterministic`, or a harness kind for the harness-backed judge.
+
+## Fusion CLI
+
+The bundled Bun entrypoint under `skills/fusion/bin/` that is the single
+canonical skill execution path. `SKILL.md` instructs the parent agent to run it
+through the harness shell tool; it requires Bun and no npm runtime
+dependencies.
+
+## Panel Report
+
+The default stdout contract of the Fusion CLI: a Markdown document carrying run
+status, compliance tier, warnings, each worker's full output, and the reference
+deterministic synthesis. `--json` replaces it with the complete `PanelResult`.
+
+## Default Panel Slots
+
+The three-slot default composition used when no explicit model selection is
+given: the parent model slot (the parent agent's own model, passed via
+`--parent-model`), the flagship slot (current OpenAI flagship through
+OpenCode), and the budget slot (a cheap-but-capable model through OpenCode).
+Slots resolve through the model alias table, deduplicate by resolved model ID,
+and refill from unused fallback entries.
+
+## Model Alias Table
+
+The bundled table mapping stable alias names such as `openai-flagship` and
+`budget-smart` to ordered, provider-qualified model ID fallback lists. It
+absorbs model generation changes through skill updates instead of prompt or
+documentation rewrites.
+
+## Emergency Internal Fallback
+
+The only surviving internal-pass path after the legacy tiers were retired: a
+same-agent degraded simulation permitted solely when the Fusion CLI cannot run,
+required to announce its degraded status before producing results, and
+scheduled for removal consideration once the skill matures.
 
 ## Secret Redaction
 
@@ -203,9 +258,11 @@ they are installed with the Fusion skill.
 ## Tools Policy
 
 The worker permission contract for tools such as file reads, search, shell
-commands, network access, and edits. Fusion workers use read-only tools by
-default, and workers in the same panel should receive the same tools policy
-unless an explicit adapter limitation or user policy says otherwise.
+commands, network access, and edits. Fusion workers default to read-only local
+access plus web search and web fetch where the harness provides them; edit,
+write, and recursive delegation are denied by default. Workers in the same
+panel should receive the same tools policy unless an explicit adapter
+limitation or user policy says otherwise.
 
 ## Session Reuse
 

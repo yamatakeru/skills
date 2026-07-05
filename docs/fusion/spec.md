@@ -47,6 +47,60 @@ A harness is full-capable only when its adapter can:
 Harnesses that cannot provide these capabilities may still be used, but the
 orchestrator must downgrade compliance or report the missing evidence.
 
+## Reference Skill Execution Path
+
+The bundled CLI entrypoint under `skills/fusion/bin/` is the single canonical
+skill execution path (ADR 0014). In both Claude Code and OpenCode, `SKILL.md`
+instructs the parent agent to run it through the harness shell tool. Bun is the
+required runtime; the runtime keeps zero npm runtime dependencies so the
+installed skill directory is self-contained.
+
+The CLI prints a Markdown panel report to stdout by default: status,
+compliance tier, and warnings first, then each worker's full output, then the
+reference deterministic synthesis. `--json` switches stdout to the complete
+`PanelResult`.
+
+Legacy execution tiers are retired (ADR 0017). Hidden-subagent panels are
+removed; `fusion-panelist-*` agents are reference examples only. Same-agent
+internal passes survive solely as an emergency fallback when the CLI cannot
+run, must announce themselves as degraded simulation before producing results,
+and are scheduled for removal consideration once the skill matures.
+
+## Reference Panel Composition Policy
+
+The default panel is three workers; same-harness panels are allowed
+(ADR 0015). Default slots, in priority order:
+
+1. the parent agent's own model (a default, not a requirement), conveyed via
+   `--parent-model` on the CLI as instructed by `SKILL.md`;
+2. the current OpenAI flagship through OpenCode;
+3. a cheap-but-capable budget model through OpenCode.
+
+Explicit model selection replaces the default composition entirely. Model
+staleness is absorbed by a bundled alias table with ordered fallback lists
+(`openai-flagship`, `budget-smart`), using `ModelPreference.fallbacks`.
+OpenCode slots verify availability via `opencode models`; Claude Code slots use
+the built-in latest aliases plus `--fallback-model` because Claude Code has no
+enumeration command.
+
+After resolution, duplicate model IDs are deduplicated and refilled from unused
+fallback entries so a default panel always has three distinct models. Repeating
+a model is allowed only by explicit selection.
+
+Model entries route to harnesses by pattern (`provider/model` to OpenCode,
+Claude aliases to Claude Code, alias-table names via the table), with optional
+`opencode:` / `claude-code:` forcing prefixes. Unrecognized entries are errors.
+While the harness set is OpenCode and Claude Code, Claude models route
+unconditionally to Claude Code.
+
+## Reference Worker Tool Policy
+
+The default worker tool policy is read-only local access plus web search and
+web fetch where the harness provides them (ADR 0018), matching OpenRouter
+Fusion's panelist capability. Edit and write operations, destructive commands,
+and recursive delegation remain denied by default. Same-panel tool parity and
+provenance recording of differences follow ADR 0006.
+
 ## Reference Runtime Recording
 
 Fusion does not require durable run artifacts to execute. The reference runtime
@@ -90,20 +144,54 @@ Code worker adapters can execute through the same portable library contract.
 
 ## Reference Synthesis Policy
 
-The next reference runtime includes a deterministic fallback synthesizer so a
-panel can complete without requiring model-backed synthesis. This fallback is a
-stability and testability mechanism, not the final quality target.
+In the usable milestone, the parent agent authors the synthesis and the final
+answer (ADR 0016). The CLI returns worker outputs plus evidence; the skill
+directs the parent agent to write the five-finding synthesis and ground the
+final answer in it. This mirrors OpenRouter Fusion's outer-model authorship of
+the final answer, but diverges from its separate temperature-0 judge call; the
+divergence is deliberate and recorded.
 
-The long-term synthesis direction is a harness-backed synthesizer, with OpenCode
-or Claude Code as likely implementations once worker adapter evidence and run
-recording are stable. Synthesis artifacts should identify their strategy, for
-example `deterministic`, `opencode`, or `claude-code`.
+The runtime still includes a deterministic fallback synthesizer so a panel can
+complete without model-backed synthesis, and its output remains in reports and
+recorded artifacts as an audit reference. It is a stability and testability
+mechanism, not the final quality target.
+
+Synthesis ownership migrates in stages: parent agent now, harness-backed judge
+later. The `--synthesizer` option contract is defined now (see
+`SynthesizerPreference`), with only `parent-agent` and `deterministic`
+implemented in this milestone. The long-term direction remains a harness-backed
+judge, with OpenCode or Claude Code as likely implementations once worker
+adapter evidence and run recording are stable. Synthesis artifacts should
+identify their strategy, for example `parent-agent`, `deterministic`,
+`opencode`, or `claude-code`.
+
+Partial failure defaults follow OpenRouter semantics (ADR 0019):
+`allowPartial: true`, continue with disclosure when at least one worker
+succeeds, fail only when all workers fail.
 
 ## Reference Schema Policy
 
 JSON Schema is generated from the TypeScript contracts. Runtime schemas used by
 the Fusion skill should live under `skills/fusion/schema/` so they are installed
 with the skill rather than depending on repository-level files.
+
+## Usable Milestone Acceptance Criteria
+
+The skill is "practically usable" when all of the following are observed, with
+the procedure documented for re-execution:
+
+1. From a Claude Code parent, a default skill invocation runs a three-worker
+   panel (claude-code x1 + opencode x2) and every worker returns
+   `status: "ok"`, with a correct report.
+2. From an OpenCode parent, a skill invocation whose selection includes a
+   claude-code worker completes with every worker `status: "ok"`.
+3. `bun test`, `bun run typecheck:fusion`, and `bun run schema:fusion` pass.
+4. A `--record` run writes the split artifact set under
+   `<workspaceRoot>/.fusion-runs/<panelRunId>/`.
+
+These are manual smoke checks with real model invocations; CI automation of
+this matrix is deferred to a later milestone because it requires credential
+management and paid model calls in CI.
 
 ## Contract Sketch
 
@@ -133,7 +221,13 @@ interface PanelRequest {
   panelSpec: PanelSpec;
   harnessSelectionPolicy: HarnessSelectionPolicy;
   synthesisContract: SynthesisContract;
+  synthesizer?: SynthesizerPreference;
   provenancePolicy?: ProvenancePolicy;
+}
+
+interface SynthesizerPreference {
+  strategy: "parent-agent" | "deterministic" | HarnessKind;
+  model?: ModelPreference;
 }
 
 interface PanelResult {
@@ -199,6 +293,7 @@ interface ContextManifest {
 interface PanelSpec {
   workerCount: number;
   modelPreferences?: ModelPreference[];
+  parentModel?: ModelPreference;
 }
 
 interface HarnessSelectionPolicy {
@@ -404,6 +499,11 @@ agreement as full-panel consensus.
 `PanelResult.finalAnswer` is separate from `synthesis`. Synthesis compares and
 attributes worker outputs; the final answer is the user-facing response grounded
 in that synthesis.
+
+When the synthesis strategy is `parent-agent`, the runtime records
+`synthesis.completed` for the deterministic reference synthesis it produced;
+the parent-authored synthesis is a skill-layer artifact until a harness-backed
+judge exists.
 
 Fusion workers should default to `allowRecursiveDelegation: false`,
 `denyPanelSpawning: true`, and `denySubtaskDelegation: true`. This preserves the

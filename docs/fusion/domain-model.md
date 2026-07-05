@@ -35,10 +35,12 @@ consensus, contradictions, partial coverage, unique insights, and blind spots.
 Important synthesis claims should be attributable to worker outputs when the
 synthesis contract requires attribution.
 
-The reference runtime may use a deterministic fallback synthesizer to make early
-panel runs executable and testable. This is not the final answer-quality target;
-future model-backed synthesis should be represented as a harness-backed
-synthesizer with its own evidence and recorded artifact metadata.
+Synthesis ownership is staged. In the usable milestone the parent agent authors
+the synthesis from the CLI panel report; the runtime's deterministic synthesis
+remains an audit reference and fallback. A harness-backed judge is the planned
+successor, selected through `SynthesizerPreference`, with its own evidence and
+recorded artifact metadata. The deterministic synthesizer is not the final
+answer-quality target.
 
 ### FinalAnswer
 
@@ -60,6 +62,19 @@ recorder writes project-local artifacts under
 
 ## Value Objects
 
+### PanelCompositionPolicy
+
+The rules that turn an option-less invocation into a concrete worker set: the
+default three slots (parent model, flagship, budget), the bundled model alias
+table with ordered fallbacks, availability checks per harness, and
+deduplication by resolved model ID with refill. Explicit user selection
+replaces the default composition.
+
+### SynthesizerPreference
+
+Identifies who authors the synthesis: `parent-agent`, `deterministic`, or a
+harness kind for the future harness-backed judge.
+
 ### ContextManifest
 
 Hashes the rendered worker prompt, shared context, files, and references. It is
@@ -67,8 +82,9 @@ required for full compliance.
 
 ### ToolsPolicy
 
-Defines the worker tool permissions. The default is read-only and same-by-default
-within a panel.
+Defines the worker tool permissions. The default is read-only local access plus
+web search and web fetch where the harness provides them, and same-by-default
+within a panel. Edit, write, and recursive delegation remain denied by default.
 
 ### SessionPolicy
 
@@ -160,6 +176,9 @@ warning if `synthesis.completed` records the input worker result set.
 
 ## Invariants
 
+- The bundled CLI is the canonical skill execution path; same-agent internal
+  simulation is an emergency fallback that must announce itself as degraded
+  before producing results.
 - Workers in a panel receive the same rendered prompt and shared context.
 - Workers do not receive peer outputs, draft synthesis, or panel conclusions
   before returning.

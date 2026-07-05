@@ -4,6 +4,9 @@
 
 Accepted
 
+Extended by ADR 0019: the reference runtime defaults to `allowPartial: true`
+with OpenRouter-aligned continue-and-disclose semantics.
+
 ## Context
 
 Workers may timeout, fail, refuse, or return invalid output. Failing the entire
