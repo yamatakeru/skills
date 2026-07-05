@@ -73,7 +73,19 @@ received the same task inputs.
 
 The exact prompt sent to a worker, including the user task, portable worker
 instructions, and output contract. This is the prompt identity boundary for full
-compliance.
+compliance. The orchestrator renders it once per panel; adapters send it
+verbatim.
+
+## Portable Worker Instructions
+
+The harness-neutral instruction block rendered into every worker prompt: the
+neutral-panelist norms ported from the original OpenCode Fusion panelists
+(independence, no peer coordination, one strong self-contained answer,
+tool use when it materially improves correctness, no file modification,
+uncertainty preservation, concise reasoning summaries instead of hidden
+chain-of-thought) plus the output contract's required sections. Adopting these
+norms is a deliberate, provisional divergence from upstream OpenRouter Fusion,
+which adds no instructions (ADR 0020).
 
 ## Provenance Event Log
 
@@ -208,6 +220,14 @@ but it still needs provenance and delegation controls.
 The contract field naming who authors the synthesis: `parent-agent`,
 `deterministic`, or a harness kind for the harness-backed judge.
 
+## Reasoning Preference
+
+The optional contract value (`effort`, `maxTokens`) forwarded panel-wide to
+every worker call, mirroring OpenRouter Fusion's `reasoning` parameter. Unset
+means provider default; there is no built-in depth floor. Preferences a
+harness cannot honor are recorded as warnings, never silently dropped
+(ADR 0021).
+
 ## Fusion CLI
 
 The bundled Bun entrypoint under `skills/fusion/bin/` that is the single
@@ -259,8 +279,10 @@ they are installed with the Fusion skill.
 
 The worker permission contract for tools such as file reads, search, shell
 commands, network access, and edits. Fusion workers default to read-only local
-access plus web search and web fetch where the harness provides them; edit,
-write, and recursive delegation are denied by default. Workers in the same
+access, a read-only bash command allowlist (git inspection plus read-only
+search and listing commands), and web search and web fetch where the harness
+provides them; all other shell commands, edit, write, and recursive delegation
+are denied by default. Workers in the same
 panel should receive the same tools policy unless an explicit adapter
 limitation or user policy says otherwise.
 

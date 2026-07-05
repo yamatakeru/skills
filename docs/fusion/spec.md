@@ -93,13 +93,47 @@ Claude aliases to Claude Code, alias-table names via the table), with optional
 While the harness set is OpenCode and Claude Code, Claude models route
 unconditionally to Claude Code.
 
+## Reference Worker Prompt Policy
+
+The orchestrator renders the worker prompt once per panel; adapters send it
+verbatim. The rendered prompt is the user task, the portable worker
+instructions, and the output contract's required sections, and the
+`ContextManifest` hashes this actual rendered prompt (ADR 0020).
+
+The portable worker instructions are the OpenCode panelist norms: neutral
+independent panelist framing, no peer coordination, one strong self-contained
+answer rather than hedging for a judge, tool use when it materially improves
+correctness (primary sources for research, project-local evidence for code),
+no file modification, uncertainty preservation, and concise reasoning
+summaries instead of hidden chain-of-thought. The required output sections are
+a single generic set rendered from `OutputContract.requiredSections`. This is
+a deliberate, provisional divergence from upstream OpenRouter Fusion, which
+adds no harness instructions; it is recorded and revisitable (ADR 0020).
+
+Shared context enters the CLI through `--context <text>` and repeatable
+`--context-file <path>` options. File contents are embedded into
+`SharedContext.files` and digested in the manifest; oversized context warns
+rather than failing.
+
+Reasoning depth follows upstream semantics (ADR 0021): the optional
+`ReasoningPreference` (`effort`, `maxTokens`) is forwarded panel-wide to every
+worker call, defaults to provider default with no depth floor, and is exposed
+as `--effort` and `--reasoning-max-tokens`. `--max-turns` wires the existing
+`WorkerBudget.maxTurns`; `maxToolCalls` stays contract-only until an adapter
+can map it. Preferences a harness cannot honor are recorded as warnings, never
+silently dropped.
+
 ## Reference Worker Tool Policy
 
 The default worker tool policy is read-only local access plus web search and
 web fetch where the harness provides them (ADR 0018), matching OpenRouter
-Fusion's panelist capability. Edit and write operations, destructive commands,
-and recursive delegation remain denied by default. Same-panel tool parity and
-provenance recording of differences follow ADR 0006.
+Fusion's panelist capability, plus a read-only bash command allowlist (git
+inspection and read-only search/listing commands) mirroring the original
+OpenCode panelists (ADR 0022). All other shell commands, edit and write
+operations, destructive commands, and recursive delegation remain denied by
+default. Same-panel tool parity and provenance recording of differences follow
+ADR 0006; the opencode adapter's inability to enforce tool policy remains
+recorded degraded-compliance evidence.
 
 ## Reference Runtime Recording
 
@@ -222,12 +256,18 @@ interface PanelRequest {
   harnessSelectionPolicy: HarnessSelectionPolicy;
   synthesisContract: SynthesisContract;
   synthesizer?: SynthesizerPreference;
+  reasoning?: ReasoningPreference;
   provenancePolicy?: ProvenancePolicy;
 }
 
 interface SynthesizerPreference {
   strategy: "parent-agent" | "deterministic" | HarnessKind;
   model?: ModelPreference;
+}
+
+interface ReasoningPreference {
+  effort?: "low" | "medium" | "high" | "xhigh";
+  maxTokens?: number;
 }
 
 interface PanelResult {
@@ -255,6 +295,7 @@ interface WorkerRequest {
   blindnessPolicy: BlindnessPolicy;
   workerPolicy: WorkerPolicy;
   toolsPolicy?: ToolsPolicy;
+  reasoning?: ReasoningPreference;
   environment?: WorkerEnvironment;
   budget?: WorkerBudget;
   outputContract: OutputContract;

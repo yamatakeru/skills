@@ -75,6 +75,13 @@ replaces the default composition.
 Identifies who authors the synthesis: `parent-agent`, `deterministic`, or a
 harness kind for the future harness-backed judge.
 
+### ReasoningPreference
+
+The optional panel-wide reasoning configuration (`effort`, `maxTokens`)
+forwarded to every worker invocation, mirroring OpenRouter Fusion's
+`reasoning` parameter. Unset means provider default. Adapters map it
+best-effort and record a warning when the harness cannot honor it.
+
 ### ContextManifest
 
 Hashes the rendered worker prompt, shared context, files, and references. It is
@@ -82,9 +89,11 @@ required for full compliance.
 
 ### ToolsPolicy
 
-Defines the worker tool permissions. The default is read-only local access plus
-web search and web fetch where the harness provides them, and same-by-default
-within a panel. Edit, write, and recursive delegation remain denied by default.
+Defines the worker tool permissions. The default is read-only local access, a
+read-only bash command allowlist (git inspection plus read-only search and
+listing commands), and web search and web fetch where the harness provides
+them, same-by-default within a panel. All other shell commands, edit, write,
+and recursive delegation remain denied by default.
 
 ### SessionPolicy
 
@@ -179,6 +188,9 @@ warning if `synthesis.completed` records the input worker result set.
 - The bundled CLI is the canonical skill execution path; same-agent internal
   simulation is an emergency fallback that must announce itself as degraded
   before producing results.
+- The orchestrator renders the worker prompt once per panel (user task,
+  portable worker instructions, output contract sections); adapters send it
+  verbatim, and the `ContextManifest` hashes the actual rendered prompt.
 - Workers in a panel receive the same rendered prompt and shared context.
 - Workers do not receive peer outputs, draft synthesis, or panel conclusions
   before returning.
