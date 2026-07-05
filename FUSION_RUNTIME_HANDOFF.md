@@ -1,25 +1,76 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-05
+Date: 2026-07-05 (worker-investigation round)
 
 This handoff captures the state of the Fusion runtime after the usable
-milestone was implemented and smoke-verified. The design authority is
-`docs/fusion/` (spec, domain model, glossary, ADR 0001-0019).
+milestone and the follow-up worker-investigation round (portable worker
+instructions, reasoning pass-through, read-only bash, shared-context flags).
+The design authority is `docs/fusion/` (spec, domain model, glossary,
+ADR 0001-0022).
 
-## Current Status: Usable Milestone Achieved
+## Current Status: Usable Milestone + Worker-Investigation Round
 
-All four acceptance criteria from `docs/fusion/spec.md` ("Usable Milestone
-Acceptance Criteria") were observed on this machine on 2026-07-05:
+The usable milestone (all four acceptance criteria from `docs/fusion/spec.md`)
+was observed on this machine on 2026-07-05. After the worker-investigation
+round the following were re-verified on the same day:
 
 1. Default three-worker panel from a Claude Code parent (claude-code x1 +
    opencode x2), every worker `status: "ok"`, correct Markdown report.
-2. Panel invoked from an OpenCode parent (`opencode run` with the bash tool
-   executing the CLI) with a claude-code worker included, every worker
-   `status: "ok"`.
-3. `bun test` (28 pass), `bun run typecheck:fusion`, and `bun run schema:fusion`
+2. Panel invoked from an OpenCode parent with a claude-code worker included
+   (verified at the usable milestone; not re-run after this round).
+3. `bun test` (42 pass), `bun run typecheck:fusion`, and `bun run schema:fusion`
    all green.
 4. A `--record` run wrote the full split artifact set (8 files) under
-   `.fusion-runs/<panelRunId>/`.
+   `.fusion-runs/<panelRunId>/`, and the recorded `ContextManifest` hash
+   (fnv1a32) was independently recomputed from the rendered prompt and matched.
+
+## What Changed in the Worker-Investigation Round
+
+Root-cause finding: worker investigation effort was qualitatively lower than
+the original OpenCode subagent Fusion not because of reasoning-effort settings
+(those were commented out in the original), but because of (a) a
+suppression-only prompt wrapper, (b) the output contract's `requiredSections`
+never being rendered, (c) a narrower tool loadout without bash, and (d) no way
+to pass conversation context to blind workers.
+
+- `skills/fusion/lib/worker-prompt.ts` (new): `portableWorkerInstructions`
+  (neutral-panelist norms ported from the OpenCode version — an explicit,
+  revisitable trade-off against upstream fidelity, see ADR 0020) and
+  `renderWorkerPrompt` producing the canonical
+  `# Task / # Portable Worker Instructions / # Output Contract /
+  # Shared Context` layout. Required sections and `schemaName` are rendered.
+- Prompt rendering happens exactly once, in `buildWorkerRequests`; the CLI
+  prepares worker requests up front, hashes the actual rendered prompt into
+  the `ContextManifest` (with `userTask` recorded separately), and adapters
+  send `WorkerRequest.prompt` verbatim.
+- `ReasoningPreference` contract (ADR 0021): `--effort <low|medium|high|xhigh>`
+  maps to `claude --effort` and `opencode --variant` (xhigh→max);
+  `--reasoning-max-tokens` and `--max-turns` have no CLI mechanism on either
+  harness today and surface as warnings, never silently dropped.
+- Read-only bash allowlist (ADR 0022): `git status/diff/log`, `rg`, `grep`,
+  `ls`, `cat`, enforced on claude-code via `--allowedTools Bash(<cmd>:*)`
+  patterns under `--permission-mode dontAsk`. `sed` was deliberately excluded:
+  prefix patterns cannot block `sed -i`. OpenCode still cannot enforce tool
+  policy; that stays recorded degraded evidence.
+- Shared-context path: `--context <text>` and repeatable
+  `--context-file <path>` embed content for blind workers; >256KB embedded
+  context warns.
+- Claude stream parsing prefers the final `result` text over concatenated
+  assistant parts, so mid-run narration no longer contaminates worker output.
+- `skills/fusion/SKILL.md` v0.6.0 documents the new flags and tells the parent
+  agent to pass context explicitly and raise `--effort` for high-stakes tasks.
+
+Qualitative before/after comparison (same task, same single sonnet worker):
+the new runtime fully honors the required output sections and cites broader
+evidence (callers, tests, history-verification steps). Caveat: the comparison
+task itself demanded citations, so it shows the lower bound of the
+improvement; suppression effects are expected to matter more on vague tasks.
+
+Review round: CodeRabbit ran on the uncommitted changes (4 major findings).
+Subagent adjudication confirmed 1 (the `sed` hole, fixed), rated 1 partial
+(`schemaName` not rendered — fixed defensively), and falsified 2 by direct
+CLI verification (`opencode --variant` is silently ignored when unsupported;
+`claude --effort xhigh` is a documented valid value on claude 2.1.201).
 
 ## What Exists Now
 
@@ -34,22 +85,20 @@ Acceptance Criteria") were observed on this machine on 2026-07-05:
   `opencode models`, dedupe by resolved model ID with refill, and model-entry
   routing (`provider/model` → opencode, Claude aliases → claude-code,
   `opencode:`/`claude-code:` forced prefixes, unknown entries error) (ADR 0015).
-- `skills/fusion/lib/headless-cli-adapters.ts`: both adapter bugs from the
-  previous handoff are fixed and regression-tested. OpenCode parses
-  `part.text` from `{"type":"text","part":{"type":"text","text":...}}` events
-  (restricted to `part.type === "text"` so reasoning parts are not captured).
-  Claude Code emits `--verbose`, `--tools=<comma-list>` (equals form), and
-  `--fallback-model` from `ModelPreference.fallbacks`.
-- Worker tool defaults include web: read-only local access plus
-  WebSearch/WebFetch; edit/write/destructive/delegation tools denied (ADR 0018).
+- `skills/fusion/lib/headless-cli-adapters.ts`: adapters send the rendered
+  prompt verbatim, map reasoning effort per harness, grant the bash allowlist
+  on claude-code, and record unmapped preference warnings and compliance notes.
+- Worker tool defaults: read-only local access, the read-only bash allowlist,
+  plus WebSearch/WebFetch; edit/write/destructive/delegation tools denied
+  (ADR 0018/0022).
 - Contract additions: `SynthesizerPreference`, `PanelRequest.synthesizer`,
-  `PanelSpec.parentModel`; schemas regenerated (ADR 0016).
+  `PanelSpec.parentModel` (ADR 0016); `ReasoningPreference`,
+  `PanelRequest.reasoning`, `WorkerRequest.reasoning` (ADR 0021); schemas
+  regenerated.
 - Partial-failure defaults are OpenRouter-aligned: `allowPartial: true`,
   continue-and-disclose, `failed` only when every worker fails (ADR 0019).
-- `skills/fusion/SKILL.md`: rewritten around the CLI path and parent-agent
-  synthesis. Legacy execution tiers and hidden-subagent instructions are gone;
-  the only internal path left is the emergency fallback, which must announce
-  degraded status first (ADR 0017).
+- `skills/fusion/SKILL.md` v0.6.0: CLI path and parent-agent synthesis, new
+  context/effort/budget flags, parent-agent guidance (ADR 0017/0020-0022).
 
 ## Smoke Procedure (re-runnable)
 
@@ -84,8 +133,13 @@ recorder refuses to write otherwise without an explicit override.
 
 - Compliance tier is `degraded`, not `full`: the OpenCode CLI adapter cannot
   yet prove effective tool-policy enforcement, and neither adapter provides
-  full session/tool-event evidence. Full compliance was not claimed for the
-  usable milestone.
+  full session/tool-event evidence. Full compliance was not claimed.
+- `--reasoning-max-tokens` and `--max-turns` currently map to no harness CLI
+  mechanism; they are honest warnings, not effective knobs, until the CLIs
+  grow support.
+- New flags (`--effort`, `--context`, `--context-file`, `--max-turns`,
+  `--reasoning-max-tokens`) are unit-tested; only the default path has been
+  smoke-run end-to-end with real models.
 - The alias table (`openai-flagship`, `budget-smart`) pins current model IDs;
   generation changes are absorbed by editing
   `skills/fusion/lib/panel-composition.ts` in a skill update.
@@ -108,6 +162,9 @@ recorder refuses to write otherwise without an explicit override.
    provide better evidence.
 4. Consider removing the emergency internal fallback once the skill matures
    (ADR 0017).
+5. Revisit the portable-worker-instructions trade-off against upstream
+   fidelity once upstream Fusion's prompt policy is observable again
+   (ADR 0020).
 
 ## Useful Commands
 

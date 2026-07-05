@@ -138,6 +138,9 @@
         "provenancePolicy": {
           "$ref": "#/definitions/ProvenancePolicy"
         },
+        "reasoning": {
+          "$ref": "#/definitions/ReasoningPreference"
+        },
         "sharedContext": {
           "$ref": "#/definitions/SharedContext"
         },
@@ -214,6 +217,19 @@
         "includeToolLogs",
         "includeModelMetadata"
       ],
+      "type": "object"
+    },
+    "ReasoningPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "enum": ["low", "medium", "high", "xhigh"],
+          "type": "string"
+        },
+        "maxTokens": {
+          "type": "number"
+        }
+      },
       "type": "object"
     },
     "SharedContext": {

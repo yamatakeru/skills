@@ -9,13 +9,16 @@ import {
   defaultPolicies,
   DeterministicSynthesizer,
   FileRunRecorder,
+  buildWorkerRequests,
   buildClaudeCodeArgs,
   buildOpenCodeArgs,
   ClaudeCodeHeadlessCliAdapter,
   NoopRunRecorder,
   OpenCodeHeadlessCliAdapter,
+  renderWorkerPrompt,
   resolvePanelComposition,
   runPanel,
+  stableDigest,
   type CommandExecutor,
   type CommandExecution,
   type PanelRequest,
@@ -23,6 +26,11 @@ import {
   type WorkerResult,
   type WorkerRunner,
 } from "../lib/protocol";
+import {
+  buildSharedContext,
+  parseArgs,
+  preparePanelRequest,
+} from "../bin/fusion-run";
 
 describe("Fusion harness selection", () => {
   test("defaults to OpenCode when no harness list is provided", () => {
@@ -73,6 +81,152 @@ describe("Fusion context manifests", () => {
 
     expect(right).toEqual(left);
   });
+
+  test("hash rendered prompts and digest embedded context files", () => {
+    const sharedContext = {
+      text: "context",
+      files: [{ path: "a.ts", content: "export const a = 1;" }],
+    };
+    const renderedPrompt = renderWorkerPrompt({
+      task: "review this",
+      outputContract: defaultPolicies.output,
+      sharedContext,
+    });
+    const manifest = createContextManifest({
+      renderedPrompt,
+      userTask: "review this",
+      sharedContext,
+    });
+
+    expect(manifest.renderedPromptHash).toBe(stableDigest(renderedPrompt));
+    expect(manifest.userTaskHash).toBe(stableDigest("review this"));
+    expect(manifest.files).toEqual([
+      { path: "a.ts", digest: stableDigest("export const a = 1;") },
+    ]);
+  });
+});
+
+describe("Fusion worker prompt rendering", () => {
+  test("renders portable instructions, contract sections, and shared context", () => {
+    const sharedContext = {
+      text: "use this project context",
+      files: [{ path: "notes.md", content: "file-backed context" }],
+    };
+    const outputContract = {
+      ...defaultPolicies.output,
+      requiredSections: ["Decision", "Evidence"],
+    };
+    const renderedPrompt = renderWorkerPrompt({
+      task: "Answer the task as given.",
+      outputContract,
+      sharedContext,
+    });
+
+    expect(renderedPrompt).toContain("neutral independent panelist");
+    expect(renderedPrompt).toContain(
+      "Treat the task as given; do not rewrite it",
+    );
+    expect(renderedPrompt).toContain("1. Decision");
+    expect(renderedPrompt).toContain("2. Evidence");
+    expect(renderedPrompt).not.toContain("What I would verify next");
+    expect(renderedPrompt).toContain("use this project context");
+    expect(renderedPrompt).toContain("File: notes.md");
+    expect(renderedPrompt).toContain("file-backed context");
+  });
+
+  test("renders schema name when the output contract provides one", () => {
+    const renderedPrompt = renderWorkerPrompt({
+      task: "Return structured output.",
+      outputContract: {
+        ...defaultPolicies.output,
+        schemaName: "FusionWorkerAnswer",
+      },
+      sharedContext: { text: "shared" },
+    });
+
+    expect(renderedPrompt).toContain(
+      "Format: markdown\nSchema: FusionWorkerAnswer",
+    );
+  });
+
+  test("worker request construction renders once and adapters pass prompt verbatim", () => {
+    const sharedContext = {
+      text: "shared rendering context",
+      files: [{ path: "brief.txt", content: "embedded brief" }],
+    };
+    const outputContract = {
+      ...defaultPolicies.output,
+      requiredSections: ["Only Section"],
+    };
+    const panel = {
+      ...panelRequest(),
+      prompt: "Raw task",
+      sharedContext,
+      contextManifest: createContextManifest({
+        renderedPrompt: renderWorkerPrompt({
+          task: "Raw task",
+          outputContract,
+          sharedContext,
+        }),
+        sharedContext,
+      }),
+    };
+    const [worker] = buildWorkerRequests(panel, { output: outputContract });
+
+    expect(worker?.prompt).toBe(
+      renderWorkerPrompt({
+        task: "Raw task",
+        outputContract,
+        sharedContext,
+      }),
+    );
+    const openCodeArgs = buildOpenCodeArgs(workerRequestFrom(worker));
+    const claudeArgs = buildClaudeCodeArgs(workerRequestFrom(worker));
+    expect(openCodeArgs[openCodeArgs.length - 1]).toBe(worker?.prompt);
+    expect(claudeArgs[claudeArgs.length - 1]).toBe(worker?.prompt);
+  });
+
+  test("CLI-prepared manifests prove the rendered prompt and context file digests", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "fusion-context-"));
+    await writeFile(join(workspaceRoot, "context.txt"), "embedded context");
+    try {
+      const options = parseArgs([
+        "--models",
+        "claude-code:sonnet",
+        "--context",
+        "short brief",
+        "--context-file",
+        "context.txt",
+        "Investigate this.",
+      ]);
+      const prepared = await preparePanelRequest(options, {
+        cwd: workspaceRoot,
+        panelRunId: "context-run",
+      });
+      const expectedRenderedPrompt = workerRequestFrom(
+        prepared.workerRequests[0],
+      ).prompt;
+
+      expect(prepared.request.sharedContext.text).toContain(
+        `Workspace root: ${workspaceRoot}`,
+      );
+      expect(prepared.request.sharedContext.text).toContain("short brief");
+      expect(prepared.request.sharedContext.files).toEqual([
+        { path: "context.txt", content: "embedded context" },
+      ]);
+      expect(prepared.request.contextManifest.renderedPromptHash).toBe(
+        stableDigest(expectedRenderedPrompt),
+      );
+      expect(prepared.workerRequests[0]?.contextManifest).toEqual(
+        prepared.request.contextManifest,
+      );
+      expect(prepared.request.contextManifest.files).toEqual([
+        { path: "context.txt", digest: stableDigest("embedded context") },
+      ]);
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("Fusion adapter registry", () => {
@@ -100,6 +254,68 @@ describe("Fusion adapter registry", () => {
   });
 });
 
+describe("Fusion CLI parsing", () => {
+  test("parses shared context, reasoning, and turn budget flags", () => {
+    const options = parseArgs([
+      "--context",
+      "brief",
+      "--context-file",
+      "a.md",
+      "--context-file=b.md",
+      "--effort",
+      "high",
+      "--reasoning-max-tokens",
+      "1234",
+      "--max-turns",
+      "5",
+      "--timeout-ms",
+      "60000",
+      "Do work",
+    ]);
+
+    expect(options.context).toBe("brief");
+    expect(options.contextFiles).toEqual(["a.md", "b.md"]);
+    expect(options.reasoning).toEqual({ effort: "high", maxTokens: 1234 });
+    expect(options.maxTurns).toBe(5);
+    expect(options.timeoutMs).toBe(60000);
+    expect(options.prompt).toBe("Do work");
+  });
+
+  test("rejects invalid new CLI flag values", () => {
+    expect(() => parseArgs(["--effort", "max", "task"])).toThrow(
+      "low, medium, high, xhigh",
+    );
+    expect(() => parseArgs(["--reasoning-max-tokens", "0", "task"])).toThrow(
+      "positive integer",
+    );
+    expect(() => parseArgs(["--max-turns", "0", "task"])).toThrow(
+      "positive integer",
+    );
+    expect(() => parseArgs(["--context-file", "task"])).toThrow(
+      "Fusion requires a task prompt",
+    );
+  });
+
+  test("warns but keeps oversized embedded shared context", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "fusion-large-"));
+    const largeContext = "x".repeat(256 * 1024 + 1);
+    await writeFile(join(workspaceRoot, "large.txt"), largeContext);
+    try {
+      const options = parseArgs([
+        "--context-file",
+        "large.txt",
+        "Use context.",
+      ]);
+      const result = await buildSharedContext(options, workspaceRoot);
+
+      expect(result.sharedContext.files?.[0]?.content).toBe(largeContext);
+      expect(result.warnings.join("\n")).toContain("exceeding");
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("Fusion headless CLI adapters", () => {
   test("builds OpenCode headless run arguments", () => {
     const request = workerRequest();
@@ -113,12 +329,26 @@ describe("Fusion headless CLI adapters", () => {
       "--model",
     ]);
     expect(args).toContain("openai/gpt-5.5");
+    expect(args[args.length - 1]).toBe(request.prompt);
+  });
+
+  test("maps OpenCode reasoning effort through model variant", () => {
+    const request = {
+      ...workerRequest(),
+      reasoning: { effort: "xhigh" as const },
+    };
+    const args = buildOpenCodeArgs(request);
+
+    expect(args).toContain("--variant");
+    expect(args).toContain("max");
+    expect(args[args.length - 1]).toBe(request.prompt);
   });
 
   test("builds Claude Code non-interactive stream-json arguments", () => {
     const request = {
       ...workerRequest(),
       modelPreference: { model: "sonnet", fallbacks: ["haiku"] },
+      reasoning: { effort: "high" as const },
     };
     const args = buildClaudeCodeArgs(request);
 
@@ -134,9 +364,25 @@ describe("Fusion headless CLI adapters", () => {
       "sonnet",
       "--fallback-model",
       "haiku",
-      "--tools=Read,Grep,Glob,LS,WebSearch,WebFetch",
-      expectedRenderedPrompt(request),
+      "--effort",
+      "high",
+      "--tools=Read,Grep,Glob,LS,WebSearch,WebFetch,Bash",
+      "--allowedTools=Read,Grep,Glob,LS,WebSearch,WebFetch,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(rg:*),Bash(grep:*),Bash(ls:*),Bash(cat:*)",
+      "--disallowedTools=Write,Edit,MultiEdit,Task,NotebookEdit",
+      request.prompt,
     ]);
+  });
+
+  test("does not emit unsupported Claude Code max-turns or reasoning token flags", () => {
+    const request = {
+      ...workerRequest(),
+      reasoning: { maxTokens: 8000 },
+      budget: { maxTurns: 2 },
+    };
+    const args = buildClaudeCodeArgs(request);
+
+    expect(args).not.toContain("--max-turns");
+    expect(args).not.toContain("--reasoning-max-tokens");
   });
 
   test("maps OpenCode CLI output to a degraded worker result", async () => {
@@ -160,6 +406,30 @@ describe("Fusion headless CLI adapters", () => {
     expect(result.output).toBe("adapter output");
     expect(result.complianceEvidence?.observedToolPolicy).toBeUndefined();
     expect(result.warnings?.[0]).toContain("degraded");
+  });
+
+  test("warns when OpenCode cannot map reasoning max tokens or turn caps", async () => {
+    const adapter = new OpenCodeHeadlessCliAdapter({
+      executor: async () => ({
+        exitCode: 0,
+        stdout: '{"message":"adapter output"}\n',
+        stderr: "",
+        durationMs: 12,
+      }),
+    });
+
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      reasoning: { effort: "medium", maxTokens: 3000 },
+      budget: { maxTurns: 3 },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.warnings?.join("\n")).toContain("reasoning.maxTokens");
+    expect(result.warnings?.join("\n")).toContain("maxTurns=3");
+    expect(result.complianceEvidence?.notes?.join("\n")).toContain(
+      "opencode --variant medium",
+    );
   });
 
   test("maps OpenCode observed text part events to worker output", async () => {
@@ -196,6 +466,58 @@ describe("Fusion headless CLI adapters", () => {
     expect(result.complianceEvidence?.observedToolPolicy).toEqual(
       workerRequest().toolsPolicy,
     );
+  });
+
+  test("warns when Claude Code cannot map reasoning max tokens or turn caps", async () => {
+    const adapter = new ClaudeCodeHeadlessCliAdapter({
+      executor: async () => ({
+        exitCode: 0,
+        stdout: '{"result":"claude output"}\n',
+        stderr: "",
+        durationMs: 9,
+      }),
+    });
+
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      reasoning: { effort: "low", maxTokens: 3000 },
+      budget: { maxTurns: 3 },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.warnings?.join("\n")).toContain("reasoning.maxTokens");
+    expect(result.warnings?.join("\n")).toContain("maxTurns=3");
+    expect(result.complianceEvidence?.notes?.join("\n")).toContain(
+      "claude --effort low",
+    );
+  });
+
+  test("prefers Claude Code final result text over intermediate assistant text", async () => {
+    const adapter = new ClaudeCodeHeadlessCliAdapter({
+      executor: async () => ({
+        exitCode: 0,
+        stdout: [
+          JSON.stringify({
+            type: "assistant",
+            part: {
+              type: "text",
+              text: "十分な証拠が揃いました。回答をまとめます。",
+            },
+          }),
+          JSON.stringify({
+            type: "result",
+            result: "final answer only",
+          }),
+        ].join("\n"),
+        stderr: "",
+        durationMs: 9,
+      }),
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("final answer only");
   });
 
   test("marks malformed CLI JSON as invalid output", async () => {
@@ -521,12 +843,18 @@ function panelRequest(
     text: "shared",
     references: [{ label: "env", uri: "token=do-not-write" }],
   };
+  const prompt = "Answer independently.";
   return {
     panelRunId: options.panelRunId ?? "panel-run-1",
-    prompt: "Answer independently.",
+    prompt,
     sharedContext,
     contextManifest: createContextManifest({
-      renderedPrompt: "Answer independently.",
+      renderedPrompt: renderWorkerPrompt({
+        task: prompt,
+        outputContract: defaultPolicies.output,
+        sharedContext,
+      }),
+      userTask: prompt,
       sharedContext,
     }),
     panelSpec: { workerCount: 2 },
@@ -553,19 +881,6 @@ function workerRequest(): WorkerRequest {
   };
 }
 
-function expectedRenderedPrompt(request: WorkerRequest): string {
-  return [
-    request.prompt,
-    "",
-    "You are one independent Fusion panel worker.",
-    "Do not mention or infer peer worker outputs, draft synthesis, or panel conclusions.",
-    "Return only the requested answer; do not include hidden chain-of-thought.",
-    "",
-    "Shared context:",
-    request.sharedContext.text ?? "",
-  ].join("\n");
-}
-
 function opencodeModelsExecutor(models: string[]): CommandExecutor {
   return async (execution: CommandExecution) => {
     expect(execution.command).toBe("opencode");
@@ -580,24 +895,14 @@ function opencodeModelsExecutor(models: string[]): CommandExecutor {
 }
 
 function buildWorkerRequestsForTest(): WorkerRequest[] {
-  const request = panelRequest();
-  return [
-    {
-      panelRunId: request.panelRunId,
-      workerId: "worker-1",
-      prompt: request.prompt,
-      sharedContext: request.sharedContext,
-      contextManifest: request.contextManifest,
-      harness: { kind: "opencode", invocation: "headless" },
-      session: defaultPolicies.session,
-      isolationPolicy: defaultPolicies.isolation,
-      blindnessPolicy: defaultPolicies.blindness,
-      workerPolicy: defaultPolicies.worker,
-      toolsPolicy: defaultPolicies.tools,
-      outputContract: defaultPolicies.output,
-      provenancePolicy: defaultPolicies.provenance,
-    },
-  ];
+  return buildWorkerRequests(panelRequest());
+}
+
+function workerRequestFrom(request: WorkerRequest | undefined): WorkerRequest {
+  if (request === undefined) {
+    throw new Error("Expected test worker request.");
+  }
+  return request;
 }
 
 function okRunner(

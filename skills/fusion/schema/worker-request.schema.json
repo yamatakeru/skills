@@ -195,6 +195,19 @@
       ],
       "type": "object"
     },
+    "ReasoningPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "enum": ["low", "medium", "high", "xhigh"],
+          "type": "string"
+        },
+        "maxTokens": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
     "SessionMode": {
       "enum": ["fresh", "fork", "resume"],
       "type": "string"
@@ -302,6 +315,12 @@
             "harness-default"
           ],
           "type": "string"
+        },
+        "readOnlyBashCommands": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": ["mode"],
@@ -394,6 +413,9 @@
         },
         "provenancePolicy": {
           "$ref": "#/definitions/ProvenancePolicy"
+        },
+        "reasoning": {
+          "$ref": "#/definitions/ReasoningPreference"
         },
         "session": {
           "$ref": "#/definitions/SessionPolicy"

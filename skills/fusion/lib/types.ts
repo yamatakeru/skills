@@ -28,6 +28,7 @@ export interface PanelRequest {
   harnessSelectionPolicy: HarnessSelectionPolicy;
   synthesisContract: SynthesisContract;
   synthesizer?: SynthesizerPreference;
+  reasoning?: ReasoningPreference;
   workerEnvironment?: WorkerEnvironment;
   workerBudget?: WorkerBudget;
   provenancePolicy?: ProvenancePolicy;
@@ -36,6 +37,11 @@ export interface PanelRequest {
 export interface SynthesizerPreference {
   strategy: "parent-agent" | "deterministic" | HarnessKind;
   model?: ModelPreference;
+}
+
+export interface ReasoningPreference {
+  effort?: "low" | "medium" | "high" | "xhigh";
+  maxTokens?: number;
 }
 
 export interface PanelResult {
@@ -63,6 +69,7 @@ export interface WorkerRequest {
   blindnessPolicy: BlindnessPolicy;
   workerPolicy: WorkerPolicy;
   toolsPolicy?: ToolsPolicy;
+  reasoning?: ReasoningPreference;
   environment?: WorkerEnvironment;
   budget?: WorkerBudget;
   outputContract: OutputContract;
@@ -166,6 +173,7 @@ export interface ToolsPolicy {
   allow?: string[];
   deny?: string[];
   ask?: string[];
+  readOnlyBashCommands?: string[];
   headlessAskBehavior?: "deny" | "error" | "prompt-if-policy-allows";
   parity?: "same-by-default" | "strict-same-required" | "harness-default";
 }
@@ -318,6 +326,7 @@ export interface PanelRunOptions {
   runner: WorkerRunner;
   synthesizer: Synthesizer;
   harnessSelector?: HarnessSelector;
+  workerRequests?: WorkerRequest[];
   recorder?: RunRecorder;
   defaults?: Partial<DefaultPolicies>;
   now?: () => Date;

@@ -1,6 +1,8 @@
 import { mergeDefaultPolicies } from "./defaults";
+import { renderWorkerPrompt } from "./worker-prompt";
 import type {
   DefaultPolicies,
+  ContextManifest,
   HarnessDescriptor,
   HarnessKind,
   HarnessSelector,
@@ -9,6 +11,10 @@ import type {
   WorkerRequest,
 } from "./types";
 import { validatePanelSpec } from "./validation";
+
+type WorkerRequestBuildInput = Omit<PanelRequest, "contextManifest"> & {
+  contextManifest?: ContextManifest;
+};
 
 export const defaultHarnessSelector: HarnessSelector = {
   selectHarness({ workerId, modelPreference, policy }): HarnessDescriptor {
@@ -112,13 +118,18 @@ function forcedHarnessForWorker(
 }
 
 export function buildWorkerRequests(
-  request: PanelRequest,
+  request: WorkerRequestBuildInput,
   defaults: Partial<DefaultPolicies> = {},
   harnessSelector: HarnessSelector = defaultHarnessSelector,
 ): WorkerRequest[] {
   validatePanelSpec(request.panelSpec);
 
   const policies = mergeDefaultPolicies(defaults);
+  const renderedPrompt = renderWorkerPrompt({
+    task: request.prompt,
+    outputContract: policies.output,
+    sharedContext: request.sharedContext,
+  });
   return Array.from({ length: request.panelSpec.workerCount }, (_, index) => {
     const workerId = `worker-${index + 1}`;
     const modelPreference = request.panelSpec.modelPreferences?.[index];
@@ -131,7 +142,7 @@ export function buildWorkerRequests(
     return {
       panelRunId: request.panelRunId,
       workerId,
-      prompt: request.prompt,
+      prompt: renderedPrompt,
       sharedContext: request.sharedContext,
       contextManifest: request.contextManifest,
       modelPreference,
@@ -141,6 +152,7 @@ export function buildWorkerRequests(
       blindnessPolicy: policies.blindness,
       workerPolicy: policies.worker,
       toolsPolicy: policies.tools,
+      reasoning: request.reasoning,
       environment: request.workerEnvironment,
       budget: request.workerBudget,
       outputContract: policies.output,

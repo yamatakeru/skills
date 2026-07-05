@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import type {
   HarnessKind,
   ModelPreference,
+  ReasoningPreference,
+  ToolsPolicy,
   WorkerRequest,
   WorkerResult,
   WorkerRunner,
@@ -81,7 +83,11 @@ export function buildOpenCodeArgs(request: WorkerRequest): string[] {
   if (model !== undefined) {
     args.push("--model", model);
   }
-  return [...args, renderWorkerPrompt(request)];
+  const variant = openCodeVariantForEffort(request.reasoning?.effort);
+  if (variant !== undefined) {
+    args.push("--variant", variant);
+  }
+  return [...args, request.prompt];
 }
 
 export function buildClaudeCodeArgs(request: WorkerRequest): string[] {
@@ -102,11 +108,22 @@ export function buildClaudeCodeArgs(request: WorkerRequest): string[] {
   if (fallbackModel !== undefined) {
     args.push("--fallback-model", fallbackModel);
   }
+  if (request.reasoning?.effort !== undefined) {
+    args.push("--effort", request.reasoning.effort);
+  }
   const tools = claudeToolsForPolicy(request);
   if (tools !== undefined) {
     args.push(`--tools=${tools}`);
   }
-  return [...args, renderWorkerPrompt(request)];
+  const allowedTools = claudeAllowedToolsForPolicy(request.toolsPolicy);
+  if (allowedTools !== undefined) {
+    args.push(`--allowedTools=${allowedTools}`);
+  }
+  const disallowedTools = claudeDisallowedToolsForPolicy(request.toolsPolicy);
+  if (disallowedTools !== undefined) {
+    args.push(`--disallowedTools=${disallowedTools}`);
+  }
+  return [...args, request.prompt];
 }
 
 export async function executeCommand(
@@ -161,6 +178,7 @@ function cliResultToWorkerResult(
   const parsedOutput = parseTextOutput(result.stdout);
   const output = parsedOutput.ok ? parsedOutput.output.trim() : "";
   const ok = result.exitCode === 0 && output.length > 0 && !result.timedOut;
+  const warnings = workerWarnings(kind, request, ok);
 
   return {
     panelRunId: request.panelRunId,
@@ -176,14 +194,9 @@ function cliResultToWorkerResult(
       adapterClaimsBlindness: true,
       observedSessionMode: request.session.mode,
       observedToolPolicy: isOpenCode ? undefined : request.toolsPolicy,
-      notes: adapterComplianceNotes(kind),
+      notes: adapterComplianceNotes(kind, request, warnings),
     },
-    warnings:
-      ok && isOpenCode
-        ? [
-            "OpenCode CLI adapter result is degraded until tool policy evidence is proven.",
-          ]
-        : undefined,
+    warnings: warnings.length === 0 ? undefined : warnings,
     errors: cliErrors(kind, result, parsedOutput, output),
   };
 }
@@ -228,7 +241,32 @@ function cliErrors(
   return undefined;
 }
 
-function adapterComplianceNotes(kind: HarnessKind): string[] {
+function adapterComplianceNotes(
+  kind: HarnessKind,
+  request: WorkerRequest,
+  warnings: string[],
+): string[] {
+  const notes = [...adapterBaseComplianceNotes(kind)];
+  if (request.reasoning?.effort !== undefined) {
+    const mapping =
+      kind === "opencode"
+        ? `opencode --variant ${openCodeVariantForEffort(request.reasoning.effort)}`
+        : `claude --effort ${request.reasoning.effort}`;
+    notes.push(`reasoning.effort mapped through ${mapping}.`);
+  }
+  if (
+    kind === "claude-code" &&
+    request.toolsPolicy?.readOnlyBashCommands !== undefined
+  ) {
+    notes.push(
+      "Claude Code Bash access is restricted with --allowedTools command patterns and --permission-mode dontAsk.",
+    );
+  }
+  notes.push(...warnings);
+  return notes;
+}
+
+function adapterBaseComplianceNotes(kind: HarnessKind): string[] {
   if (kind === "opencode") {
     return [
       "OpenCode CLI adapter cannot yet prove exact tool policy enforcement.",
@@ -238,19 +276,6 @@ function adapterComplianceNotes(kind: HarnessKind): string[] {
   return [
     "Claude Code CLI adapter uses dontAsk and explicit tool flags when available.",
   ];
-}
-
-function renderWorkerPrompt(request: WorkerRequest): string {
-  return [
-    request.prompt,
-    "",
-    "You are one independent Fusion panel worker.",
-    "Do not mention or infer peer worker outputs, draft synthesis, or panel conclusions.",
-    "Return only the requested answer; do not include hidden chain-of-thought.",
-    "",
-    "Shared context:",
-    request.sharedContext.text ?? "",
-  ].join("\n");
 }
 
 export function modelPreferenceToModel(
@@ -263,6 +288,46 @@ export function modelPreferenceToModel(
     return `${modelPreference.provider}/${modelPreference.model}`;
   }
   return modelPreference?.model ?? modelPreference?.aliases?.[0];
+}
+
+function workerWarnings(
+  kind: HarnessKind,
+  request: WorkerRequest,
+  ok: boolean,
+): string[] {
+  return [
+    ok && kind === "opencode"
+      ? "OpenCode CLI adapter result is degraded until tool policy evidence is proven."
+      : undefined,
+    ...unmappedPreferenceWarnings(kind, request),
+  ].filter((warning): warning is string => warning !== undefined);
+}
+
+function unmappedPreferenceWarnings(
+  kind: HarnessKind,
+  request: WorkerRequest,
+): string[] {
+  const warnings: string[] = [];
+  if (request.reasoning?.maxTokens !== undefined) {
+    warnings.push(
+      `${kind} does not expose a CLI flag for reasoning.maxTokens; requested ${request.reasoning.maxTokens} was not mapped.`,
+    );
+  }
+  if (request.budget?.maxTurns !== undefined) {
+    warnings.push(
+      `${kind} does not expose a CLI turn-cap flag in installed help; requested maxTurns=${request.budget.maxTurns} was not mapped.`,
+    );
+  }
+  return warnings;
+}
+
+function openCodeVariantForEffort(
+  effort: ReasoningPreference["effort"] | undefined,
+): string | undefined {
+  if (effort === undefined) {
+    return undefined;
+  }
+  return effort === "xhigh" ? "max" : effort;
 }
 
 function claudeToolsForPolicy(request: WorkerRequest): string | undefined {
@@ -282,6 +347,40 @@ function claudeToolsForPolicy(request: WorkerRequest): string | undefined {
   }
 }
 
+function claudeAllowedToolsForPolicy(
+  toolsPolicy: ToolsPolicy | undefined,
+): string | undefined {
+  if (
+    toolsPolicy?.mode !== "read-only" &&
+    toolsPolicy?.mode !== "limited"
+  ) {
+    return undefined;
+  }
+
+  const allowed = toolsPolicy.allow ?? [];
+  const baseTools = allowed.filter((tool) => tool !== "Bash");
+  const bashTools = allowed.includes("Bash")
+    ? (toolsPolicy.readOnlyBashCommands ?? []).map(claudeBashPattern)
+    : [];
+  const permissions = [...baseTools, ...bashTools];
+  return permissions.length === 0 ? undefined : unique(permissions).join(",");
+}
+
+function claudeDisallowedToolsForPolicy(
+  toolsPolicy: ToolsPolicy | undefined,
+): string | undefined {
+  const denied = toolsPolicy?.deny?.filter((tool) => tool !== "Bash") ?? [];
+  return denied.length === 0 ? undefined : unique(denied).join(",");
+}
+
+function claudeBashPattern(command: string): string {
+  return `Bash(${command}:*)`;
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
 type ParsedOutput = { ok: true; output: string } | { ok: false; error: string };
 
 function parseTextOutput(stdout: string): ParsedOutput {
@@ -293,23 +392,47 @@ function parseTextOutput(stdout: string): ParsedOutput {
     return { ok: true, output: "" };
   }
 
-  const extracted: string[] = [];
+  const resultTexts: string[] = [];
+  const assistantTexts: string[] = [];
+  const fallbackTexts: string[] = [];
   for (const line of lines) {
     const parsed = extractJsonLineText(line);
     if (!parsed.ok) {
       return parsed;
     }
-    if (parsed.output.length > 0) {
-      extracted.push(parsed.output);
+    if (parsed.resultText !== undefined && parsed.resultText.length > 0) {
+      resultTexts.push(parsed.resultText);
+    } else if (
+      parsed.assistantText !== undefined &&
+      parsed.assistantText.length > 0
+    ) {
+      assistantTexts.push(parsed.assistantText);
+    } else if (
+      parsed.fallbackText !== undefined &&
+      parsed.fallbackText.length > 0
+    ) {
+      fallbackTexts.push(parsed.fallbackText);
     }
   }
-  if (extracted.length === 0) {
+
+  const output =
+    last(resultTexts) ?? last(assistantTexts) ?? fallbackTexts.join("\n");
+  if (output.length === 0) {
     return { ok: false, error: "no result text found in JSON output" };
   }
-  return { ok: true, output: extracted.join("\n") };
+  return { ok: true, output };
 }
 
-function extractJsonLineText(line: string): ParsedOutput {
+type ExtractedJsonLineText =
+  | {
+      ok: true;
+      resultText?: string;
+      assistantText?: string;
+      fallbackText?: string;
+    }
+  | { ok: false; error: string };
+
+function extractJsonLineText(line: string): ExtractedJsonLineText {
   try {
     const value = JSON.parse(line) as unknown;
     if (value === null || typeof value !== "object") {
@@ -318,31 +441,47 @@ function extractJsonLineText(line: string): ParsedOutput {
 
     const record = value as Record<string, unknown>;
     if (typeof record.result === "string") {
-      return { ok: true, output: record.result };
+      return { ok: true, resultText: record.result };
     }
     if (typeof record.message === "string") {
-      return { ok: true, output: record.message };
+      return { ok: true, fallbackText: record.message };
     }
     if (typeof record.text === "string") {
-      return { ok: true, output: record.text };
+      return { ok: true, fallbackText: record.text };
+    }
+    const messageText = textFromMessage(record.message);
+    if (messageText !== undefined) {
+      return { ok: true, assistantText: messageText };
     }
     const partText = textFromRecordPart(record.part);
     if (partText !== undefined) {
-      return { ok: true, output: partText };
+      return { ok: true, assistantText: partText };
     }
     if (Array.isArray(record.content)) {
       return {
         ok: true,
-        output: record.content
-          .map(textFromContentPart)
-          .filter((part): part is string => part !== undefined)
-          .join("\n"),
+        assistantText: textFromContent(record.content),
       };
     }
   } catch {
     return { ok: false, error: "JSON line could not be parsed" };
   }
-  return { ok: true, output: "" };
+  return { ok: true };
+}
+
+function last(values: string[]): string | undefined {
+  return values.length === 0 ? undefined : values[values.length - 1];
+}
+
+function textFromMessage(message: unknown): string | undefined {
+  if (message === null || typeof message !== "object") {
+    return undefined;
+  }
+
+  const record = message as Record<string, unknown>;
+  return Array.isArray(record.content)
+    ? textFromContent(record.content)
+    : undefined;
 }
 
 function textFromRecordPart(part: unknown): string | undefined {
@@ -355,6 +494,13 @@ function textFromRecordPart(part: unknown): string | undefined {
     return undefined;
   }
   return typeof record.text === "string" ? record.text : undefined;
+}
+
+function textFromContent(content: unknown[]): string {
+  return content
+    .map(textFromContentPart)
+    .filter((part): part is string => part !== undefined)
+    .join("\n");
 }
 
 function textFromContentPart(part: unknown): string | undefined {

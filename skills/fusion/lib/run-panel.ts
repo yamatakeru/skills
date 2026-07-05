@@ -58,11 +58,13 @@ export async function runPanel(
     contextManifest: request.contextManifest,
   });
 
-  const workerRequests = buildWorkerRequests(
-    request,
-    options.defaults,
-    options.harnessSelector ?? defaultHarnessSelector,
-  );
+  const workerRequests =
+    options.workerRequests ??
+    buildWorkerRequests(
+      request,
+      options.defaults,
+      options.harnessSelector ?? defaultHarnessSelector,
+    );
 
   for (const workerRequest of workerRequests) {
     await emit(

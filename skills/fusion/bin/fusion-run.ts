@@ -1,8 +1,11 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   AdapterRegistry,
   ClaudeCodeHeadlessCliAdapter,
+  buildWorkerRequests,
   createContextManifest,
   defaultPolicies,
   DeterministicSynthesizer,
@@ -14,14 +17,22 @@ import {
   type PanelResult,
   type PanelRequest,
   type ProvenancePolicy,
+  type ReasoningPreference,
   type RunRecorder,
+  type SharedContext,
+  type WorkerBudget,
+  type WorkerRequest,
 } from "../lib/protocol";
 
-interface CliOptions {
+export interface CliOptions {
   parentModel?: string;
   models?: string[];
   panelists: number;
   panelistsExplicit: boolean;
+  context?: string;
+  contextFiles: string[];
+  reasoning?: ReasoningPreference;
+  maxTurns?: number;
   record: boolean;
   json: boolean;
   synthesizer: string;
@@ -29,9 +40,17 @@ interface CliOptions {
   prompt: string;
 }
 
-class UsageError extends Error {}
+export interface PreparedPanelRequest {
+  request: PanelRequest;
+  workerRequests: WorkerRequest[];
+  warnings: string[];
+}
 
-class HelpRequested extends Error {}
+const sharedContextWarningCapBytes = 256 * 1024;
+
+export class UsageError extends Error {}
+
+export class HelpRequested extends Error {}
 
 async function main(): Promise<number> {
   try {
@@ -46,55 +65,13 @@ async function main(): Promise<number> {
       );
     }
 
-    const composition = await resolvePanelComposition({
-      parentModel: options.parentModel,
-      models: options.models,
-      panelists: options.panelists,
-      panelistsExplicit: options.panelistsExplicit,
-      cwd: process.cwd(),
-    });
-    const sharedContext = {
-      text: `Workspace root: ${process.cwd()}`,
-    };
-    const panelRunId = `fusion-${randomUUID()}`;
-    const request: PanelRequest = {
-      panelRunId,
-      prompt: options.prompt,
-      sharedContext,
-      contextManifest: createContextManifest({
-        renderedPrompt: options.prompt,
-        sharedContext,
-      }),
-      panelSpec: composition.panelSpec,
-      harnessSelectionPolicy: composition.harnessSelectionPolicy,
-      synthesisContract: {
-        requiredFindings: [
-          "consensus",
-          "contradictions",
-          "partial-coverage",
-          "unique-insights",
-          "blind-spots",
-        ],
-        format: "markdown",
-        allowPartial: true,
-        requireAttribution: true,
-      },
-      synthesizer: { strategy: options.synthesizer },
-      workerEnvironment: {
-        workspaceRoot: process.cwd(),
-        workingDirectory: process.cwd(),
-      },
-      workerBudget:
-        options.timeoutMs === undefined
-          ? undefined
-          : { timeoutMs: options.timeoutMs },
-      provenancePolicy: provenancePolicy(options.record),
-    };
+    const prepared = await preparePanelRequest(options, { cwd: process.cwd() });
+    const request = prepared.request;
 
     const recorder: RunRecorder = options.record
       ? new FileRunRecorder({
           workspaceRoot: process.cwd(),
-          panelRunId,
+          panelRunId: request.panelRunId,
         })
       : new NoopRunRecorder();
     const registry = new AdapterRegistry()
@@ -104,11 +81,12 @@ async function main(): Promise<number> {
     const result = await runPanel(request, {
       runner: registry,
       harnessSelector: registry,
+      workerRequests: prepared.workerRequests,
       synthesizer: new DeterministicSynthesizer(),
       recorder,
     });
-    if (composition.warnings.length > 0) {
-      result.warnings = [...composition.warnings, ...(result.warnings ?? [])];
+    if (prepared.warnings.length > 0) {
+      result.warnings = [...prepared.warnings, ...(result.warnings ?? [])];
     }
 
     if (options.json) {
@@ -136,10 +114,138 @@ async function main(): Promise<number> {
   }
 }
 
-function parseArgs(args: string[]): CliOptions {
+export async function preparePanelRequest(
+  options: CliOptions,
+  input: { cwd?: string; panelRunId?: string } = {},
+): Promise<PreparedPanelRequest> {
+  const cwd = input.cwd ?? process.cwd();
+  const composition = await resolvePanelComposition({
+    parentModel: options.parentModel,
+    models: options.models,
+    panelists: options.panelists,
+    panelistsExplicit: options.panelistsExplicit,
+    cwd,
+  });
+  const contextResult = await buildSharedContext(options, cwd);
+  const workerBudget = buildWorkerBudget(options);
+  const panelRunId = input.panelRunId ?? `fusion-${randomUUID()}`;
+  const requestWithoutManifest = {
+    panelRunId,
+    prompt: options.prompt,
+    sharedContext: contextResult.sharedContext,
+    panelSpec: composition.panelSpec,
+    harnessSelectionPolicy: composition.harnessSelectionPolicy,
+    synthesisContract: {
+      requiredFindings: [
+        "consensus",
+        "contradictions",
+        "partial-coverage",
+        "unique-insights",
+        "blind-spots",
+      ],
+      format: "markdown",
+      allowPartial: true,
+      requireAttribution: true,
+    },
+    synthesizer: { strategy: options.synthesizer },
+    reasoning: options.reasoning,
+    workerEnvironment: {
+      workspaceRoot: cwd,
+      workingDirectory: cwd,
+    },
+    workerBudget,
+    provenancePolicy: provenancePolicy(options.record),
+  } satisfies Omit<PanelRequest, "contextManifest">;
+
+  const workerRequests = buildWorkerRequests(requestWithoutManifest);
+  const renderedPrompt = renderedPromptFromWorkerRequests(workerRequests);
+  const contextManifest = createContextManifest({
+    renderedPrompt,
+    userTask: options.prompt,
+    sharedContext: contextResult.sharedContext,
+  });
+  const request: PanelRequest = {
+    ...requestWithoutManifest,
+    contextManifest,
+  };
+  const manifestedWorkerRequests = workerRequests.map((workerRequest) => ({
+    ...workerRequest,
+    contextManifest,
+  }));
+
+  return {
+    request,
+    workerRequests: manifestedWorkerRequests,
+    warnings: [...composition.warnings, ...contextResult.warnings],
+  };
+}
+
+function renderedPromptFromWorkerRequests(
+  workerRequests: WorkerRequest[],
+): string {
+  const renderedPrompt = workerRequests[0]?.prompt;
+  if (renderedPrompt === undefined) {
+    throw new Error("Fusion worker request construction produced no workers.");
+  }
+  return renderedPrompt;
+}
+
+export async function buildSharedContext(
+  options: Pick<CliOptions, "context" | "contextFiles">,
+  cwd: string,
+): Promise<{ sharedContext: SharedContext; warnings: string[] }> {
+  const files =
+    options.contextFiles.length === 0
+      ? undefined
+      : await Promise.all(
+          options.contextFiles.map(async (filePath) => ({
+            path: filePath,
+            content: await readFile(resolve(cwd, filePath), "utf8"),
+          })),
+        );
+  const sharedContext: SharedContext = {
+    text: [`Workspace root: ${cwd}`, options.context]
+      .filter((entry): entry is string => entry !== undefined && entry !== "")
+      .join("\n\n"),
+    files,
+  };
+  const embeddedContextBytes = embeddedContextSizeBytes(sharedContext);
+  const warnings =
+    embeddedContextBytes > sharedContextWarningCapBytes
+      ? [
+          `Shared context is ${embeddedContextBytes} bytes, exceeding the recommended ${sharedContextWarningCapBytes}-byte cap. Workers will still receive it.`,
+        ]
+      : [];
+
+  return { sharedContext, warnings };
+}
+
+function buildWorkerBudget(options: CliOptions): WorkerBudget | undefined {
+  const workerBudget: WorkerBudget = {};
+  if (options.timeoutMs !== undefined) {
+    workerBudget.timeoutMs = options.timeoutMs;
+  }
+  if (options.maxTurns !== undefined) {
+    workerBudget.maxTurns = options.maxTurns;
+  }
+  return Object.keys(workerBudget).length === 0 ? undefined : workerBudget;
+}
+
+function embeddedContextSizeBytes(sharedContext: SharedContext): number {
+  return (
+    Buffer.byteLength(sharedContext.text ?? "", "utf8") +
+    (sharedContext.files ?? []).reduce(
+      (total, file) => total + Buffer.byteLength(file.content ?? "", "utf8"),
+      0,
+    )
+  );
+}
+
+export function parseArgs(args: string[]): CliOptions {
   const options: Omit<CliOptions, "prompt"> = {
     panelists: 3,
     panelistsExplicit: false,
+    contextFiles: [],
     record: false,
     json: false,
     synthesizer: "parent-agent",
@@ -191,6 +297,27 @@ function parseArgs(args: string[]): CliOptions {
         options.panelists = parsePositiveInteger(flag, takeValue());
         options.panelistsExplicit = true;
         break;
+      case "--context":
+        options.context = takeValue();
+        break;
+      case "--context-file":
+        options.contextFiles.push(takeValue());
+        break;
+      case "--effort":
+        options.reasoning = {
+          ...options.reasoning,
+          effort: parseReasoningEffort(flag, takeValue()),
+        };
+        break;
+      case "--reasoning-max-tokens":
+        options.reasoning = {
+          ...options.reasoning,
+          maxTokens: parsePositiveInteger(flag, takeValue()),
+        };
+        break;
+      case "--max-turns":
+        options.maxTurns = parsePositiveInteger(flag, takeValue());
+        break;
       case "--record":
         options.record = true;
         break;
@@ -216,6 +343,21 @@ function parseArgs(args: string[]): CliOptions {
   }
 
   return { ...options, prompt };
+}
+
+function parseReasoningEffort(
+  flag: string,
+  value: string,
+): ReasoningPreference["effort"] {
+  if (
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh"
+  ) {
+    return value;
+  }
+  throw new UsageError(`${flag} must be one of: low, medium, high, xhigh.`);
 }
 
 function splitFlag(arg: string): [string, string | undefined] {
@@ -322,7 +464,7 @@ function assertBunRuntime(): void {
   }
 }
 
-function usage(): string {
+export function usage(): string {
   return [
     'Usage: bun skills/fusion/bin/fusion-run.ts [options] "task prompt"',
     "",
@@ -330,6 +472,12 @@ function usage(): string {
     "  --parent-model <id>       Parent agent model id for the default panel slot.",
     "  --models <comma-list>     Explicit model list; replaces default composition.",
     "  --panelists <n>           Default panel size (default: 3).",
+    "  --context <text>          Shared context brief for every worker.",
+    "  --context-file <path>     Embed a file into shared context; repeatable.",
+    "  --effort <level>          Worker reasoning effort: low, medium, high, or xhigh.",
+    "  --reasoning-max-tokens <n>",
+    "                            Worker reasoning token budget.",
+    "  --max-turns <n>           Per-worker turn budget where supported.",
     "  --record                  Write .fusion-runs/<panelRunId>/ artifacts.",
     "  --json                    Print complete PanelResult JSON.",
     "  --synthesizer <strategy>  parent-agent or deterministic.",
@@ -337,4 +485,6 @@ function usage(): string {
   ].join("\n");
 }
 
-process.exitCode = await main();
+if (import.meta.main) {
+  process.exitCode = await main();
+}

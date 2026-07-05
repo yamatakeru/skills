@@ -11,7 +11,7 @@ compatibility: >-
   bundled self-contained TypeScript CLI; no node_modules are required inside the
   skill directory.
 metadata:
-  version: "0.5.0"
+  version: "0.6.0"
   kind: "blind-panel synthesis"
   mode: "blind"
   canonical-runtime: "bun-cli"
@@ -39,6 +39,12 @@ bun <skill-dir>/bin/fusion-run.ts --parent-model <its own model id> "task"
 own model as `--parent-model` whenever it can be expressed as a supported model
 entry. If the parent model is unavailable, omit it; the CLI will warn and
 refill the slot from fallback lists.
+
+Pass the background the panel needs through `--context` (a short brief you
+author) and `--context-file` (repeatable, embeds file contents). Workers only
+see the task prompt and this shared context; do not assume they know the
+conversation. For high-stakes tasks you may raise worker reasoning depth with
+`--effort`; the default leaves each provider's default untouched.
 
 Bun is required. If `bun` is missing, first surface a clear error with
 installation guidance, for example: "Fusion requires Bun. Install it from
@@ -99,6 +105,12 @@ no model enumeration command; Claude-backed entries use latest aliases and
 - `--parent-model <id>`: parent model for the default panel slot.
 - `--models <comma-list>`: explicit model list; replaces default composition.
 - `--panelists <n>`: panel size for default composition; default is 3.
+- `--context <text>`: shared context brief given to every worker.
+- `--context-file <path>`: embed a file into the shared context; repeatable.
+- `--effort <low|medium|high|xhigh>`: worker reasoning effort; default is the
+  provider default.
+- `--reasoning-max-tokens <n>`: worker reasoning token budget.
+- `--max-turns <n>`: per-worker turn budget where the harness supports it.
 - `--record`: write split artifacts under `.fusion-runs/<panelRunId>/` when
   the directory is git-ignored.
 - `--json`: print the complete `PanelResult` JSON instead of Markdown.
@@ -106,6 +118,9 @@ no model enumeration command; Claude-backed entries use latest aliases and
   `parent-agent`; `deterministic` is implemented; harness-kind synthesis is
   contract-reserved and must error as not implemented yet.
 - `--timeout-ms <n>`: per-worker timeout.
+
+Reasoning and budget options a harness cannot honor are reported as warnings
+in the panel report, never silently dropped.
 
 Default Markdown output starts with run status, compliance tier, and warnings,
 then lists each worker's full output with worker id, model, harness, and
@@ -121,10 +136,11 @@ Do not request, expose, synthesize, or record private chain-of-thought; workers
 should provide concise reasoning summaries, evidence, sources, assumptions,
 uncertainties, and verification notes instead.
 
-Default worker tools are read-only local access plus web search and web fetch
-where the harness provides them. Workers must not edit or write files, run
-destructive commands, spawn subagents, delegate subtasks, or recursively invoke
-panels.
+Default worker tools are read-only local access, a read-only bash allowlist
+(git inspection plus read-only search and listing commands), and web search
+and web fetch where the harness provides them. Workers must not edit or write
+files, run destructive or non-allowlisted shell commands, spawn subagents,
+delegate subtasks, or recursively invoke panels.
 
 ## Partial Results
 

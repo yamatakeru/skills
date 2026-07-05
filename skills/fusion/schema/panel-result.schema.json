@@ -260,6 +260,12 @@
             "harness-default"
           ],
           "type": "string"
+        },
+        "readOnlyBashCommands": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": ["mode"],
