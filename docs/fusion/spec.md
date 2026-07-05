@@ -57,8 +57,9 @@ installed skill directory is self-contained.
 
 The CLI prints a Markdown panel report to stdout by default: status,
 compliance tier, and warnings first, then each worker's full output, then the
-reference deterministic synthesis. `--json` switches stdout to the complete
-`PanelResult`.
+judge analysis rendered from its structured JSON (or, when the judge did not
+run or failed, the reference deterministic synthesis). `--json` switches
+stdout to the complete `PanelResult`.
 
 Legacy execution tiers are retired (ADR 0017). Hidden-subagent panels are
 removed; `fusion-panelist-*` agents are reference examples only. Same-agent
@@ -178,26 +179,49 @@ Code worker adapters can execute through the same portable library contract.
 
 ## Reference Synthesis Policy
 
-In the usable milestone, the parent agent authors the synthesis and the final
-answer (ADR 0016). The CLI returns worker outputs plus evidence; the skill
-directs the parent agent to write the five-finding synthesis and ground the
-final answer in it. This mirrors OpenRouter Fusion's outer-model authorship of
-the final answer, but diverges from its separate temperature-0 judge call; the
-divergence is deliberate and recorded.
+The default synthesizer is the harness-backed judge (ADR 0023), mirroring
+upstream OpenRouter Fusion's three-stage architecture: the panel answers in
+parallel, a separate judge invocation compares all worker outputs without
+merging them, and the parent agent (upstream's outer model) writes the final
+answer grounded in the judge analysis.
+
+The judge model defaults to the parent model, matching upstream's
+judge-defaults-to-outer-model behavior. `--judge-model <model-entry>`
+overrides it and resolves through the same model-entry routing as panel
+composition; it maps to `SynthesizerPreference.model`. `--synthesizer
+parent-agent` and `--synthesizer deterministic` remain implemented but are
+explicit-only escapes, never a silent default. The panel-wide timeout and
+`ReasoningPreference` also apply to the judge invocation.
+
+The judge invocation reuses the worker adapter path with its own provenance:
+`synthesis.started` / `synthesis.completed` carry the judge's strategy,
+model, harness, and usage evidence, and recorded runs include the judge
+request and result. The judge is not a blind panel worker — it must see all
+worker outputs and is reported separately from panel workers in compliance —
+but recursion denial still applies to it.
+
+The judge output contract is a superset of the published upstream schema
+(ADR 0024): the five-key core (`consensus`, `contradictions` with
+`topic`/`stances`, `partial_coverage`, `unique_insights`, `blind_spots`) is
+required and validated after tolerant extraction; worker attribution on all
+sections and verbatim supporting quotes are optional additive extensions.
+Present quotes are verified by substring match against worker outputs, with
+mismatches recorded as warnings. The judge has no resolution field and runs
+with no tools; verification is layered as runtime quote matching plus the
+parent agent's own read-tool checks before it writes the final answer.
+
+Judge failure (invocation error, timeout, or invalid core output) follows
+upstream semantics: the panel result stays `ok`, the analysis is omitted, the
+failure is disclosed as a warning, and the parent agent authors the synthesis
+from raw worker outputs as in the pre-judge flow.
 
 The runtime still includes a deterministic fallback synthesizer so a panel can
-complete without model-backed synthesis, and its output remains in reports and
-recorded artifacts as an audit reference. It is a stability and testability
-mechanism, not the final quality target.
-
-Synthesis ownership migrates in stages: parent agent now, harness-backed judge
-later. The `--synthesizer` option contract is defined now (see
-`SynthesizerPreference`), with only `parent-agent` and `deterministic`
-implemented in this milestone. The long-term direction remains a harness-backed
-judge, with OpenCode or Claude Code as likely implementations once worker
-adapter evidence and run recording are stable. Synthesis artifacts should
-identify their strategy, for example `parent-agent`, `deterministic`,
-`opencode`, or `claude-code`.
+complete without model-backed synthesis. When the judge succeeds, the
+deterministic output is demoted to recorded artifacts only (audit reference);
+otherwise it remains in the panel report. It is a stability and testability
+mechanism, not the final quality target. Synthesis artifacts identify their
+strategy, for example `parent-agent`, `deterministic`, `opencode`, or
+`claude-code`.
 
 Partial failure defaults follow OpenRouter semantics (ADR 0019):
 `allowPartial: true`, continue with disclosure when at least one worker
@@ -541,10 +565,12 @@ agreement as full-panel consensus.
 attributes worker outputs; the final answer is the user-facing response grounded
 in that synthesis.
 
-When the synthesis strategy is `parent-agent`, the runtime records
-`synthesis.completed` for the deterministic reference synthesis it produced;
-the parent-authored synthesis is a skill-layer artifact until a harness-backed
-judge exists.
+When the synthesis strategy is a harness kind (the default judge), the runtime
+records `synthesis.started` / `synthesis.completed` for the judge invocation
+itself, with its model, harness, and usage evidence. When the strategy is
+`parent-agent` (explicit-only), the runtime records `synthesis.completed` for
+the deterministic reference synthesis it produced; the parent-authored
+synthesis remains a skill-layer artifact.
 
 Fusion workers should default to `allowRecursiveDelegation: false`,
 `denyPanelSpawning: true`, and `denySubtaskDelegation: true`. This preserves the

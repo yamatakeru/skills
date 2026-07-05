@@ -35,12 +35,16 @@ consensus, contradictions, partial coverage, unique insights, and blind spots.
 Important synthesis claims should be attributable to worker outputs when the
 synthesis contract requires attribution.
 
-Synthesis ownership is staged. In the usable milestone the parent agent authors
-the synthesis from the CLI panel report; the runtime's deterministic synthesis
-remains an audit reference and fallback. A harness-backed judge is the planned
-successor, selected through `SynthesizerPreference`, with its own evidence and
-recorded artifact metadata. The deterministic synthesizer is not the final
-answer-quality target.
+The default author is the harness-backed judge: a separate invocation through
+the worker adapter path that compares worker outputs without merging them and
+returns the structured judge analysis (upstream five-key core plus optional
+attribution and quote extensions). The judge sees all worker outputs, so
+blindness does not apply to it, but recursion denial does; it runs with no
+tools and records its own provenance and evidence. Judge failure keeps the
+panel `ok` with the analysis omitted and disclosed, degrading to
+parent-agent authorship. `parent-agent` and `deterministic` remain
+explicit-only strategies; the deterministic synthesizer is an audit reference
+and fallback, not the final answer-quality target (ADR 0023/0024).
 
 ### FinalAnswer
 
@@ -72,8 +76,10 @@ replaces the default composition.
 
 ### SynthesizerPreference
 
-Identifies who authors the synthesis: `parent-agent`, `deterministic`, or a
-harness kind for the future harness-backed judge.
+Identifies who authors the synthesis: a harness kind for the harness-backed
+judge (default), or the explicit-only `parent-agent` and `deterministic`
+strategies. Its `model` field carries the judge model preference, defaulting
+to the parent model.
 
 ### ReasoningPreference
 

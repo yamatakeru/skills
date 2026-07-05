@@ -195,30 +195,46 @@ override, use restrictive permissions where possible, and report recording statu
 
 A local fallback synthesizer that produces predictable synthesis from worker
 outputs without invoking another model. It exists to make early runs executable
-and tests stable; it is not the final quality target. Its output stays in panel
-reports and recorded artifacts as an audit reference even when the parent agent
-authors the synthesis.
+and tests stable; it is not the final quality target. When the judge succeeds
+its output is demoted to recorded artifacts only (audit reference); when the
+judge fails or an explicit non-judge strategy runs, it stays in the panel
+report (ADR 0023).
 
 ## Parent-Agent Synthesis
 
-The usable-milestone synthesis strategy: the parent agent reads the panel
-report and authors the five-finding synthesis and the final answer itself,
-without an additional model invocation. It corresponds to OpenRouter Fusion's
-outer-model authorship, but merges the judge role into the parent agent.
+An explicit-only synthesis strategy (`--synthesizer parent-agent`): the parent
+agent reads the panel report and authors the five-finding synthesis and the
+final answer itself, without an additional model invocation. It merges the
+judge role into the parent agent. It was the usable-milestone default and is
+also the behavior a run degrades to when the judge fails (ADR 0023).
 
-## Harness-Backed Synthesizer
+## Harness-Backed Judge
 
-The planned successor synthesis strategy (also called the harness-backed
-judge): a separate worker invocation through a concrete harness, such as
-OpenCode or Claude Code, that produces the structured comparison from completed
-worker outputs. Selected through `SynthesizerPreference`. It is not subject to
-worker blindness because synthesis occurs after worker results are returned,
-but it still needs provenance and delegation controls.
+The default synthesis strategy (also called the harness-backed synthesizer):
+a separate judge invocation through a concrete harness, reusing the worker
+adapter path, that compares completed worker outputs without merging them and
+returns the structured judge analysis. The judge model defaults to the parent
+model and is overridable via `--judge-model`. It is not subject to worker
+blindness because synthesis occurs after worker results are returned, but
+recursion denial still applies, it runs with no tools, and it records its own
+provenance and evidence (ADR 0023/0024).
+
+## Judge Analysis
+
+The structured JSON comparison the judge returns: the upstream five-key core
+(`consensus`, `contradictions` with `topic` and `stances`,
+`partial_coverage`, `unique_insights`, `blind_spots`) required for validity,
+plus optional additive extensions (worker attribution on all sections and
+verbatim supporting quotes, runtime-verified by substring match). It contains
+no resolution or verdict; the parent agent writes the final answer from it
+(ADR 0024).
 
 ## Synthesizer Preference
 
-The contract field naming who authors the synthesis: `parent-agent`,
-`deterministic`, or a harness kind for the harness-backed judge.
+The contract field naming who authors the synthesis: a harness kind for the
+harness-backed judge (default), or the explicit-only `parent-agent` and
+`deterministic` strategies. Its `model` field carries the judge model
+preference.
 
 ## Reasoning Preference
 
@@ -238,8 +254,10 @@ dependencies.
 ## Panel Report
 
 The default stdout contract of the Fusion CLI: a Markdown document carrying run
-status, compliance tier, warnings, each worker's full output, and the reference
-deterministic synthesis. `--json` replaces it with the complete `PanelResult`.
+status, compliance tier, warnings, each worker's full output, and the judge
+analysis rendered from its structured JSON (or the reference deterministic
+synthesis when the judge did not run or failed). `--json` replaces it with the
+complete `PanelResult`.
 
 ## Default Panel Slots
 
