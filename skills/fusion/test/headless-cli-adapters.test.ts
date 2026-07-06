@@ -133,8 +133,22 @@ describe("Fusion headless CLI adapters", () => {
       },
     });
 
+    // Control: mode "none" still emits deny entries via --disallowedTools,
+    // so the judge-style assertion above is live, not vacuous.
+    const controlArgs = buildClaudeCodeArgs({
+      ...workerRequest(),
+      toolsPolicy: {
+        mode: "none",
+        allow: [],
+        deny: [...panelAllow, "LS"],
+        headlessAskBehavior: "deny",
+        parity: "strict-same-required",
+      },
+    });
+
     expect(claudeToolFlagValues(defaultArgs)).not.toContain("LS");
     expect(claudeToolFlagValues(judgeStyleArgs)).not.toContain("LS");
+    expect(claudeToolFlagValues(controlArgs)).toContain("LS");
   });
 
   test("does not emit unsupported Claude Code max-turns or reasoning token flags", () => {
