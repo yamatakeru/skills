@@ -10,9 +10,6 @@ system: independent same-prompt answers are compared and synthesized into
 consensus, contradictions, partial coverage, unique insights, and blind spots.
 It does not call the OpenRouter Fusion API directly.
 
-For role-divided review with scout, architect, critic and verifier agents, use
-the separate `council` skill.
-
 ## Repository Layout
 
 ```text
@@ -121,5 +118,4 @@ Supported model entries are provider-qualified OpenCode models such as
 ## Limits
 
 Fusion coordinates independent blind-panel deliberation. It is not a
-role-divided review workflow and is not a full multi-worker coding system. For
-explicit role division, use `council`.
+role-divided review workflow and is not a full multi-worker coding system.

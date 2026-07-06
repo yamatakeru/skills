@@ -139,8 +139,9 @@ that does not meet full compliance requirements. It must be disclosed.
 ## Reference Example
 
 A concrete implementation example for a specific harness. The OpenCode
-`agents/fusion-panelist*.md` files are reference examples, not normative protocol
-requirements.
+`agents/fusion-panelist*.md` files were reference examples, not normative
+protocol requirements; they have been removed from the repository since the
+headless runtime made them redundant.
 
 ## Headless Invocation
 

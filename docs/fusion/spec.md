@@ -62,7 +62,8 @@ run or failed, the reference deterministic synthesis). `--json` switches
 stdout to the complete `PanelResult`.
 
 Legacy execution tiers are retired (ADR 0017). Hidden-subagent panels are
-removed; `fusion-panelist-*` agents are reference examples only. Same-agent
+removed; the `fusion-panelist-*` reference-example agents have been deleted
+from the repository. Same-agent
 internal passes survive solely as an emergency fallback when the CLI cannot
 run, must announce themselves as degraded simulation before producing results,
 and are scheduled for removal consideration once the skill matures.
