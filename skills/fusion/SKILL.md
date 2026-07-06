@@ -120,7 +120,8 @@ entries.
 
 - `--parent-model <id>`: parent model for the default panel slot.
 - `--models <comma-list>`: explicit model list; replaces default composition.
-- `--panelists <n>`: panel size for default composition; default is 3.
+- `--panelists <n>`: panel size for default composition; default is 3,
+  maximum is 20.
 - `--context <text>`: shared context brief given to every worker.
 - `--context-file <path>`: embed a file into the shared context; repeatable.
 - `--effort <low|medium|high|xhigh>`: worker reasoning effort; default is the

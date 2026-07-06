@@ -31,6 +31,12 @@ for (const { type, out } of schemaTypes) {
     ],
     { stdio: "inherit" },
   );
+  // A spawn failure (e.g. missing bunx) sets result.error and never runs the
+  // child, so inherited stdio prints nothing; surface it distinctly.
+  if (result.error !== undefined) {
+    console.error(`Failed to spawn schema generation for ${type}:`, result.error);
+    process.exit(1);
+  }
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }

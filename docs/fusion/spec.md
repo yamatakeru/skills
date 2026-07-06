@@ -366,7 +366,7 @@ interface ContextManifest {
 }
 
 interface PanelSpec {
-  workerCount: number;
+  workerCount: number; // 1..20 (MAX_PANEL_WORKERS)
   modelPreferences?: ModelPreference[];
   parentModel?: ModelPreference;
 }
