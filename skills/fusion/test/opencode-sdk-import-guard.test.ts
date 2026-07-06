@@ -16,7 +16,7 @@ describe("OpenCode SDK dependency guard", () => {
     for (const file of files) {
       const source = await readFile(join(skillRoot, file), "utf8");
       const runtimeImports = source.matchAll(
-        /import\s+(?!type\b)[^;]*?from\s+["']@opencode-ai\/sdk(?:\/[^"']*)?["']|import\s+["']@opencode-ai\/sdk(?:\/[^"']*)?["']/gu,
+        /import\s+(?!type\b)[^;]*?from\s+["']@opencode-ai\/sdk(?:\/[^"']*)?["']|import\s+["']@opencode-ai\/sdk(?:\/[^"']*)?["']|import\s*\(\s*["']@opencode-ai\/sdk(?:\/[^"']*)?["']\s*\)/gu,
       );
       for (const match of runtimeImports) {
         violations.push(`${file}: ${match[0].replace(/\s+/gu, " ").trim()}`);

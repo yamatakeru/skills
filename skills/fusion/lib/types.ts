@@ -112,6 +112,11 @@ export interface ContextManifest {
 }
 
 export interface PanelSpec {
+  /**
+   * Kept in sync with MAX_PANEL_WORKERS in validation.ts.
+   * @minimum 1
+   * @maximum 20
+   */
   workerCount: number;
   modelPreferences?: ModelPreference[];
   parentModel?: ModelPreference;

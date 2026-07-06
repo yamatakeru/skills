@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ContextManifest, SharedContext } from "./types";
 
 export function createContextManifest(input: {
@@ -45,10 +46,5 @@ export function stableStringify(value: unknown): string {
 }
 
 export function stableDigest(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
 }

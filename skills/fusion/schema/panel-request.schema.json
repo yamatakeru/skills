@@ -202,6 +202,9 @@
           "$ref": "#/definitions/ModelPreference"
         },
         "workerCount": {
+          "description": "Kept in sync with MAX_PANEL_WORKERS in validation.ts.",
+          "maximum": 20,
+          "minimum": 1,
           "type": "number"
         }
       },

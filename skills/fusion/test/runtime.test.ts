@@ -176,6 +176,12 @@ describe("Fusion panel runtime", () => {
     expect(result.errors?.[0]).toContain("partial synthesis is disabled");
   });
 
+  test("rejects panels above the worker-count cap", () => {
+    expect(() =>
+      buildWorkerRequests(panelRequest({ workerCount: 21 })),
+    ).toThrow("at most 20");
+  });
+
   test("attributes missing lifecycle events only to the exact worker id", async () => {
     const request = panelRequest({ workerCount: 10 });
     const workerRequests = buildWorkerRequests(request);

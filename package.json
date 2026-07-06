@@ -3,15 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "schema:fusion": "mkdir -p skills/fusion/schema && ts-json-schema-generator --path skills/fusion/lib/types.ts --type PanelRequest --tsconfig tsconfig.json --out skills/fusion/schema/panel-request.schema.json && ts-json-schema-generator --path skills/fusion/lib/types.ts --type WorkerRequest --tsconfig tsconfig.json --out skills/fusion/schema/worker-request.schema.json && ts-json-schema-generator --path skills/fusion/lib/types.ts --type WorkerResult --tsconfig tsconfig.json --out skills/fusion/schema/worker-result.schema.json && ts-json-schema-generator --path skills/fusion/lib/types.ts --type JudgeAnalysis --tsconfig tsconfig.json --out skills/fusion/schema/judge-analysis.schema.json && ts-json-schema-generator --path skills/fusion/lib/types.ts --type SynthesisResult --tsconfig tsconfig.json --out skills/fusion/schema/synthesis-result.schema.json && ts-json-schema-generator --path skills/fusion/lib/types.ts --type PanelResult --tsconfig tsconfig.json --out skills/fusion/schema/panel-result.schema.json",
+    "schema:fusion": "bun scripts/generate-fusion-schemas.ts",
     "test": "bun test",
     "typecheck:fusion": "tsc --noEmit"
   },
   "devDependencies": {
     "@opencode-ai/sdk": "1.17.13",
-    "@types/node": "latest",
-    "bun-types": "latest",
+    "@types/node": "26.1.0",
+    "bun-types": "1.3.14",
     "ts-json-schema-generator": "^2.9.0",
-    "typescript": "latest"
+    "typescript": "6.0.3"
   }
 }

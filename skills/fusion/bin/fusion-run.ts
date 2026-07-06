@@ -743,7 +743,7 @@ export function usage(): string {
     "Options:",
     "  --parent-model <id>       Parent agent model id for the default panel slot.",
     "  --models <comma-list>     Explicit model list; replaces default composition.",
-    "  --panelists <n>           Default panel size (default: 3).",
+    "  --panelists <n>           Default panel size (default: 3, max: 20).",
     "  --context <text>          Shared context brief for every worker.",
     "  --context-file <path>     Embed a file into shared context; repeatable.",
     "  --read-root <path>        Grant workers recursive read access to a directory; repeatable.",
