@@ -127,6 +127,11 @@ entries.
   provider default.
 - `--reasoning-max-tokens <n>`: worker reasoning token budget.
 - `--max-turns <n>`: per-worker turn budget where the harness supports it.
+- `--transport <sdk|cli>`: worker and judge transport; default is `sdk`.
+  `cli` is an explicit opt-in to the legacy CLI adapters with degraded
+  compliance evidence; the runtime never falls back to it silently.
+- `--read-root <dir>`: declare a directory outside the workspace as readable
+  (recursive) for every worker in the run; repeatable.
 - `--record`: write split artifacts under `.fusion-runs/<panelRunId>/` when
   the directory is git-ignored.
 - `--json`: print the complete `PanelResult` JSON instead of Markdown.
@@ -160,6 +165,11 @@ Default worker tools are read-only local access, a read-only bash allowlist
 and web fetch where the harness provides them. Workers must not edit or write
 files, run destructive or non-allowlisted shell commands, spawn subagents,
 delegate subtasks, or recursively invoke panels.
+
+Reads outside the workspace are denied unless the parent declares the
+directory with `--read-root`. A denied request surfaces to the worker as a
+structured tool error: the worker keeps running and discloses the denial in
+its answer instead of being dropped from the panel.
 
 ## Partial Results
 
