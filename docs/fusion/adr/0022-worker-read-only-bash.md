@@ -11,9 +11,10 @@ Amends ADR 0018 and ADR 0006.
 The original OpenCode subagent Fusion auto-approved a read-only bash
 allowlist for panelists (`git status`, `git diff`, `git log`, `rg`, `grep`,
 `ls`, `cat`, `sed`), and this was one of its main investigation levers. The
-current claude-code adapter allows only `Read,Grep,Glob,LS,WebSearch,WebFetch`,
-leaving git history unreachable. ADR 0020 adds prompt-level tool-use
-encouragement, which is empty without the corresponding capability.
+current claude-code adapter allows only `Read,Grep,Glob,WebSearch,WebFetch`,
+leaving git history unreachable. Directory listing remains available through
+the read-only bash `ls` entry added by this ADR. ADR 0020 adds prompt-level
+tool-use encouragement, which is empty without the corresponding capability.
 
 ## Decision
 

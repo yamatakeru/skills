@@ -4,6 +4,20 @@
 
 Accepted
 
+## Amendment (2026-07-07)
+
+The Claude Code arm ("readRoots map to --add-dir") had been asserted from
+flag reading and never live-verified; in practice claude's variadic
+`--add-dir <directories...>` consumed the trailing positional prompt, so
+declaring readRoots deterministically failed any claude-code worker or judge
+invocation with exit 1 ("Input must be provided...") -- first observed in the
+field on 2026-07-06 as a judge failure misattributed to an invalid LS
+permission rule (a harmless stderr warning). The fix terminates option
+parsing with `--` before the positional prompt and was live-verified on
+2026-07-07 on claude 2.1.201. The consequence claim that the
+permission-abort dropout class was "eliminated by design on the default
+transport" held for opencode but was inverted for claude-code until this fix.
+
 Implements reserved milestone 6 (the durable fix for permission-abort worker
 dropouts) on the ADR 0028 SDK transport. Realizes ADR 0012's full-capable
 criterion "resolve headless approval requests as deny or structured error by

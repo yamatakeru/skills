@@ -93,7 +93,7 @@ export function buildOpenCodeArgs(request: WorkerRequest): string[] {
 export function buildClaudeCodeArgs(request: WorkerRequest): string[] {
   const args = buildClaudeCodeBaseArgs(request);
   appendClaudeCodeReadRoots(args, request);
-  return [...args, request.prompt];
+  return [...args, "--", request.prompt];
 }
 
 export function buildClaudeCodeSdkArgs(request: WorkerRequest): string[] {
@@ -369,7 +369,6 @@ function claudeToolsForPolicy(request: WorkerRequest): string | undefined {
           "Read",
           "Grep",
           "Glob",
-          "LS",
           "WebSearch",
           "WebFetch",
         ],

@@ -8,6 +8,17 @@ import {
 } from "../lib/protocol";
 import { workerRequest } from "./fixtures";
 
+function claudeToolFlagValues(args: string[]): string[] {
+  return args
+    .filter(
+      (arg) =>
+        arg.startsWith("--tools=") ||
+        arg.startsWith("--allowedTools=") ||
+        arg.startsWith("--disallowedTools="),
+    )
+    .flatMap((arg) => arg.slice(arg.indexOf("=") + 1).split(","));
+}
+
 describe("Fusion headless CLI adapters", () => {
   test("builds OpenCode headless run arguments", () => {
     const request = workerRequest();
@@ -58,9 +69,10 @@ describe("Fusion headless CLI adapters", () => {
       "haiku",
       "--effort",
       "high",
-      "--tools=Read,Grep,Glob,LS,WebSearch,WebFetch,Bash",
-      "--allowedTools=Read,Grep,Glob,LS,WebSearch,WebFetch,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(rg:*),Bash(grep:*),Bash(ls:*),Bash(cat:*)",
+      "--tools=Read,Grep,Glob,WebSearch,WebFetch,Bash",
+      "--allowedTools=Read,Grep,Glob,WebSearch,WebFetch,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(rg:*),Bash(grep:*),Bash(ls:*),Bash(cat:*)",
       "--disallowedTools=Write,Edit,MultiEdit,Task,NotebookEdit",
+      "--",
       request.prompt,
     ]);
   });
@@ -75,11 +87,11 @@ describe("Fusion headless CLI adapters", () => {
     };
     const args = buildClaudeCodeArgs(request);
 
-    expect(args).toContain("--tools=Read,Grep,Glob,LS,WebSearch,WebFetch,Bash");
+    expect(args).toContain("--tools=Read,Grep,Glob,WebSearch,WebFetch,Bash");
     expect(args).toContain("--allowedTools=Bash(ls:*)");
   });
 
-  test("adds read roots to Claude Code CLI arguments", () => {
+  test("separates Claude Code read roots from the positional prompt", () => {
     const request = {
       ...workerRequest(),
       environment: {
@@ -92,7 +104,37 @@ describe("Fusion headless CLI adapters", () => {
     expect(args).toContain("--add-dir");
     expect(args).toContain("/external/a");
     expect(args).toContain("/external/b");
-    expect(args[args.length - 1]).toBe(request.prompt);
+    expect(args.slice(-2)).toEqual(["--", request.prompt]);
+    expect(args.indexOf("/external/b")).toBeLessThan(args.length - 2);
+  });
+
+  test("always separates Claude Code options from the positional prompt", () => {
+    const request = {
+      ...workerRequest(),
+      prompt: "-prompt starting with dash",
+    };
+    const args = buildClaudeCodeArgs(request);
+
+    expect(args).not.toContain("--add-dir");
+    expect(args.slice(-2)).toEqual(["--", request.prompt]);
+  });
+
+  test("omits unsupported LS tool entries from Claude Code tool flags", () => {
+    const defaultArgs = buildClaudeCodeArgs(workerRequest());
+    const panelAllow = workerRequest().toolsPolicy?.allow ?? [];
+    const judgeStyleArgs = buildClaudeCodeArgs({
+      ...workerRequest(),
+      toolsPolicy: {
+        mode: "none",
+        allow: [],
+        deny: panelAllow,
+        headlessAskBehavior: "deny",
+        parity: "strict-same-required",
+      },
+    });
+
+    expect(claudeToolFlagValues(defaultArgs)).not.toContain("LS");
+    expect(claudeToolFlagValues(judgeStyleArgs)).not.toContain("LS");
   });
 
   test("does not emit unsupported Claude Code max-turns or reasoning token flags", () => {

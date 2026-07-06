@@ -19,7 +19,7 @@ export const defaultPolicies: DefaultPolicies = {
   },
   tools: {
     mode: "read-only",
-    allow: ["Read", "Grep", "Glob", "LS", "WebSearch", "WebFetch", "Bash"],
+    allow: ["Read", "Grep", "Glob", "WebSearch", "WebFetch", "Bash"],
     deny: ["Write", "Edit", "MultiEdit", "Task", "NotebookEdit"],
     readOnlyBashCommands: [
       "git status",

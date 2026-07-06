@@ -258,7 +258,7 @@ describe("Fusion OpenCode SDK adapter", () => {
     const config = buildOpenCodeConfigContent({
       toolsPolicy: {
         mode: "read-only",
-        allow: ["Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "Bash"],
+        allow: ["Read", "Grep", "Glob", "WebFetch", "WebSearch", "Bash"],
         deny: ["Write", "Edit", "Task"],
         readOnlyBashCommands: ["git status", "rg"],
       },

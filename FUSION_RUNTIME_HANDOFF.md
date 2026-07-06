@@ -35,7 +35,8 @@ What landed:
   permission asks; surfaces provider retry loops as warnings.
 - `claude-code-sdk-adapter.ts`: same headless spawn, full stream-json
   parsing (session id, resolved model, usage, cost, num_turns,
-  permission_denials), `--add-dir` from `readRoots`.
+  permission_denials), `--add-dir` from `readRoots`; corrected 2026-07-07 to
+  place `--` before the positional prompt because `--add-dir` is variadic.
 - CLI: `--transport sdk|cli` (default sdk, uniform for workers and judge),
   repeatable `--read-root`.
 
@@ -341,7 +342,12 @@ recorder refuses to write otherwise without an explicit override.
 - Non-default flags (`--effort`, `--context`, `--context-file`, `--max-turns`,
   `--reasoning-max-tokens`, `--judge-model`, `--synthesizer`) are unit-tested;
   only the default path (which now includes the judge) has been smoke-run
-  end-to-end with real models.
+  end-to-end with real models. The 2026-07-07 Claude Code `--add-dir`
+  separator fix was live-verified against claude 2.1.201 as a flag-contract
+  probe and as a recorded full panel smoke (`fusion-18e68196-*`:
+  claude-code workers plus claude-code judge with a declared read root, all
+  ok, compliance tier `full` — the exact combination that previously failed
+  deterministically).
 - The alias table (`openai-flagship`, `budget-smart`) pins current model IDs;
   generation changes are absorbed by editing
   `skills/fusion/lib/panel-composition.ts` in a skill update.
@@ -373,8 +379,11 @@ recorder refuses to write otherwise without an explicit override.
    session/tool-event capture, and programmatic permission handling; the
    recorded SDK smoke reached compliance tier `full`. The ADR 0026
    re-decision duty is now live and assigned to milestone 5.
-2. CI automation of the smoke matrix (needs credential management and paid
-   calls in CI; deferred by the acceptance criteria).
+2. CI automation of the smoke matrix plus flag-contract regression probes
+   (needs credential management and paid calls in CI; deferred by the
+   acceptance criteria). The probes should verify adapter-built argv against
+   the actually installed CLI flag grammar; this incident showed that
+   arg-building unit tests only encode our own assumptions.
 3. Consider removing the emergency internal fallback once the skill matures
    (ADR 0017).
 4. Revisit the portable-worker-instructions trade-off against upstream
@@ -393,7 +402,9 @@ recorder refuses to write otherwise without an explicit override.
    `external_directory` read ended the headless turn without a final text
    step) now completes with the denial disclosed. The external-path stopgap
    is superseded: declare `--read-root` or inline the content. The CLI
-   opt-in path retains the historical dropout behavior.
+   opt-in path retains the historical dropout behavior. Correction
+   (2026-07-07): the claude-code arm was broken until this hotfix because
+   variadic `--add-dir` swallowed the prompt; it was live-verified only then.
 
 ## Useful Commands
 
