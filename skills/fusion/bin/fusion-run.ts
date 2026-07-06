@@ -291,6 +291,13 @@ export function parseArgs(args: string[]): CliOptions {
       index += 1;
       return value;
     };
+    // Boolean flags take no value; a `--flag=value` form is a usage error
+    // rather than a silently ignored payload.
+    const rejectValue = (): void => {
+      if (inlineValue !== undefined) {
+        throw new UsageError(`${flag} does not take a value.`);
+      }
+    };
 
     switch (flag) {
       case "--parent-model":
@@ -334,9 +341,11 @@ export function parseArgs(args: string[]): CliOptions {
         options.maxTurns = parsePositiveInteger(flag, takeValue());
         break;
       case "--record":
+        rejectValue();
         options.record = true;
         break;
       case "--json":
+        rejectValue();
         options.json = true;
         break;
       case "--transport":
@@ -352,6 +361,7 @@ export function parseArgs(args: string[]): CliOptions {
         options.timeoutMs = parsePositiveInteger(flag, takeValue());
         break;
       case "--help":
+        rejectValue();
         throw new HelpRequested();
       default:
         throw new UsageError(`Unknown Fusion option: ${flag}`);
@@ -488,7 +498,14 @@ async function runPanelWithRuntime(
       recorder,
     });
   } finally {
-    await runtime.dispose();
+    try {
+      await runtime.dispose();
+    } catch (error) {
+      // A cleanup failure must not replace the panel result or the real error.
+      process.stderr.write(
+        `Warning: failed to dispose Fusion runtime: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
   }
 }
 

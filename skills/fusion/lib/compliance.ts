@@ -129,7 +129,7 @@ function evaluateWorkerCompliance(
     workerRequest.toolsPolicy,
   );
   const workerMissingRequiredEvents = missingRequiredEvents.some((event) =>
-    event.includes(workerRequest.workerId),
+    event.endsWith(`:${workerRequest.workerId}`),
   );
   const degradedReasons = [
     result === undefined ? "worker result missing" : undefined,

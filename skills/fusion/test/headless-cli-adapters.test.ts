@@ -65,6 +65,20 @@ describe("Fusion headless CLI adapters", () => {
     ]);
   });
 
+  test("grants scoped bash from readOnlyBashCommands without an explicit Bash allow", () => {
+    const request = {
+      ...workerRequest(),
+      toolsPolicy: {
+        mode: "read-only" as const,
+        readOnlyBashCommands: ["ls"],
+      },
+    };
+    const args = buildClaudeCodeArgs(request);
+
+    expect(args).toContain("--tools=Read,Grep,Glob,LS,WebSearch,WebFetch,Bash");
+    expect(args).toContain("--allowedTools=Bash(ls:*)");
+  });
+
   test("adds read roots to Claude Code CLI arguments", () => {
     const request = {
       ...workerRequest(),

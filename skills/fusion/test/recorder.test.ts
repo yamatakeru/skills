@@ -56,6 +56,15 @@ describe("Fusion run recorders", () => {
       expect(requestJson).not.toContain("do-not-write");
       expect(synthesisJson).toContain("deterministic");
       expect(eventsJsonl).toContain("panel.started");
+      const complianceEvent = eventsJsonl
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map(
+          (line) =>
+            JSON.parse(line) as { type: string; data?: { tier?: string } },
+        )
+        .find((event) => event.type === "compliance.evaluated");
+      expect(complianceEvent?.data?.tier).toBe("full");
     } finally {
       await rm(workspaceRoot, { recursive: true, force: true });
     }

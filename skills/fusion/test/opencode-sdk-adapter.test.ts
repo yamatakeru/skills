@@ -613,6 +613,52 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.status).toBe("error");
     expect(disposed).toBe(true);
   });
+
+  test("applies the worker timeout to the prompt POST", async () => {
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start() {},
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          );
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          return new Promise<Response>(() => {});
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      budget: { timeoutMs: 50 },
+    });
+
+    expect(result.status).toBe("timeout");
+    expect(result.errors?.join("\n")).toContain("sending the prompt");
+  });
+
+  test("returns an error result when the opencode binary cannot spawn", async () => {
+    const adapter = new OpenCodeSdkAdapter({
+      command: "fusion-test-missing-opencode-binary",
+      versionExecutor: versionExecutor,
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+    await adapter.dispose();
+
+    expect(result.status).toBe("error");
+    expect(result.errors?.join("\n")).toContain("failed to spawn");
+  });
 });
 
 function sse(value: unknown): string {

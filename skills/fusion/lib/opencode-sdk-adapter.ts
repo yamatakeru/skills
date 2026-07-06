@@ -264,12 +264,19 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         request.budget?.timeoutMs,
         "opencode SDK worker timed out opening SSE stream.",
       );
-      syncObservation = await this.promptAsyncOrSync(
+      const promptPromise = this.promptAsyncOrSync(
         baseUrl,
         request,
         sessionId,
         messageId,
         warnings,
+        controller.signal,
+      );
+      promptPromise.catch(() => undefined);
+      syncObservation = await withTimeout(
+        promptPromise,
+        request.budget?.timeoutMs,
+        "opencode SDK worker timed out sending the prompt.",
       );
     } catch (error) {
       controller.abort();
@@ -298,6 +305,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     sessionId: string,
     messageId: string,
     warnings: string[],
+    signal?: AbortSignal,
   ): Promise<OpenCodeObservation | undefined> {
     const body = openCodePromptBody(request, messageId, this.agentName, warnings);
     try {
@@ -308,6 +316,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         {
           method: "POST",
           body,
+          signal,
         },
         request.environment,
       );
@@ -325,6 +334,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
       {
         method: "POST",
         body,
+        signal,
       },
       request.environment,
     );
@@ -1015,6 +1025,7 @@ async function requestJson<T>(
   init: {
     method: "GET" | "POST" | "PATCH" | "DELETE";
     body?: unknown;
+    signal?: AbortSignal;
   },
   environment?: WorkerEnvironment,
 ): Promise<T> {
@@ -1025,6 +1036,7 @@ async function requestJson<T>(
         ? undefined
         : { "Content-Type": "application/json" },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    signal: init.signal,
   });
   if (!response.ok) {
     throw new HttpError(
@@ -1083,7 +1095,21 @@ async function spawnOpenCodeServerOnce(
   child.stderr.on("data", (chunk: Buffer) => output.push(chunk));
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  await waitForOpenCodeServer(child, baseUrl, input.fetch, output);
+  // Without an "error" listener, a failed spawn (e.g. missing binary) is an
+  // unhandled EventEmitter error that crashes the whole process.
+  const spawnFailure = new Promise<never>((_, reject) => {
+    child.once("error", (error) => {
+      reject(
+        new Error(`opencode serve failed to spawn: ${error.message}`),
+      );
+    });
+  });
+  spawnFailure.catch(() => undefined);
+
+  await Promise.race([
+    waitForOpenCodeServer(child, baseUrl, input.fetch, output),
+    spawnFailure,
+  ]);
   return {
     baseUrl,
     dispose: () => terminateChild(child),

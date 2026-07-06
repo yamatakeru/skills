@@ -77,6 +77,15 @@ describe("Fusion CLI parsing", () => {
     );
   });
 
+  test("rejects inline values on boolean flags", () => {
+    expect(() => parseArgs(["--record=false", "task"])).toThrow(
+      "does not take a value",
+    );
+    expect(() => parseArgs(["--json=true", "task"])).toThrow(
+      "does not take a value",
+    );
+  });
+
   test("warns but keeps oversized embedded shared context", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "fusion-large-"));
     const largeContext = "x".repeat(256 * 1024 + 1);

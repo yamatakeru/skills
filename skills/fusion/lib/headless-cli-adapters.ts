@@ -359,20 +359,39 @@ function openCodeVariantForEffort(
 }
 
 function claudeToolsForPolicy(request: WorkerRequest): string | undefined {
-  switch (request.toolsPolicy?.mode) {
+  const toolsPolicy = request.toolsPolicy;
+  switch (toolsPolicy?.mode) {
     case "none":
       return "";
     case "read-only":
-      return (
-        request.toolsPolicy.allow?.join(",") ??
-        "Read,Grep,Glob,LS,WebSearch,WebFetch"
+      return withBashTool(
+        toolsPolicy.allow ?? [
+          "Read",
+          "Grep",
+          "Glob",
+          "LS",
+          "WebSearch",
+          "WebFetch",
+        ],
+        toolsPolicy,
       );
     case "limited":
-      return request.toolsPolicy.allow?.join(",");
+      return toolsPolicy.allow === undefined
+        ? undefined
+        : withBashTool(toolsPolicy.allow, toolsPolicy);
     case "full":
     case undefined:
       return undefined;
   }
+}
+
+// Scoped bash follows readOnlyBashCommands, matching the OpenCode permission
+// map: an explicit "Bash" entry in allow is not required.
+function withBashTool(tools: string[], toolsPolicy: ToolsPolicy): string {
+  const needsBash =
+    (toolsPolicy.readOnlyBashCommands?.length ?? 0) > 0 &&
+    !tools.includes("Bash");
+  return unique(needsBash ? [...tools, "Bash"] : tools).join(",");
 }
 
 function claudeAllowedToolsForPolicy(
@@ -387,9 +406,9 @@ function claudeAllowedToolsForPolicy(
 
   const allowed = toolsPolicy.allow ?? [];
   const baseTools = allowed.filter((tool) => tool !== "Bash");
-  const bashTools = allowed.includes("Bash")
-    ? (toolsPolicy.readOnlyBashCommands ?? []).map(claudeBashPattern)
-    : [];
+  const bashTools = (toolsPolicy.readOnlyBashCommands ?? []).map(
+    claudeBashPattern,
+  );
   const permissions = [...baseTools, ...bashTools];
   return permissions.length === 0 ? undefined : unique(permissions).join(",");
 }

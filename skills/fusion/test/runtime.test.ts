@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildWorkerRequests,
   DeterministicSynthesizer,
+  evaluateCompliance,
   HarnessBackedJudgeSynthesizer,
   runPanel,
 } from "../lib/protocol";
@@ -172,5 +174,39 @@ describe("Fusion panel runtime", () => {
     expect(result.status).toBe("failed");
     expect(result.synthesis).toBe("");
     expect(result.errors?.[0]).toContain("partial synthesis is disabled");
+  });
+
+  test("attributes missing lifecycle events only to the exact worker id", async () => {
+    const request = panelRequest({ workerCount: 10 });
+    const workerRequests = buildWorkerRequests(request);
+    const result = await runPanel(request, {
+      runner: okRunner(),
+      synthesizer: new DeterministicSynthesizer(),
+      workerRequests,
+    });
+
+    const eventsWithoutWorker10Start = (result.events ?? []).filter(
+      (event) =>
+        !(
+          event.type === "worker.invocation.started" &&
+          event.workerId === "worker-10"
+        ),
+    );
+    const summary = evaluateCompliance({
+      panelRequest: request,
+      workerRequests,
+      workerResults: result.workerResults,
+      events: eventsWithoutWorker10Start,
+    });
+    const complianceById = new Map(
+      summary.workerCompliance.map((entry) => [entry.workerId, entry.compliance]),
+    );
+
+    expect(complianceById.get("worker-10")?.degradedReason).toContain(
+      "required worker lifecycle events missing",
+    );
+    expect(complianceById.get("worker-1")?.degradedReason ?? "").not.toContain(
+      "required worker lifecycle events missing",
+    );
   });
 });

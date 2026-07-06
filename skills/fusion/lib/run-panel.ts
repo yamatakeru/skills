@@ -127,8 +127,19 @@ export async function runPanel(
     recorder?.recordSynthesis?.(synthesisResult),
   );
 
-  const complianceEventIndex = events.length;
-  await emit("compliance.evaluated");
+  // The compliance evaluation requires the compliance.evaluated event to be
+  // present, but the event's recorded payload must carry the resulting tier:
+  // append the event first and write it to the recorder only after the tier
+  // is known, so the events.jsonl line is complete.
+  const complianceEvent = {
+    eventId: idFactory(),
+    panelRunId: request.panelRunId,
+    workerId: undefined,
+    type: "compliance.evaluated" as const,
+    timestamp: now().toISOString(),
+    data: undefined as Record<string, unknown> | undefined,
+  };
+  events.push(complianceEvent);
   const finalComplianceSummary = evaluateCompliance({
     panelRequest: request,
     workerRequests,
@@ -136,7 +147,10 @@ export async function runPanel(
     events,
     synthesisResult,
   });
-  events[complianceEventIndex].data = { tier: finalComplianceSummary.tier };
+  complianceEvent.data = { tier: finalComplianceSummary.tier };
+  await recordSafely(recorderWarnings, () =>
+    recorder?.recordEvent?.(complianceEvent),
+  );
   await recordSafely(recorderWarnings, () =>
     recorder?.recordCompliance?.(finalComplianceSummary),
   );

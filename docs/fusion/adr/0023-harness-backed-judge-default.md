@@ -47,6 +47,9 @@ The harness-backed judge becomes the default synthesizer.
   routing as panel composition (Claude aliases to claude-code,
   `provider/model` to opencode, forcing prefixes allowed). This maps to
   `SynthesizerPreference.model`; `--synthesizer` remains for strategy escape.
+  If neither `--parent-model` nor `--judge-model` is supplied, the judge
+  falls back to the selected harness's default model and the CLI emits a
+  warning disclosing the fallback.
 - `parent-agent` and `deterministic` remain implemented strategies but are
   explicit-only: they run when the user passes `--synthesizer parent-agent`
   or `--synthesizer deterministic`, never as a silent default.
