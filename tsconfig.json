@@ -7,6 +7,7 @@
     "types": ["node", "bun-types"]
   },
   "include": [
+    "scripts/**/*.ts",
     "skills/fusion/bin/**/*.ts",
     "skills/fusion/lib/**/*.ts",
     "skills/fusion/test/**/*.ts"
