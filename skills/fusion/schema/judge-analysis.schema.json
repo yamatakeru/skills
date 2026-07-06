@@ -1,0 +1,198 @@
+{
+  "$ref": "#/definitions/JudgeAnalysis",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "JudgeAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "blind_spots": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        },
+        "consensus": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        },
+        "contradictions": {
+          "items": {
+            "$ref": "#/definitions/JudgeContradiction"
+          },
+          "type": "array"
+        },
+        "partial_coverage": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        },
+        "unique_insights": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "consensus",
+        "contradictions",
+        "partial_coverage",
+        "unique_insights",
+        "blind_spots"
+      ],
+      "type": "object"
+    },
+    "JudgeAnnotatedFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "items": {
+            "$ref": "#/definitions/JudgeAttribution"
+          },
+          "type": "array"
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/definitions/JudgeQuote"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "JudgeAttributedStance": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "items": {
+            "$ref": "#/definitions/JudgeAttribution"
+          },
+          "type": "array"
+        },
+        "modelUsed": {
+          "type": "string"
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/definitions/JudgeQuote"
+          },
+          "type": "array"
+        },
+        "stance": {
+          "type": "string"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "stance"
+      ],
+      "type": "object"
+    },
+    "JudgeAttribution": {
+      "additionalProperties": false,
+      "properties": {
+        "modelUsed": {
+          "type": "string"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId"
+      ],
+      "type": "object"
+    },
+    "JudgeContradiction": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "items": {
+            "$ref": "#/definitions/JudgeAttribution"
+          },
+          "type": "array"
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/definitions/JudgeQuote"
+          },
+          "type": "array"
+        },
+        "stances": {
+          "$ref": "#/definitions/JudgeStances"
+        },
+        "topic": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic",
+        "stances"
+      ],
+      "type": "object"
+    },
+    "JudgeFinding": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/JudgeAnnotatedFinding"
+        }
+      ]
+    },
+    "JudgeQuote": {
+      "additionalProperties": false,
+      "properties": {
+        "quote": {
+          "type": "string"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "quote"
+      ],
+      "type": "object"
+    },
+    "JudgeStance": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/JudgeAttributedStance"
+        }
+      ]
+    },
+    "JudgeStances": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/JudgeStance"
+          },
+          "type": "array"
+        }
+      ]
+    }
+  }
+}

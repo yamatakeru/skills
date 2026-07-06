@@ -1,0 +1,17 @@
+{
+  "name": "skills",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "schema:fusion": "bun scripts/generate-fusion-schemas.ts",
+    "test": "bun test",
+    "typecheck:fusion": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@opencode-ai/sdk": "1.17.13",
+    "@types/node": "26.1.0",
+    "bun-types": "1.3.14",
+    "ts-json-schema-generator": "^2.9.0",
+    "typescript": "6.0.3"
+  }
+}

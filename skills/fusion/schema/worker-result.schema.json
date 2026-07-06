@@ -1,0 +1,260 @@
+{
+  "$ref": "#/definitions/WorkerResult",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "HarnessDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "invocation": {
+          "$ref": "#/definitions/InvocationMode"
+        },
+        "kind": {
+          "$ref": "#/definitions/HarnessKind"
+        },
+        "transport": {
+          "$ref": "#/definitions/TransportMode"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "invocation"
+      ],
+      "type": "object"
+    },
+    "HarnessKind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "enum": [
+            "opencode",
+            "cursor-cli",
+            "claude-code",
+            "pi"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "InvocationMode": {
+      "enum": [
+        "headless",
+        "subagent"
+      ],
+      "type": "string"
+    },
+    "SessionMode": {
+      "enum": [
+        "fresh",
+        "fork",
+        "resume"
+      ],
+      "type": "string"
+    },
+    "ToolUseSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "deniedRequests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "promptRequests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "toolsUsed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ToolsPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ask": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deny": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "headlessAskBehavior": {
+          "enum": [
+            "deny",
+            "error",
+            "prompt-if-policy-allows"
+          ],
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "none",
+            "read-only",
+            "limited",
+            "full"
+          ],
+          "type": "string"
+        },
+        "parity": {
+          "enum": [
+            "same-by-default",
+            "strict-same-required",
+            "harness-default"
+          ],
+          "type": "string"
+        },
+        "readOnlyBashCommands": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "TransportMode": {
+      "enum": [
+        "cli",
+        "sdk"
+      ],
+      "type": "string"
+    },
+    "UsageSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "costUsd": {
+          "type": "number"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "inputTokens": {
+          "type": "number"
+        },
+        "outputTokens": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerComplianceEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "adapterClaimsBlindness": {
+          "type": "boolean"
+        },
+        "adapterClaimsCleanSameWorkerLineage": {
+          "type": "boolean"
+        },
+        "adapterClaimsIndependentInvocation": {
+          "type": "boolean"
+        },
+        "adapterClaimsIsolatedContext": {
+          "type": "boolean"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "observedSessionMode": {
+          "$ref": "#/definitions/SessionMode"
+        },
+        "observedToolPolicy": {
+          "$ref": "#/definitions/ToolsPolicy"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerResult": {
+      "additionalProperties": false,
+      "properties": {
+        "complianceEvidence": {
+          "$ref": "#/definitions/WorkerComplianceEvidence"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "harnessUsed": {
+          "$ref": "#/definitions/HarnessDescriptor"
+        },
+        "modelUsed": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "panelRunId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/WorkerStatus"
+        },
+        "toolUseSummary": {
+          "$ref": "#/definitions/ToolUseSummary"
+        },
+        "usage": {
+          "$ref": "#/definitions/UsageSummary"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "panelRunId",
+        "workerId",
+        "status",
+        "output"
+      ],
+      "type": "object"
+    },
+    "WorkerStatus": {
+      "enum": [
+        "ok",
+        "timeout",
+        "error",
+        "invalid-output",
+        "refused"
+      ],
+      "type": "string"
+    }
+  }
+}

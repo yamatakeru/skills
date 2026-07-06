@@ -33,25 +33,18 @@ when tools are available.
 
 ## Degraded Mode
 
-If hidden subagents are unavailable, run internal independent passes instead.
-Keep them separated conceptually and synthesize the passes with the same five
-findings.
+The bundled CLI is the normal execution path. If it cannot run at all, an
+internal same-agent simulation is permitted only as an announced emergency
+fallback. Keep passes separated conceptually, synthesize them with the same
+five findings, and state that the result is degraded rather than a
+full-compliance Fusion panel.
 
 ## Model Diversity
 
-For stronger diversity in OpenCode, use model-specific neutral panelists such
-as:
-
-- `fusion-panelist-gpt.md`
-- `fusion-panelist-kimi.md`
-- `fusion-panelist-deepseek.md`
-- `fusion-panelist-glm.md`
-- `fusion-panelist-composer.md`
-
-Give each copy a different `model:` line if those models are available in the
-environment. Users may request these via `--models gpt,kimi,deepseek,glm,composer`.
-The selected model-specific agents still receive the same prompt; model choice
-must not become a role, persona, or specialty lens.
+For stronger diversity, use the CLI's `--models` option with provider-qualified
+OpenCode model IDs, Claude aliases, alias-table names, or explicit harness
+prefixes. The selected workers still receive the same prompt; model choice must
+not become a role, persona, or specialty lens.
 
 Independent runs may use the same underlying model more than once when each run
 remains blind and independent. This treats stochastic reasoning paths and tool

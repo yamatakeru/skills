@@ -1,0 +1,718 @@
+{
+  "$ref": "#/definitions/PanelResult",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ComplianceSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "degradedWorkers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "failedWorkers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "judgeCompliance": {
+          "$ref": "#/definitions/JudgeCompliance"
+        },
+        "missingRequiredEvents": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tier": {
+          "$ref": "#/definitions/ComplianceTier"
+        },
+        "workerCompliance": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "compliance": {
+                "$ref": "#/definitions/WorkerCompliance"
+              },
+              "workerId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "workerId",
+              "compliance"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tier",
+        "workerCompliance"
+      ],
+      "type": "object"
+    },
+    "ComplianceTier": {
+      "enum": [
+        "full",
+        "full-reused-isolated-session",
+        "degraded",
+        "non-compliant"
+      ],
+      "type": "string"
+    },
+    "HarnessDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "invocation": {
+          "$ref": "#/definitions/InvocationMode"
+        },
+        "kind": {
+          "$ref": "#/definitions/HarnessKind"
+        },
+        "transport": {
+          "$ref": "#/definitions/TransportMode"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "invocation"
+      ],
+      "type": "object"
+    },
+    "HarnessKind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "enum": [
+            "opencode",
+            "cursor-cli",
+            "claude-code",
+            "pi"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "InvocationMode": {
+      "enum": [
+        "headless",
+        "subagent"
+      ],
+      "type": "string"
+    },
+    "JudgeAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "blind_spots": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        },
+        "consensus": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        },
+        "contradictions": {
+          "items": {
+            "$ref": "#/definitions/JudgeContradiction"
+          },
+          "type": "array"
+        },
+        "partial_coverage": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        },
+        "unique_insights": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "consensus",
+        "contradictions",
+        "partial_coverage",
+        "unique_insights",
+        "blind_spots"
+      ],
+      "type": "object"
+    },
+    "JudgeAnnotatedFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "items": {
+            "$ref": "#/definitions/JudgeAttribution"
+          },
+          "type": "array"
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/definitions/JudgeQuote"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "JudgeAttributedStance": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "items": {
+            "$ref": "#/definitions/JudgeAttribution"
+          },
+          "type": "array"
+        },
+        "modelUsed": {
+          "type": "string"
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/definitions/JudgeQuote"
+          },
+          "type": "array"
+        },
+        "stance": {
+          "type": "string"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "stance"
+      ],
+      "type": "object"
+    },
+    "JudgeAttribution": {
+      "additionalProperties": false,
+      "properties": {
+        "modelUsed": {
+          "type": "string"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId"
+      ],
+      "type": "object"
+    },
+    "JudgeCompliance": {
+      "additionalProperties": false,
+      "properties": {
+        "harnessUsed": {
+          "$ref": "#/definitions/HarnessDescriptor"
+        },
+        "modelUsed": {
+          "type": "string"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/definitions/WorkerStatus"
+        },
+        "toolsPolicy": {
+          "$ref": "#/definitions/ToolsPolicy"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId"
+      ],
+      "type": "object"
+    },
+    "JudgeContradiction": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "items": {
+            "$ref": "#/definitions/JudgeAttribution"
+          },
+          "type": "array"
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/definitions/JudgeQuote"
+          },
+          "type": "array"
+        },
+        "stances": {
+          "$ref": "#/definitions/JudgeStances"
+        },
+        "topic": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic",
+        "stances"
+      ],
+      "type": "object"
+    },
+    "JudgeFinding": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/JudgeAnnotatedFinding"
+        }
+      ]
+    },
+    "JudgeQuote": {
+      "additionalProperties": false,
+      "properties": {
+        "quote": {
+          "type": "string"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "quote"
+      ],
+      "type": "object"
+    },
+    "JudgeStance": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/JudgeAttributedStance"
+        }
+      ]
+    },
+    "JudgeStances": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/JudgeStance"
+          },
+          "type": "array"
+        }
+      ]
+    },
+    "PanelResult": {
+      "additionalProperties": false,
+      "properties": {
+        "analysis": {
+          "$ref": "#/definitions/JudgeAnalysis"
+        },
+        "complianceSummary": {
+          "$ref": "#/definitions/ComplianceSummary"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/definitions/ProvenanceEvent"
+          },
+          "type": "array"
+        },
+        "fallbackReason": {
+          "type": "string"
+        },
+        "finalAnswer": {
+          "type": "string"
+        },
+        "panelRunId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/PanelStatus"
+        },
+        "strategy": {
+          "type": "string"
+        },
+        "synthesis": {
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workerResults": {
+          "items": {
+            "$ref": "#/definitions/WorkerResult"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "panelRunId",
+        "status",
+        "workerResults",
+        "synthesis",
+        "complianceSummary"
+      ],
+      "type": "object"
+    },
+    "PanelStatus": {
+      "enum": [
+        "ok",
+        "partial",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "ProvenanceEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "eventId": {
+          "type": "string"
+        },
+        "panelRunId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ProvenanceEventType"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "panelRunId",
+        "type",
+        "timestamp"
+      ],
+      "type": "object"
+    },
+    "ProvenanceEventType": {
+      "enum": [
+        "panel.started",
+        "context.manifested",
+        "harness.selected",
+        "worker.invocation.requested",
+        "worker.invocation.started",
+        "worker.invocation.completed",
+        "worker.invocation.failed",
+        "synthesis.started",
+        "synthesis.completed",
+        "compliance.evaluated"
+      ],
+      "type": "string"
+    },
+    "SessionMode": {
+      "enum": [
+        "fresh",
+        "fork",
+        "resume"
+      ],
+      "type": "string"
+    },
+    "ToolUseSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "deniedRequests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "promptRequests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "toolsUsed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ToolsPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ask": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deny": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "headlessAskBehavior": {
+          "enum": [
+            "deny",
+            "error",
+            "prompt-if-policy-allows"
+          ],
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "none",
+            "read-only",
+            "limited",
+            "full"
+          ],
+          "type": "string"
+        },
+        "parity": {
+          "enum": [
+            "same-by-default",
+            "strict-same-required",
+            "harness-default"
+          ],
+          "type": "string"
+        },
+        "readOnlyBashCommands": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "TransportMode": {
+      "enum": [
+        "cli",
+        "sdk"
+      ],
+      "type": "string"
+    },
+    "UsageSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "costUsd": {
+          "type": "number"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "inputTokens": {
+          "type": "number"
+        },
+        "outputTokens": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerCompliance": {
+      "additionalProperties": false,
+      "properties": {
+        "blind": {
+          "type": "boolean"
+        },
+        "degradedReason": {
+          "type": "string"
+        },
+        "independentInvocation": {
+          "type": "boolean"
+        },
+        "isolatedContext": {
+          "type": "boolean"
+        },
+        "noDraftSynthesis": {
+          "type": "boolean"
+        },
+        "noPanelConclusions": {
+          "type": "boolean"
+        },
+        "noPeerOutputs": {
+          "type": "boolean"
+        },
+        "sessionMode": {
+          "$ref": "#/definitions/SessionMode"
+        },
+        "tier": {
+          "$ref": "#/definitions/ComplianceTier"
+        },
+        "toolPolicyMatchedPanelDefault": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tier",
+        "independentInvocation",
+        "blind",
+        "noPeerOutputs",
+        "noDraftSynthesis",
+        "noPanelConclusions",
+        "isolatedContext",
+        "sessionMode"
+      ],
+      "type": "object"
+    },
+    "WorkerComplianceEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "adapterClaimsBlindness": {
+          "type": "boolean"
+        },
+        "adapterClaimsCleanSameWorkerLineage": {
+          "type": "boolean"
+        },
+        "adapterClaimsIndependentInvocation": {
+          "type": "boolean"
+        },
+        "adapterClaimsIsolatedContext": {
+          "type": "boolean"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "observedSessionMode": {
+          "$ref": "#/definitions/SessionMode"
+        },
+        "observedToolPolicy": {
+          "$ref": "#/definitions/ToolsPolicy"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerResult": {
+      "additionalProperties": false,
+      "properties": {
+        "complianceEvidence": {
+          "$ref": "#/definitions/WorkerComplianceEvidence"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "harnessUsed": {
+          "$ref": "#/definitions/HarnessDescriptor"
+        },
+        "modelUsed": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "panelRunId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/WorkerStatus"
+        },
+        "toolUseSummary": {
+          "$ref": "#/definitions/ToolUseSummary"
+        },
+        "usage": {
+          "$ref": "#/definitions/UsageSummary"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "panelRunId",
+        "workerId",
+        "status",
+        "output"
+      ],
+      "type": "object"
+    },
+    "WorkerStatus": {
+      "enum": [
+        "ok",
+        "timeout",
+        "error",
+        "invalid-output",
+        "refused"
+      ],
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node", "bun-types"]
+  },
+  "include": [
+    "skills/fusion/bin/**/*.ts",
+    "skills/fusion/lib/**/*.ts",
+    "skills/fusion/test/**/*.ts"
+  ]
+}

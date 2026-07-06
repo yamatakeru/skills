@@ -1,0 +1,921 @@
+{
+  "$ref": "#/definitions/SynthesisResult",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "BlindnessPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "noDraftSynthesis": {
+          "type": "boolean"
+        },
+        "noPanelConclusions": {
+          "type": "boolean"
+        },
+        "noPeerOutputs": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "noPeerOutputs",
+        "noDraftSynthesis",
+        "noPanelConclusions"
+      ],
+      "type": "object"
+    },
+    "ContextManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "digest"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "references": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "label",
+              "digest"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "renderedPromptHash": {
+          "type": "string"
+        },
+        "sharedContextHash": {
+          "type": "string"
+        },
+        "userTaskHash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "renderedPromptHash",
+        "sharedContextHash"
+      ],
+      "type": "object"
+    },
+    "HarnessDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "invocation": {
+          "$ref": "#/definitions/InvocationMode"
+        },
+        "kind": {
+          "$ref": "#/definitions/HarnessKind"
+        },
+        "transport": {
+          "$ref": "#/definitions/TransportMode"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "invocation"
+      ],
+      "type": "object"
+    },
+    "HarnessKind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "enum": [
+            "opencode",
+            "cursor-cli",
+            "claude-code",
+            "pi"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "HarnessPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "invocation": {
+          "$ref": "#/definitions/InvocationMode"
+        },
+        "kind": {
+          "$ref": "#/definitions/HarnessKind"
+        },
+        "transport": {
+          "$ref": "#/definitions/TransportMode"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InvocationMode": {
+      "enum": [
+        "headless",
+        "subagent"
+      ],
+      "type": "string"
+    },
+    "IsolationPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowUnverifiedReuse": {
+          "type": "boolean"
+        },
+        "requireIndependentInvocation": {
+          "type": "boolean"
+        },
+        "requireIsolatedContext": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requireIndependentInvocation",
+        "requireIsolatedContext",
+        "allowUnverifiedReuse"
+      ],
+      "type": "object"
+    },
+    "JudgeAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "blind_spots": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        },
+        "consensus": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        },
+        "contradictions": {
+          "items": {
+            "$ref": "#/definitions/JudgeContradiction"
+          },
+          "type": "array"
+        },
+        "partial_coverage": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        },
+        "unique_insights": {
+          "items": {
+            "$ref": "#/definitions/JudgeFinding"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "consensus",
+        "contradictions",
+        "partial_coverage",
+        "unique_insights",
+        "blind_spots"
+      ],
+      "type": "object"
+    },
+    "JudgeAnnotatedFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "items": {
+            "$ref": "#/definitions/JudgeAttribution"
+          },
+          "type": "array"
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/definitions/JudgeQuote"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "JudgeAttributedStance": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "items": {
+            "$ref": "#/definitions/JudgeAttribution"
+          },
+          "type": "array"
+        },
+        "modelUsed": {
+          "type": "string"
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/definitions/JudgeQuote"
+          },
+          "type": "array"
+        },
+        "stance": {
+          "type": "string"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "stance"
+      ],
+      "type": "object"
+    },
+    "JudgeAttribution": {
+      "additionalProperties": false,
+      "properties": {
+        "modelUsed": {
+          "type": "string"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId"
+      ],
+      "type": "object"
+    },
+    "JudgeContradiction": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "items": {
+            "$ref": "#/definitions/JudgeAttribution"
+          },
+          "type": "array"
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/definitions/JudgeQuote"
+          },
+          "type": "array"
+        },
+        "stances": {
+          "$ref": "#/definitions/JudgeStances"
+        },
+        "topic": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic",
+        "stances"
+      ],
+      "type": "object"
+    },
+    "JudgeFinding": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/JudgeAnnotatedFinding"
+        }
+      ]
+    },
+    "JudgeQuote": {
+      "additionalProperties": false,
+      "properties": {
+        "quote": {
+          "type": "string"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "quote"
+      ],
+      "type": "object"
+    },
+    "JudgeStance": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/JudgeAttributedStance"
+        }
+      ]
+    },
+    "JudgeStances": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/JudgeStance"
+          },
+          "type": "array"
+        }
+      ]
+    },
+    "ModelPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fallbacks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "OutputContract": {
+      "additionalProperties": false,
+      "properties": {
+        "forbidChainOfThought": {
+          "type": "boolean"
+        },
+        "format": {
+          "enum": [
+            "markdown",
+            "json"
+          ],
+          "type": "string"
+        },
+        "requiredSections": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "schemaName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "forbidChainOfThought"
+      ],
+      "type": "object"
+    },
+    "ProvenancePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "eventLog": {
+          "type": "boolean"
+        },
+        "includeModelMetadata": {
+          "type": "boolean"
+        },
+        "includeToolLogs": {
+          "type": "boolean"
+        },
+        "record": {
+          "type": "boolean"
+        },
+        "redactSecrets": {
+          "type": "boolean"
+        },
+        "requireMinimumEventsForFullCompliance": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "record",
+        "redactSecrets",
+        "eventLog",
+        "requireMinimumEventsForFullCompliance",
+        "includeToolLogs",
+        "includeModelMetadata"
+      ],
+      "type": "object"
+    },
+    "ReasoningPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "type": "string"
+        },
+        "maxTokens": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "SessionMode": {
+      "enum": [
+        "fresh",
+        "fork",
+        "resume"
+      ],
+      "type": "string"
+    },
+    "SessionPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/definitions/SessionMode"
+        },
+        "parentSessionId": {
+          "type": "string"
+        },
+        "reusePolicy": {
+          "enum": [
+            "none",
+            "same-worker-lineage",
+            "explicit-user-opt-in"
+          ],
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "SharedContext": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "digest": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "references": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "label"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "SynthesisResult": {
+      "additionalProperties": false,
+      "properties": {
+        "analysis": {
+          "$ref": "#/definitions/JudgeAnalysis"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fallbackReason": {
+          "type": "string"
+        },
+        "finalAnswer": {
+          "type": "string"
+        },
+        "judgeRequest": {
+          "$ref": "#/definitions/WorkerRequest"
+        },
+        "judgeResult": {
+          "$ref": "#/definitions/WorkerResult"
+        },
+        "referenceSynthesis": {
+          "type": "string"
+        },
+        "strategy": {
+          "type": "string"
+        },
+        "synthesis": {
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "synthesis"
+      ],
+      "type": "object"
+    },
+    "ToolUseSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "deniedRequests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "promptRequests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "toolsUsed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ToolsPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ask": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deny": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "headlessAskBehavior": {
+          "enum": [
+            "deny",
+            "error",
+            "prompt-if-policy-allows"
+          ],
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "none",
+            "read-only",
+            "limited",
+            "full"
+          ],
+          "type": "string"
+        },
+        "parity": {
+          "enum": [
+            "same-by-default",
+            "strict-same-required",
+            "harness-default"
+          ],
+          "type": "string"
+        },
+        "readOnlyBashCommands": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "TransportMode": {
+      "enum": [
+        "cli",
+        "sdk"
+      ],
+      "type": "string"
+    },
+    "UsageSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "costUsd": {
+          "type": "number"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "inputTokens": {
+          "type": "number"
+        },
+        "outputTokens": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "maxInputTokens": {
+          "type": "number"
+        },
+        "maxOutputTokens": {
+          "type": "number"
+        },
+        "maxToolCalls": {
+          "type": "number"
+        },
+        "maxTurns": {
+          "type": "number"
+        },
+        "timeoutMs": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerComplianceEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "adapterClaimsBlindness": {
+          "type": "boolean"
+        },
+        "adapterClaimsCleanSameWorkerLineage": {
+          "type": "boolean"
+        },
+        "adapterClaimsIndependentInvocation": {
+          "type": "boolean"
+        },
+        "adapterClaimsIsolatedContext": {
+          "type": "boolean"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "observedSessionMode": {
+          "$ref": "#/definitions/SessionMode"
+        },
+        "observedToolPolicy": {
+          "$ref": "#/definitions/ToolsPolicy"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerEnvironment": {
+      "additionalProperties": false,
+      "properties": {
+        "envProfile": {
+          "type": "string"
+        },
+        "readRoots": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workingDirectory": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowRecursiveDelegation": {
+          "type": "boolean"
+        },
+        "denyPanelSpawning": {
+          "type": "boolean"
+        },
+        "denySubtaskDelegation": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "allowRecursiveDelegation",
+        "denyPanelSpawning"
+      ],
+      "type": "object"
+    },
+    "WorkerRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "blindnessPolicy": {
+          "$ref": "#/definitions/BlindnessPolicy"
+        },
+        "budget": {
+          "$ref": "#/definitions/WorkerBudget"
+        },
+        "contextManifest": {
+          "$ref": "#/definitions/ContextManifest"
+        },
+        "environment": {
+          "$ref": "#/definitions/WorkerEnvironment"
+        },
+        "harness": {
+          "$ref": "#/definitions/HarnessPreference"
+        },
+        "isolationPolicy": {
+          "$ref": "#/definitions/IsolationPolicy"
+        },
+        "modelPreference": {
+          "$ref": "#/definitions/ModelPreference"
+        },
+        "outputContract": {
+          "$ref": "#/definitions/OutputContract"
+        },
+        "panelRunId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "provenancePolicy": {
+          "$ref": "#/definitions/ProvenancePolicy"
+        },
+        "reasoning": {
+          "$ref": "#/definitions/ReasoningPreference"
+        },
+        "session": {
+          "$ref": "#/definitions/SessionPolicy"
+        },
+        "sharedContext": {
+          "$ref": "#/definitions/SharedContext"
+        },
+        "toolsPolicy": {
+          "$ref": "#/definitions/ToolsPolicy"
+        },
+        "workerId": {
+          "type": "string"
+        },
+        "workerPolicy": {
+          "$ref": "#/definitions/WorkerPolicy"
+        }
+      },
+      "required": [
+        "panelRunId",
+        "workerId",
+        "prompt",
+        "sharedContext",
+        "session",
+        "isolationPolicy",
+        "blindnessPolicy",
+        "workerPolicy",
+        "outputContract"
+      ],
+      "type": "object"
+    },
+    "WorkerResult": {
+      "additionalProperties": false,
+      "properties": {
+        "complianceEvidence": {
+          "$ref": "#/definitions/WorkerComplianceEvidence"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "harnessUsed": {
+          "$ref": "#/definitions/HarnessDescriptor"
+        },
+        "modelUsed": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "panelRunId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/WorkerStatus"
+        },
+        "toolUseSummary": {
+          "$ref": "#/definitions/ToolUseSummary"
+        },
+        "usage": {
+          "$ref": "#/definitions/UsageSummary"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "panelRunId",
+        "workerId",
+        "status",
+        "output"
+      ],
+      "type": "object"
+    },
+    "WorkerStatus": {
+      "enum": [
+        "ok",
+        "timeout",
+        "error",
+        "invalid-output",
+        "refused"
+      ],
+      "type": "string"
+    }
+  }
+}
