@@ -48,7 +48,7 @@ stakes:
   serves it better than judge-stitched consensus.
 - The portable `SKILL.md` carries the shape-plus-stakes framework without
   deployment-specific subscription claims; deployment economics live in the
-  local orchestrator policy (`CLAUDE.md`).
+  local orchestrator policy (`CLAUDE.md` / `AGENTS.md`).
 
 This deliberately diverges from upstream's selective usage tone. The
 divergence is economic, not architectural: where marginal panel cost is
