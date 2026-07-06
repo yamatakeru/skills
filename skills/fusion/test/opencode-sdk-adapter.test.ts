@@ -447,6 +447,135 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.output).toBe("Partial update answer");
   });
 
+  test("keeps collecting past step boundaries that finish with tool-calls", async () => {
+    let promptMessageId: string | undefined;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            const stepMessageId = `${assistantMessageId(messageId)}-step`;
+            return [
+              sse({
+                type: "message.part.updated",
+                properties: {
+                  part: {
+                    id: "part-intro",
+                    sessionID: "session-1",
+                    messageID: stepMessageId,
+                    type: "text",
+                    text: "Intro before tools",
+                  },
+                },
+              }),
+              sse({
+                type: "message.updated",
+                properties: {
+                  info: {
+                    ...assistantMessage(stepMessageId),
+                    finish: "tool-calls",
+                  },
+                },
+              }),
+              sse({
+                type: "message.part.updated",
+                properties: {
+                  part: {
+                    id: "part-final",
+                    sessionID: "session-1",
+                    messageID: assistantMessageId(messageId),
+                    type: "text",
+                    text: "Final assessment",
+                  },
+                },
+              }),
+              sse({
+                type: "message.updated",
+                properties: {
+                  info: assistantMessage(assistantMessageId(messageId)),
+                },
+              }),
+            ].join("");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("Intro before tools\nFinal assessment");
+  });
+
+  test("treats session.idle as a terminal marker when finish never reaches stop", async () => {
+    let promptMessageId: string | undefined;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            const { finish: _finish, ...noFinishInfo } = assistantMessage(
+              assistantMessageId(messageId),
+            );
+            return [
+              sse({
+                type: "message.part.updated",
+                properties: {
+                  part: {
+                    id: "part-1",
+                    sessionID: "session-1",
+                    messageID: assistantMessageId(messageId),
+                    type: "text",
+                    text: "Idle-terminated answer",
+                  },
+                },
+              }),
+              sse({
+                type: "message.updated",
+                properties: {
+                  info: noFinishInfo,
+                },
+              }),
+              sse({
+                type: "session.idle",
+                properties: {
+                  sessionID: "session-1",
+                },
+              }),
+            ].join("");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("Idle-terminated answer");
+  });
+
   test("disposes the run-scoped server after worker failure", async () => {
     let disposed = false;
     const serverFactory: OpenCodeServerFactory = async () => ({
@@ -529,6 +658,7 @@ function assistantMessage(id: string) {
     role: "assistant",
     providerID: "openai",
     modelID: "gpt-5.5",
+    finish: "stop",
     time: { created: 1, completed: 2 },
     parentID: "user-1",
     mode: "build",

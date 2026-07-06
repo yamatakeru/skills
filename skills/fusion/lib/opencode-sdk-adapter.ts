@@ -712,7 +712,7 @@ async function collectOpenCodeEvents(
     if (record === undefined) {
       continue;
     }
-    const completed = await applyOpenCodeEvent({
+    const outcome = await applyOpenCodeEvent({
       record,
       eventName: message.event,
       observation,
@@ -720,7 +720,10 @@ async function collectOpenCodeEvents(
       input,
     });
     observation.output = [...textParts.values()].join("\n");
-    if (completed && observation.output.trim().length > 0) {
+    if (outcome === "session-idle") {
+      return observation;
+    }
+    if (outcome === "assistant-final" && observation.output.trim().length > 0) {
       return observation;
     }
   }
@@ -728,6 +731,8 @@ async function collectOpenCodeEvents(
   observation.output = [...textParts.values()].join("\n");
   return observation;
 }
+
+type OpenCodeEventOutcome = "continue" | "assistant-final" | "session-idle";
 
 async function applyOpenCodeEvent(input: {
   record: Record<string, unknown>;
@@ -743,31 +748,38 @@ async function applyOpenCodeEvent(input: {
     signal: AbortSignal;
     warnings: string[];
   };
-}): Promise<boolean> {
+}): Promise<OpenCodeEventOutcome> {
   const type = stringField(input.record, "type") ?? input.eventName;
   const properties = objectField(input.record, "properties") ?? input.record;
   switch (type) {
     case "message.part.updated":
-      return applyMessagePart(
+      applyMessagePart(
         properties,
         input.textParts,
         input.observation,
         input.input.sessionId,
         input.input.messageId,
       );
+      return "continue";
     case "message.updated":
-      return applyMessageUpdated(properties, input.observation, input.input);
+      return applyMessageUpdated(properties, input.observation, input.input)
+        ? "assistant-final"
+        : "continue";
+    case "session.idle":
+      return stringField(properties, "sessionID") === input.input.sessionId
+        ? "session-idle"
+        : "continue";
     case "permission.updated":
       await rejectPermissionAsk(properties, input.observation, input.input);
-      return false;
+      return "continue";
     case "session.status":
       applySessionStatus(properties, input.input.warnings, input.input.sessionId);
-      return false;
+      return "continue";
     case "session.error":
       input.observation.warnings.push("OpenCode session emitted an error event.");
-      return false;
+      return "continue";
     default:
-      return false;
+      return "continue";
   }
 }
 
@@ -777,16 +789,16 @@ function applyMessagePart(
   observation: OpenCodeObservation,
   sessionId: string,
   promptMessageId: string,
-): boolean {
+): void {
   const part = objectField(properties, "part");
   if (part === undefined) {
-    return false;
+    return;
   }
   if (stringField(part, "sessionID") !== sessionId) {
-    return false;
+    return;
   }
   if (stringField(part, "messageID") === promptMessageId) {
-    return false;
+    return;
   }
   const partType = stringField(part, "type");
   if (partType === "text") {
@@ -815,7 +827,6 @@ function applyMessagePart(
       costUsd: numberField(part, "cost"),
     };
   }
-  return false;
 }
 
 function applySessionStatus(
@@ -853,7 +864,9 @@ function applyMessageUpdated(
   }
   observation.modelUsed = modelFromAssistantInfo(info);
   observation.usage = usageFromAssistantInfo(info) ?? observation.usage;
-  return info.time?.completed !== undefined || info.finish !== undefined;
+  // Steps end with finish "tool-calls" (and a completed time); only a
+  // finish of "stop" marks the assistant's final message of the turn.
+  return info.finish === "stop";
 }
 
 async function rejectPermissionAsk(
