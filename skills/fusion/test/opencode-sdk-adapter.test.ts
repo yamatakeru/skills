@@ -1,0 +1,548 @@
+import { describe, expect, test } from "bun:test";
+import {
+  OpenCodeSdkAdapter,
+  buildOpenCodeConfigContent,
+  type OpenCodeServerFactory,
+} from "../lib/protocol";
+import { workerRequest } from "./fixtures";
+
+const encoder = new TextEncoder();
+
+describe("Fusion OpenCode SDK adapter", () => {
+  test("maps SDK response evidence to a worker result", async () => {
+    let promptMessageId: string | undefined;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: async () => ({
+        exitCode: 0,
+        stdout: "1.17.13\n",
+        stderr: "",
+        durationMs: 1,
+      }),
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return [
+              sse({
+                type: "message.part.updated",
+                properties: {
+                  part: {
+                    id: "prompt-echo-1",
+                    sessionID: "session-1",
+                    messageID: messageId,
+                    type: "text",
+                    text: "echoed prompt text",
+                  },
+                },
+              }),
+              sse({
+                type: "message.part.updated",
+                properties: {
+                  part: {
+                    id: "part-1",
+                    sessionID: "session-1",
+                    messageID: assistantMessageId(messageId),
+                    type: "text",
+                    text: "SDK answer",
+                  },
+                },
+              }),
+              sse({
+                type: "message.part.updated",
+                properties: {
+                  part: {
+                    id: "tool-1",
+                    sessionID: "session-1",
+                    messageID: assistantMessageId(messageId),
+                    type: "tool",
+                    tool: "grep",
+                    state: { status: "completed", input: {}, output: "" },
+                  },
+                },
+              }),
+              sse({
+                type: "message.updated",
+                properties: {
+                  info: assistantMessage(assistantMessageId(messageId)),
+                },
+              }),
+            ].join("");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("SDK answer");
+    expect(result.modelUsed).toBe("openai/gpt-5.5");
+    expect(result.sessionId).toBe("session-1");
+    expect(result.harnessUsed).toEqual({
+      kind: "opencode",
+      invocation: "headless",
+      transport: "sdk",
+      version: "1.17.13",
+    });
+    expect(result.usage?.inputTokens).toBe(10);
+    expect(result.usage?.outputTokens).toBe(20);
+    expect(result.usage?.costUsd).toBe(0.03);
+    expect(result.toolUseSummary?.toolsUsed).toEqual(["grep"]);
+    expect(result.warnings?.join("\n") ?? "").not.toContain("degraded");
+  });
+
+  test("waits for the SSE stream before sending the prompt", async () => {
+    let eventResponse:
+      | ((response: Response) => void)
+      | undefined;
+    let eventRequested = false;
+    let sseReady = false;
+    let promptSent = false;
+    let promptBeforeSseReady = false;
+    let streamController:
+      | ReadableStreamDefaultController<Uint8Array>
+      | undefined;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamController = controller;
+      },
+    });
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          eventRequested = true;
+          return new Promise<Response>((resolve) => {
+            eventResponse = resolve;
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptSent = true;
+          promptBeforeSseReady = !sseReady;
+          const messageId = JSON.parse(String(init?.body)).messageID;
+          streamController?.enqueue(
+            encoder.encode(
+              [
+                sse({
+                  type: "message.part.updated",
+                  properties: {
+                    part: {
+                      id: "part-1",
+                      sessionID: "session-1",
+                      messageID: assistantMessageId(messageId),
+                      type: "text",
+                      text: "Race-free answer",
+                    },
+                  },
+                }),
+                sse({
+                  type: "message.updated",
+                  properties: {
+                    info: assistantMessage(assistantMessageId(messageId)),
+                  },
+                }),
+              ].join(""),
+            ),
+          );
+          streamController?.close();
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const resultPromise = adapter.runWorker(workerRequest());
+    await waitForValue(() =>
+      eventRequested && eventResponse !== undefined ? true : undefined,
+    );
+    await Bun.sleep(5);
+    expect(promptSent).toBe(false);
+
+    sseReady = true;
+    eventResponse?.(
+      new Response(stream, { headers: { "Content-Type": "text/event-stream" } }),
+    );
+    const result = await resultPromise;
+
+    expect(promptBeforeSseReady).toBe(false);
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("Race-free answer");
+  });
+
+  test("auto-rejects unexpected permission events and records a warning", async () => {
+    let promptMessageId: string | undefined;
+    const permissionReplies: unknown[] = [];
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return [
+              sse({
+                type: "permission.updated",
+                properties: {
+                  id: "permission-1",
+                  sessionID: "session-1",
+                  messageID: assistantMessageId(messageId),
+                  type: "external_directory",
+                  title: "Read /private/path",
+                  metadata: {},
+                  time: { created: Date.now() },
+                },
+              }),
+              sse({
+                type: "message.part.updated",
+                properties: {
+                  part: {
+                    id: "part-1",
+                    sessionID: "session-1",
+                    messageID: assistantMessageId(messageId),
+                    type: "text",
+                    text: "Denied but continued",
+                  },
+                },
+              }),
+              sse({
+                type: "message.updated",
+                properties: {
+                  info: assistantMessage(assistantMessageId(messageId)),
+                },
+              }),
+            ].join("");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/permissions/permission-1") {
+          permissionReplies.push(JSON.parse(String(init?.body)));
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(permissionReplies).toEqual([{ response: "reject" }]);
+    expect(result.warnings?.join("\n")).toContain("unexpected permission ask");
+    expect(result.toolUseSummary?.deniedRequests).toEqual([
+      "Read /private/path",
+    ]);
+  });
+
+  test("builds permission config from tools policy and read roots", () => {
+    const config = buildOpenCodeConfigContent({
+      toolsPolicy: {
+        mode: "read-only",
+        allow: ["Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "Bash"],
+        deny: ["Write", "Edit", "Task"],
+        readOnlyBashCommands: ["git status", "rg"],
+      },
+      environment: { readRoots: ["/tmp/context"] },
+    });
+    const agent = config.agent["fusion-worker"];
+    const bash = agent.permission.bash as Record<string, string>;
+    const externalDirectory = agent.permission.external_directory as Record<
+      string,
+      string
+    >;
+
+    expect(agent.tools.read).toBe(true);
+    expect(agent.tools.grep).toBe(true);
+    expect(agent.tools.write).toBe(false);
+    expect(agent.permission.edit).toBe("deny");
+    expect(bash["*"]).toBe("deny");
+    expect(bash["git status *"]).toBe("allow");
+    expect(bash["rg *"]).toBe("allow");
+    expect(externalDirectory["*"]).toBe("deny");
+    expect(externalDirectory["/tmp/context/**"]).toBe("allow");
+    expect(config.experimental.continue_loop_on_deny).toBe(true);
+  });
+
+  test("warns when a model preference cannot be split for OpenCode", async () => {
+    let promptMessageId: string | undefined;
+    let promptBody: Record<string, unknown> | undefined;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return [
+              sse({
+                type: "message.part.updated",
+                properties: {
+                  part: {
+                    id: "part-1",
+                    sessionID: "session-1",
+                    messageID: assistantMessageId(messageId),
+                    type: "text",
+                    text: "Default model answer",
+                  },
+                },
+              }),
+              sse({
+                type: "message.updated",
+                properties: {
+                  info: assistantMessage(assistantMessageId(messageId)),
+                },
+              }),
+            ].join("");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          promptBody = body;
+          promptMessageId = String(body.messageID);
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      modelPreference: { model: "gpt-5.5" },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(promptBody?.model).toBeUndefined();
+    expect(result.warnings?.join("\n")).toContain("gpt-5.5");
+    expect(result.warnings?.join("\n")).toContain("provider/model");
+  });
+
+  test("tolerates malformed SSE events before a valid completion", async () => {
+    let promptMessageId: string | undefined;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return [
+              "data: not json\n\n",
+              sse({
+                type: "message.part.updated",
+                properties: {
+                  part: {
+                    id: "part-1",
+                    sessionID: "session-1",
+                    messageID: assistantMessageId(messageId),
+                    type: "text",
+                    text: "Recovered",
+                  },
+                },
+              }),
+              sse({
+                type: "message.updated",
+                properties: {
+                  info: assistantMessage(assistantMessageId(messageId)),
+                },
+              }),
+            ].join("");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("Recovered");
+    expect(result.warnings?.join("\n")).toContain("SSE event");
+  });
+
+  test("tolerates assistant message updates without time metadata", async () => {
+    let promptMessageId: string | undefined;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            const { time: _time, ...partialInfo } = assistantMessage(assistantMessageId(messageId));
+            return [
+              sse({
+                type: "message.part.updated",
+                properties: {
+                  part: {
+                    id: "part-1",
+                    sessionID: "session-1",
+                    messageID: assistantMessageId(messageId),
+                    type: "text",
+                    text: "Partial update answer",
+                  },
+                },
+              }),
+              sse({
+                type: "message.updated",
+                properties: {
+                  info: partialInfo,
+                },
+              }),
+              sse({
+                type: "message.updated",
+                properties: {
+                  info: assistantMessage(assistantMessageId(messageId)),
+                },
+              }),
+            ].join("");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("Partial update answer");
+  });
+
+  test("disposes the run-scoped server after worker failure", async () => {
+    let disposed = false;
+    const serverFactory: OpenCodeServerFactory = async () => ({
+      baseUrl: "http://opencode.test",
+      dispose() {
+        disposed = true;
+      },
+    });
+    const adapter = new OpenCodeSdkAdapter({
+      serverFactory,
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start() {},
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          );
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          return new Response("boom", { status: 500 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+    await adapter.dispose();
+
+    expect(result.status).toBe("error");
+    expect(disposed).toBe(true);
+  });
+});
+
+function sse(value: unknown): string {
+  return `data: ${JSON.stringify(value)}\n\n`;
+}
+
+function sseResponse(render: () => Promise<string>): Response {
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        controller.enqueue(encoder.encode(await render()));
+        controller.close();
+      },
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+}
+
+async function versionExecutor() {
+  return {
+    exitCode: 0,
+    stdout: "1.17.13\n",
+    stderr: "",
+    durationMs: 1,
+  };
+}
+
+async function waitForValue<T>(read: () => T | undefined): Promise<T> {
+  for (let index = 0; index < 100; index += 1) {
+    const value = read();
+    if (value !== undefined) {
+      return value;
+    }
+    await Bun.sleep(1);
+  }
+  throw new Error("timed out waiting for fake prompt body");
+}
+
+function assistantMessage(id: string) {
+  return {
+    id,
+    sessionID: "session-1",
+    role: "assistant",
+    providerID: "openai",
+    modelID: "gpt-5.5",
+    time: { created: 1, completed: 2 },
+    parentID: "user-1",
+    mode: "build",
+    path: { cwd: "/workspace", root: "/workspace" },
+    cost: 0.03,
+    tokens: {
+      input: 10,
+      output: 20,
+      reasoning: 0,
+      cache: { read: 0, write: 0 },
+    },
+  };
+}
+
+function assistantMessageId(promptMessageId: string): string {
+  return `${promptMessageId}-assistant`;
+}

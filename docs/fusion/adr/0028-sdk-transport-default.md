@@ -9,6 +9,17 @@ SDK/API preference and its predicted `InvocationMode` axis split. Preserves
 ADR 0014's zero-runtime-dependency property. Resolves the ADR 0022
 degraded-compliance divergence on the default transport.
 
+Implemented 2026-07-06 and live-verified against opencode 1.17.13. Endpoint
+corrections found only by live runs (the sandboxed implementation pass could
+not start the server): the bare-`Event` stream is `/event` (`/global/event`
+wraps an envelope the observer does not parse), session creation accepts a
+title-only body, and prompt message ids must be `msg`-prefixed. Server
+readiness allows 30s and one fresh-port respawn retry (startup flake
+observed live). The recorded SDK smoke panel reached compliance tier `full`
+with workers and judge both on `transport: "sdk"`; the recorded
+`--transport cli` run kept workers and judge uniformly on `"cli"` with the
+preserved degraded tier.
+
 ## Context
 
 Both worker adapters currently spawn a CLI and parse stdout

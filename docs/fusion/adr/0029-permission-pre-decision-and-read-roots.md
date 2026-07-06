@@ -9,6 +9,21 @@ dropouts) on the ADR 0028 SDK transport. Realizes ADR 0012's full-capable
 criterion "resolve headless approval requests as deny or structured error by
 default" and extends the ADR 0006/0022 tools-policy application.
 
+Verified live 2026-07-06 (opencode 1.17.13). Both arms of the verification
+clause held: a config-denied external read surfaced to the model as a tool
+error, the loop continued, and the worker completed with the denial disclosed
+in its answer; the same read succeeded when the directory was declared as a
+read root. The recorded milestone 6 repro (the exact worker-2 request that
+deterministically dropped on the CLI path) completed on the SDK transport.
+Mechanics learned in verification: `external_directory` must be governed
+through the permission map only — disabling it in the agent tools map blocks
+the read-root allows; the enforcement boundary is the project root OpenCode
+resolves itself, which can be wider than the declared workspace root (read
+roots govern only paths outside that resolved root); and the injected config
+merges with the user's global opencode config, so the effective permission
+set can be wider than the declared policy — an evidence caveat, not an
+enforcement gap in the deny direction we rely on.
+
 ## Context
 
 The milestone 6 root cause: when a headless OpenCode worker's tool call is

@@ -7,7 +7,8 @@ type ExtensibleString = string & {};
 
 export type HarnessKind =
   "opencode" | "cursor-cli" | "claude-code" | "pi" | ExtensibleString;
-export type InvocationMode = "headless" | "subagent" | "cli" | "api";
+export type InvocationMode = "headless" | "subagent";
+export type TransportMode = "cli" | "sdk";
 export type PanelStatus = "ok" | "partial" | "failed";
 export type WorkerStatus =
   "ok" | "timeout" | "error" | "invalid-output" | "refused";
@@ -184,12 +185,14 @@ export interface ModelPreference {
 export interface HarnessPreference {
   kind?: HarnessKind;
   invocation?: InvocationMode;
+  transport?: TransportMode;
   version?: string;
 }
 
 export interface HarnessDescriptor {
   kind: HarnessKind;
   invocation: InvocationMode;
+  transport?: TransportMode;
   version?: string;
 }
 
@@ -231,6 +234,7 @@ export interface ToolsPolicy {
 export interface WorkerEnvironment {
   workspaceRoot?: string;
   workingDirectory?: string;
+  readRoots?: string[];
   envProfile?: string;
 }
 

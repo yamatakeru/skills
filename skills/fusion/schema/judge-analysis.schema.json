@@ -64,7 +64,9 @@
           "type": "string"
         }
       },
-      "required": ["text"],
+      "required": [
+        "text"
+      ],
       "type": "object"
     },
     "JudgeAttributedStance": {
@@ -92,7 +94,9 @@
           "type": "string"
         }
       },
-      "required": ["stance"],
+      "required": [
+        "stance"
+      ],
       "type": "object"
     },
     "JudgeAttribution": {
@@ -105,7 +109,9 @@
           "type": "string"
         }
       },
-      "required": ["workerId"],
+      "required": [
+        "workerId"
+      ],
       "type": "object"
     },
     "JudgeContradiction": {
@@ -130,7 +136,10 @@
           "type": "string"
         }
       },
-      "required": ["topic", "stances"],
+      "required": [
+        "topic",
+        "stances"
+      ],
       "type": "object"
     },
     "JudgeFinding": {
@@ -153,7 +162,10 @@
           "type": "string"
         }
       },
-      "required": ["workerId", "quote"],
+      "required": [
+        "workerId",
+        "quote"
+      ],
       "type": "object"
     },
     "JudgeStance": {

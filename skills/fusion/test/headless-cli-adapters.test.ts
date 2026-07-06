@@ -65,6 +65,22 @@ describe("Fusion headless CLI adapters", () => {
     ]);
   });
 
+  test("adds read roots to Claude Code CLI arguments", () => {
+    const request = {
+      ...workerRequest(),
+      environment: {
+        workspaceRoot: "/workspace",
+        readRoots: ["/external/a", "/external/b"],
+      },
+    };
+    const args = buildClaudeCodeArgs(request);
+
+    expect(args).toContain("--add-dir");
+    expect(args).toContain("/external/a");
+    expect(args).toContain("/external/b");
+    expect(args[args.length - 1]).toBe(request.prompt);
+  });
+
   test("does not emit unsupported Claude Code max-turns or reasoning token flags", () => {
     const request = {
       ...workerRequest(),
@@ -122,6 +138,29 @@ describe("Fusion headless CLI adapters", () => {
     expect(result.complianceEvidence?.notes?.join("\n")).toContain(
       "opencode --variant medium",
     );
+  });
+
+  test("warns when OpenCode CLI cannot map read roots", async () => {
+    const adapter = new OpenCodeHeadlessCliAdapter({
+      executor: async () => ({
+        exitCode: 0,
+        stdout: '{"message":"adapter output"}\n',
+        stderr: "",
+        durationMs: 12,
+      }),
+    });
+
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      environment: {
+        workspaceRoot: "/workspace",
+        readRoots: ["/external/context"],
+      },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.warnings?.join("\n")).toContain("environment.readRoots");
+    expect(result.warnings?.join("\n")).toContain("/external/context");
   });
 
   test("maps OpenCode observed text part events to worker output", async () => {

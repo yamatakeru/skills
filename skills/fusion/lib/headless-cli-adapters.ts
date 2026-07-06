@@ -91,6 +91,25 @@ export function buildOpenCodeArgs(request: WorkerRequest): string[] {
 }
 
 export function buildClaudeCodeArgs(request: WorkerRequest): string[] {
+  const args = buildClaudeCodeBaseArgs(request);
+  appendClaudeCodeReadRoots(args, request);
+  return [...args, request.prompt];
+}
+
+export function buildClaudeCodeSdkArgs(request: WorkerRequest): string[] {
+  return buildClaudeCodeArgs(request);
+}
+
+function appendClaudeCodeReadRoots(
+  args: string[],
+  request: WorkerRequest,
+): void {
+  for (const root of request.environment?.readRoots ?? []) {
+    args.push("--add-dir", root);
+  }
+}
+
+function buildClaudeCodeBaseArgs(request: WorkerRequest): string[] {
   const args = [
     "--print",
     "--verbose",
@@ -123,7 +142,7 @@ export function buildClaudeCodeArgs(request: WorkerRequest): string[] {
   if (disallowedTools !== undefined) {
     args.push(`--disallowedTools=${disallowedTools}`);
   }
-  return [...args, request.prompt];
+  return args;
 }
 
 export async function executeCommand(
@@ -186,7 +205,7 @@ function cliResultToWorkerResult(
     status: workerStatusForCliResult(result, parsedOutput, output),
     output,
     modelUsed: modelPreferenceToModel(request.modelPreference),
-    harnessUsed: { kind, invocation: "headless" },
+    harnessUsed: { kind, invocation: "headless", transport: "cli" },
     usage: { durationMs: result.durationMs },
     complianceEvidence: {
       adapterClaimsIndependentInvocation: request.session.mode === "fresh",
@@ -316,6 +335,15 @@ function unmappedPreferenceWarnings(
   if (request.budget?.maxTurns !== undefined) {
     warnings.push(
       `${kind} does not expose a CLI turn-cap flag in installed help; requested maxTurns=${request.budget.maxTurns} was not mapped.`,
+    );
+  }
+  if (
+    kind === "opencode" &&
+    request.environment?.readRoots !== undefined &&
+    request.environment.readRoots.length > 0
+  ) {
+    warnings.push(
+      `${kind} does not expose a CLI flag for environment.readRoots; requested ${request.environment.readRoots.join(", ")} was not mapped.`,
     );
   }
   return warnings;

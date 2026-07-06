@@ -4,14 +4,21 @@ import type {
   HarnessSelectionInput,
   HarnessSelectionPolicy,
   HarnessSelector,
+  TransportMode,
   WorkerRequest,
   WorkerResult,
   WorkerRunner,
 } from "./types";
 import { defaultHarnessSelector } from "./worker-requests";
 
+export interface AdapterRegistryOptions {
+  transport?: TransportMode;
+}
+
 export class AdapterRegistry implements WorkerRunner, HarnessSelector {
   private readonly runners = new Map<HarnessKind, WorkerRunner>();
+
+  constructor(private readonly options: AdapterRegistryOptions = {}) {}
 
   register(kind: HarnessKind, runner: WorkerRunner): this {
     this.runners.set(kind, runner);
@@ -33,7 +40,9 @@ export class AdapterRegistry implements WorkerRunner, HarnessSelector {
         `Selected Fusion harness is not registered: ${selected.kind}`,
       );
     }
-    return selected;
+    return this.options.transport === undefined
+      ? selected
+      : { ...selected, transport: selected.transport ?? this.options.transport };
   }
 
   async runWorker(request: WorkerRequest): Promise<WorkerResult> {

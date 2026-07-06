@@ -15,7 +15,11 @@
           "type": "boolean"
         }
       },
-      "required": ["noPeerOutputs", "noDraftSynthesis", "noPanelConclusions"],
+      "required": [
+        "noPeerOutputs",
+        "noDraftSynthesis",
+        "noPanelConclusions"
+      ],
       "type": "object"
     },
     "ContextManifest": {
@@ -32,7 +36,10 @@
                 "type": "string"
               }
             },
-            "required": ["path", "digest"],
+            "required": [
+              "path",
+              "digest"
+            ],
             "type": "object"
           },
           "type": "array"
@@ -48,7 +55,10 @@
                 "type": "string"
               }
             },
-            "required": ["label", "digest"],
+            "required": [
+              "label",
+              "digest"
+            ],
             "type": "object"
           },
           "type": "array"
@@ -63,7 +73,10 @@
           "type": "string"
         }
       },
-      "required": ["renderedPromptHash", "sharedContextHash"],
+      "required": [
+        "renderedPromptHash",
+        "sharedContextHash"
+      ],
       "type": "object"
     },
     "HarnessKind": {
@@ -72,7 +85,12 @@
           "type": "string"
         },
         {
-          "enum": ["opencode", "cursor-cli", "claude-code", "pi"],
+          "enum": [
+            "opencode",
+            "cursor-cli",
+            "claude-code",
+            "pi"
+          ],
           "type": "string"
         }
       ]
@@ -86,6 +104,9 @@
         "kind": {
           "$ref": "#/definitions/HarnessKind"
         },
+        "transport": {
+          "$ref": "#/definitions/TransportMode"
+        },
         "version": {
           "type": "string"
         }
@@ -93,7 +114,10 @@
       "type": "object"
     },
     "InvocationMode": {
-      "enum": ["headless", "subagent", "cli", "api"],
+      "enum": [
+        "headless",
+        "subagent"
+      ],
       "type": "string"
     },
     "IsolationPolicy": {
@@ -147,7 +171,10 @@
           "type": "boolean"
         },
         "format": {
-          "enum": ["markdown", "json"],
+          "enum": [
+            "markdown",
+            "json"
+          ],
           "type": "string"
         },
         "requiredSections": {
@@ -160,7 +187,10 @@
           "type": "string"
         }
       },
-      "required": ["format", "forbidChainOfThought"],
+      "required": [
+        "format",
+        "forbidChainOfThought"
+      ],
       "type": "object"
     },
     "ProvenancePolicy": {
@@ -199,7 +229,12 @@
       "additionalProperties": false,
       "properties": {
         "effort": {
-          "enum": ["low", "medium", "high", "xhigh"],
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
           "type": "string"
         },
         "maxTokens": {
@@ -209,7 +244,11 @@
       "type": "object"
     },
     "SessionMode": {
-      "enum": ["fresh", "fork", "resume"],
+      "enum": [
+        "fresh",
+        "fork",
+        "resume"
+      ],
       "type": "string"
     },
     "SessionPolicy": {
@@ -222,14 +261,20 @@
           "type": "string"
         },
         "reusePolicy": {
-          "enum": ["none", "same-worker-lineage", "explicit-user-opt-in"],
+          "enum": [
+            "none",
+            "same-worker-lineage",
+            "explicit-user-opt-in"
+          ],
           "type": "string"
         },
         "sessionId": {
           "type": "string"
         }
       },
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "type": "object"
     },
     "SharedContext": {
@@ -249,7 +294,9 @@
                 "type": "string"
               }
             },
-            "required": ["path"],
+            "required": [
+              "path"
+            ],
             "type": "object"
           },
           "type": "array"
@@ -268,7 +315,9 @@
                 "type": "string"
               }
             },
-            "required": ["label"],
+            "required": [
+              "label"
+            ],
             "type": "object"
           },
           "type": "array"
@@ -301,11 +350,20 @@
           "type": "array"
         },
         "headlessAskBehavior": {
-          "enum": ["deny", "error", "prompt-if-policy-allows"],
+          "enum": [
+            "deny",
+            "error",
+            "prompt-if-policy-allows"
+          ],
           "type": "string"
         },
         "mode": {
-          "enum": ["none", "read-only", "limited", "full"],
+          "enum": [
+            "none",
+            "read-only",
+            "limited",
+            "full"
+          ],
           "type": "string"
         },
         "parity": {
@@ -323,8 +381,17 @@
           "type": "array"
         }
       },
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "type": "object"
+    },
+    "TransportMode": {
+      "enum": [
+        "cli",
+        "sdk"
+      ],
+      "type": "string"
     },
     "WorkerBudget": {
       "additionalProperties": false,
@@ -353,6 +420,12 @@
         "envProfile": {
           "type": "string"
         },
+        "readRoots": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "workingDirectory": {
           "type": "string"
         },
@@ -375,7 +448,10 @@
           "type": "boolean"
         }
       },
-      "required": ["allowRecursiveDelegation", "denyPanelSpawning"],
+      "required": [
+        "allowRecursiveDelegation",
+        "denyPanelSpawning"
+      ],
       "type": "object"
     },
     "WorkerRequest": {

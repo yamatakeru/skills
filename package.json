@@ -8,6 +8,7 @@
     "typecheck:fusion": "tsc --noEmit"
   },
   "devDependencies": {
+    "@opencode-ai/sdk": "1.17.13",
     "@types/node": "latest",
     "bun-types": "latest",
     "ts-json-schema-generator": "^2.9.0",

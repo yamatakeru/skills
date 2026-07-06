@@ -10,6 +10,13 @@ Provisional by design: the infrastructure rationales below expire when the SDK
 transport (reserved milestone 1) lands, and this decision does not renew
 automatically — a re-decision is mandatory at that point (see Decision).
 
+The SDK transport landed 2026-07-06 (ADR 0028/0029): the reliability and
+policy-enforcement rationales have expired and the re-decision duty is now
+live. The re-decision is scheduled for the milestone 5 judge-quality
+comparison round, whose measured tools-on/tools-off arms (plus the reserved
+tool-free-grounding arm) are its mandatory input. Until that round concludes,
+the judge stays no-tools as a disclosed, now trigger-fired divergence.
+
 ## Context
 
 Upstream research (plugin, server-tool, and fusion-router docs, retrieved

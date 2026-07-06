@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   AdapterRegistry,
+  ClaudeCodeSdkAdapter,
   ClaudeCodeHeadlessCliAdapter,
   buildWorkerRequests,
   createContextManifest,
@@ -14,6 +15,7 @@ import {
   FileRunRecorder,
   HarnessBackedJudgeSynthesizer,
   NoopRunRecorder,
+  OpenCodeSdkAdapter,
   OpenCodeHeadlessCliAdapter,
   resolveModelEntry,
   resolvePanelComposition,
@@ -28,8 +30,10 @@ import {
   type ResolvedPanelModel,
   type RunRecorder,
   type SharedContext,
+  type TransportMode,
   type WorkerBudget,
   type WorkerRequest,
+  type WorkerRunner,
 } from "../lib/protocol";
 
 export interface CliOptions {
@@ -39,10 +43,12 @@ export interface CliOptions {
   panelistsExplicit: boolean;
   context?: string;
   contextFiles: string[];
+  readRoots: string[];
   reasoning?: ReasoningPreference;
   maxTurns?: number;
   record: boolean;
   json: boolean;
+  transport: TransportMode;
   synthesizer?: string;
   judgeModel?: string;
   timeoutMs?: number;
@@ -74,17 +80,8 @@ async function main(): Promise<number> {
           panelRunId: request.panelRunId,
         })
       : new NoopRunRecorder();
-    const registry = new AdapterRegistry()
-      .register("opencode", new OpenCodeHeadlessCliAdapter())
-      .register("claude-code", new ClaudeCodeHeadlessCliAdapter());
-
-    const result = await runPanel(request, {
-      runner: registry,
-      harnessSelector: registry,
-      workerRequests: prepared.workerRequests,
-      synthesizer: createSynthesizer(request.synthesizer?.strategy, registry),
-      recorder,
-    });
+    const runtime = createFusionRuntime(options.transport);
+    const result = await runPanelWithRuntime(request, prepared, runtime, recorder);
     if (prepared.warnings.length > 0) {
       result.warnings = [...prepared.warnings, ...(result.warnings ?? [])];
     }
@@ -157,6 +154,7 @@ export async function preparePanelRequest(
     workerEnvironment: {
       workspaceRoot: cwd,
       workingDirectory: cwd,
+      readRoots: resolveReadRoots(options.readRoots, cwd),
     },
     workerBudget,
     provenancePolicy: provenancePolicy(options.record),
@@ -175,6 +173,10 @@ export async function preparePanelRequest(
   };
   const manifestedWorkerRequests = workerRequests.map((workerRequest) => ({
     ...workerRequest,
+    harness:
+      workerRequest.harness === undefined
+        ? undefined
+        : { ...workerRequest.harness, transport: options.transport },
     contextManifest,
   }));
 
@@ -255,8 +257,10 @@ export function parseArgs(args: string[]): CliOptions {
     panelists: 3,
     panelistsExplicit: false,
     contextFiles: [],
+    readRoots: [],
     record: false,
     json: false,
+    transport: "sdk",
   };
   const promptParts: string[] = [];
 
@@ -311,6 +315,9 @@ export function parseArgs(args: string[]): CliOptions {
       case "--context-file":
         options.contextFiles.push(takeValue());
         break;
+      case "--read-root":
+        options.readRoots.push(takeValue());
+        break;
       case "--effort":
         options.reasoning = {
           ...options.reasoning,
@@ -331,6 +338,9 @@ export function parseArgs(args: string[]): CliOptions {
         break;
       case "--json":
         options.json = true;
+        break;
+      case "--transport":
+        options.transport = parseTransport(flag, takeValue());
         break;
       case "--synthesizer":
         options.synthesizer = takeValue();
@@ -371,6 +381,15 @@ function parseReasoningEffort(
   throw new UsageError(`${flag} must be one of: low, medium, high, xhigh.`);
 }
 
+function parseTransport(flag: string, value: string): TransportMode {
+  switch (value) {
+    case "sdk":
+    case "cli":
+      return value;
+  }
+  throw new UsageError(`${flag} must be one of: sdk, cli.`);
+}
+
 function splitFlag(arg: string): [string, string | undefined] {
   const equalsIndex = arg.indexOf("=");
   if (equalsIndex === -1) {
@@ -392,6 +411,98 @@ function provenancePolicy(record: boolean): ProvenancePolicy {
     ...defaultPolicies.provenance,
     record,
   };
+}
+
+function resolveReadRoots(readRoots: string[], cwd: string): string[] {
+  return readRoots.map((root) => resolve(cwd, root));
+}
+
+export interface FusionRuntime {
+  transport: TransportMode;
+  registry: AdapterRegistry;
+  runners: {
+    opencode: WorkerRunner;
+    claudeCode: WorkerRunner;
+  };
+  dispose(): Promise<void>;
+}
+
+export function createFusionRuntime(transport: TransportMode): FusionRuntime {
+  switch (transport) {
+    case "sdk": {
+      const opencode = new OpenCodeSdkAdapter();
+      const claudeCode = new ClaudeCodeSdkAdapter();
+      return runtimeFromRunners(transport, opencode, claudeCode);
+    }
+    case "cli": {
+      const opencode = new OpenCodeHeadlessCliAdapter();
+      const claudeCode = new ClaudeCodeHeadlessCliAdapter();
+      return runtimeFromRunners(transport, opencode, claudeCode);
+    }
+  }
+}
+
+function runtimeFromRunners(
+  transport: TransportMode,
+  opencode: WorkerRunner,
+  claudeCode: WorkerRunner,
+): FusionRuntime {
+  return {
+    transport,
+    registry: new AdapterRegistry({ transport })
+      .register("opencode", opencode)
+      .register("claude-code", claudeCode),
+    runners: { opencode, claudeCode },
+    async dispose() {
+      await disposeRunner(opencode);
+      await disposeRunner(claudeCode);
+    },
+  };
+}
+
+async function disposeRunner(runner: WorkerRunner): Promise<void> {
+  const disposable = runner as WorkerRunner & {
+    dispose?: () => Promise<void> | void;
+  };
+  await disposable.dispose?.();
+}
+
+async function runPanelWithRuntime(
+  request: PanelRequest,
+  prepared: PreparedPanelRequest,
+  runtime: FusionRuntime,
+  recorder: RunRecorder,
+): Promise<PanelResult> {
+  try {
+    return await runPanel(request, {
+      runner: runtime.registry,
+      harnessSelector: runtime.registry,
+      workerRequests: withHarnessTransport(
+        prepared.workerRequests,
+        runtime.transport,
+      ),
+      synthesizer: createSynthesizer(
+        request.synthesizer?.strategy,
+        runtime.registry,
+      ),
+      recorder,
+    });
+  } finally {
+    await runtime.dispose();
+  }
+}
+
+function withHarnessTransport(
+  workerRequests: WorkerRequest[],
+  transport: TransportMode,
+): WorkerRequest[] {
+  return workerRequests.map((request) => ({
+    ...request,
+    harness:
+      request.harness === undefined
+        ? undefined
+        : { ...request.harness, transport },
+  }));
 }
 
 function createSynthesizer(
@@ -618,12 +729,14 @@ export function usage(): string {
     "  --panelists <n>           Default panel size (default: 3).",
     "  --context <text>          Shared context brief for every worker.",
     "  --context-file <path>     Embed a file into shared context; repeatable.",
+    "  --read-root <path>        Grant workers recursive read access to a directory; repeatable.",
     "  --effort <level>          Worker reasoning effort: low, medium, high, or xhigh.",
     "  --reasoning-max-tokens <n>",
     "                            Worker reasoning token budget.",
     "  --max-turns <n>           Per-worker turn budget where supported.",
     "  --record                  Write .fusion-runs/<panelRunId>/ artifacts.",
     "  --json                    Print complete PanelResult JSON.",
+    "  --transport <mode>        Worker transport: sdk or cli (default: sdk).",
     "  --judge-model <entry>     Override the default parent-model judge.",
     "  --synthesizer <strategy>  parent-agent, deterministic, opencode, or claude-code.",
     "  --timeout-ms <n>          Per-worker timeout.",

@@ -46,13 +46,19 @@
                 "type": "string"
               }
             },
-            "required": ["workerId", "compliance"],
+            "required": [
+              "workerId",
+              "compliance"
+            ],
             "type": "object"
           },
           "type": "array"
         }
       },
-      "required": ["tier", "workerCompliance"],
+      "required": [
+        "tier",
+        "workerCompliance"
+      ],
       "type": "object"
     },
     "ComplianceTier": {
@@ -73,11 +79,17 @@
         "kind": {
           "$ref": "#/definitions/HarnessKind"
         },
+        "transport": {
+          "$ref": "#/definitions/TransportMode"
+        },
         "version": {
           "type": "string"
         }
       },
-      "required": ["kind", "invocation"],
+      "required": [
+        "kind",
+        "invocation"
+      ],
       "type": "object"
     },
     "HarnessKind": {
@@ -86,13 +98,21 @@
           "type": "string"
         },
         {
-          "enum": ["opencode", "cursor-cli", "claude-code", "pi"],
+          "enum": [
+            "opencode",
+            "cursor-cli",
+            "claude-code",
+            "pi"
+          ],
           "type": "string"
         }
       ]
     },
     "InvocationMode": {
-      "enum": ["headless", "subagent", "cli", "api"],
+      "enum": [
+        "headless",
+        "subagent"
+      ],
       "type": "string"
     },
     "JudgeAnalysis": {
@@ -157,7 +177,9 @@
           "type": "string"
         }
       },
-      "required": ["text"],
+      "required": [
+        "text"
+      ],
       "type": "object"
     },
     "JudgeAttributedStance": {
@@ -185,7 +207,9 @@
           "type": "string"
         }
       },
-      "required": ["stance"],
+      "required": [
+        "stance"
+      ],
       "type": "object"
     },
     "JudgeAttribution": {
@@ -198,7 +222,9 @@
           "type": "string"
         }
       },
-      "required": ["workerId"],
+      "required": [
+        "workerId"
+      ],
       "type": "object"
     },
     "JudgeCompliance": {
@@ -226,7 +252,9 @@
           "type": "string"
         }
       },
-      "required": ["workerId"],
+      "required": [
+        "workerId"
+      ],
       "type": "object"
     },
     "JudgeContradiction": {
@@ -251,7 +279,10 @@
           "type": "string"
         }
       },
-      "required": ["topic", "stances"],
+      "required": [
+        "topic",
+        "stances"
+      ],
       "type": "object"
     },
     "JudgeFinding": {
@@ -274,7 +305,10 @@
           "type": "string"
         }
       },
-      "required": ["workerId", "quote"],
+      "required": [
+        "workerId",
+        "quote"
+      ],
       "type": "object"
     },
     "JudgeStance": {
@@ -365,7 +399,11 @@
       "type": "object"
     },
     "PanelStatus": {
-      "enum": ["ok", "partial", "failed"],
+      "enum": [
+        "ok",
+        "partial",
+        "failed"
+      ],
       "type": "string"
     },
     "ProvenanceEvent": {
@@ -398,7 +436,12 @@
           "type": "string"
         }
       },
-      "required": ["eventId", "panelRunId", "type", "timestamp"],
+      "required": [
+        "eventId",
+        "panelRunId",
+        "type",
+        "timestamp"
+      ],
       "type": "object"
     },
     "ProvenanceEventType": {
@@ -417,7 +460,11 @@
       "type": "string"
     },
     "SessionMode": {
-      "enum": ["fresh", "fork", "resume"],
+      "enum": [
+        "fresh",
+        "fork",
+        "resume"
+      ],
       "type": "string"
     },
     "ToolUseSummary": {
@@ -466,11 +513,20 @@
           "type": "array"
         },
         "headlessAskBehavior": {
-          "enum": ["deny", "error", "prompt-if-policy-allows"],
+          "enum": [
+            "deny",
+            "error",
+            "prompt-if-policy-allows"
+          ],
           "type": "string"
         },
         "mode": {
-          "enum": ["none", "read-only", "limited", "full"],
+          "enum": [
+            "none",
+            "read-only",
+            "limited",
+            "full"
+          ],
           "type": "string"
         },
         "parity": {
@@ -488,8 +544,17 @@
           "type": "array"
         }
       },
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "type": "object"
+    },
+    "TransportMode": {
+      "enum": [
+        "cli",
+        "sdk"
+      ],
+      "type": "string"
     },
     "UsageSummary": {
       "additionalProperties": false,
@@ -631,11 +696,22 @@
           "type": "string"
         }
       },
-      "required": ["panelRunId", "workerId", "status", "output"],
+      "required": [
+        "panelRunId",
+        "workerId",
+        "status",
+        "output"
+      ],
       "type": "object"
     },
     "WorkerStatus": {
-      "enum": ["ok", "timeout", "error", "invalid-output", "refused"],
+      "enum": [
+        "ok",
+        "timeout",
+        "error",
+        "invalid-output",
+        "refused"
+      ],
       "type": "string"
     }
   }

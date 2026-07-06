@@ -4,20 +4,29 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildSharedContext,
+  createFusionRuntime,
   parseArgs,
   preparePanelRequest,
   renderMarkdownReport,
 } from "../bin/fusion-run";
-import type { PanelResult } from "../lib/protocol";
+import {
+  ClaudeCodeHeadlessCliAdapter,
+  ClaudeCodeSdkAdapter,
+  OpenCodeHeadlessCliAdapter,
+  OpenCodeSdkAdapter,
+  type PanelResult,
+} from "../lib/protocol";
 
 describe("Fusion CLI parsing", () => {
-  test("parses shared context, reasoning, judge model, and turn budget flags", () => {
+  test("parses shared context, transport, read roots, judge model, and turn budget flags", () => {
     const options = parseArgs([
       "--context",
       "brief",
       "--context-file",
       "a.md",
       "--context-file=b.md",
+      "--read-root",
+      "../external",
       "--effort",
       "high",
       "--reasoning-max-tokens",
@@ -28,16 +37,26 @@ describe("Fusion CLI parsing", () => {
       "claude-code:sonnet",
       "--timeout-ms",
       "60000",
+      "--transport",
+      "cli",
       "Do work",
     ]);
 
     expect(options.context).toBe("brief");
     expect(options.contextFiles).toEqual(["a.md", "b.md"]);
+    expect(options.readRoots).toEqual(["../external"]);
     expect(options.reasoning).toEqual({ effort: "high", maxTokens: 1234 });
     expect(options.maxTurns).toBe(5);
     expect(options.judgeModel).toBe("claude-code:sonnet");
     expect(options.timeoutMs).toBe(60000);
+    expect(options.transport).toBe("cli");
     expect(options.prompt).toBe("Do work");
+  });
+
+  test("defaults to SDK transport", () => {
+    const options = parseArgs(["Do work"]);
+
+    expect(options.transport).toBe("sdk");
   });
 
   test("rejects invalid new CLI flag values", () => {
@@ -52,6 +71,9 @@ describe("Fusion CLI parsing", () => {
     );
     expect(() => parseArgs(["--context-file", "task"])).toThrow(
       "Fusion requires a task prompt",
+    );
+    expect(() => parseArgs(["--transport", "api", "task"])).toThrow(
+      "sdk, cli",
     );
   });
 
@@ -112,6 +134,54 @@ describe("Fusion CLI parsing", () => {
       strategy: "claude-code",
       model: { model: "haiku", fallbacks: [] },
     });
+  });
+
+  test("resolves read roots into worker environment", async () => {
+    const options = parseArgs([
+      "--models",
+      "claude-code:sonnet",
+      "--read-root",
+      "../outside",
+      "Use declared root.",
+    ]);
+
+    const prepared = await preparePanelRequest(options, {
+      cwd: "/tmp/workspace",
+      panelRunId: "read-root",
+    });
+
+    expect(prepared.workerRequests[0]?.environment?.readRoots).toEqual([
+      "/tmp/outside",
+    ]);
+    expect(prepared.workerRequests[0]?.harness?.transport).toBe("sdk");
+  });
+
+  test("creates SDK adapters by default and CLI adapters on request", async () => {
+    const sdkRuntime = createFusionRuntime("sdk");
+    const cliRuntime = createFusionRuntime("cli");
+    try {
+      expect(sdkRuntime.runners.opencode).toBeInstanceOf(OpenCodeSdkAdapter);
+      expect(sdkRuntime.runners.claudeCode).toBeInstanceOf(ClaudeCodeSdkAdapter);
+      expect(cliRuntime.runners.opencode).toBeInstanceOf(
+        OpenCodeHeadlessCliAdapter,
+      );
+      expect(cliRuntime.runners.claudeCode).toBeInstanceOf(
+        ClaudeCodeHeadlessCliAdapter,
+      );
+      expect(
+        sdkRuntime.registry.selectHarness({
+          workerId: "worker-1",
+          policy: {},
+        }),
+      ).toEqual({
+        kind: "opencode",
+        invocation: "headless",
+        transport: "sdk",
+      });
+    } finally {
+      await sdkRuntime.dispose();
+      await cliRuntime.dispose();
+    }
   });
 
   test("renders validation fallback as judge invocation ok but output failed", () => {

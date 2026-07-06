@@ -208,7 +208,10 @@ A directory the parent explicitly declares readable (recursively) for a
 panel run, beyond the workspace: `environment.readRoots` in the worker
 contract, repeatable `--read-root` on the CLI. Read roots are part of the
 pre-granted permission set; external paths outside them are denied with a
-structured error the worker can react to (ADR 0029).
+structured error the worker can react to (ADR 0029). The enforced boundary
+is the project root the harness resolves itself, which can be wider than
+the declared workspace root — read roots govern only paths outside that
+resolved root.
 
 ## Permission Pre-Decision
 

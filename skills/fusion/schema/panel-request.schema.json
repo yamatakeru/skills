@@ -16,7 +16,10 @@
                 "type": "string"
               }
             },
-            "required": ["path", "digest"],
+            "required": [
+              "path",
+              "digest"
+            ],
             "type": "object"
           },
           "type": "array"
@@ -32,7 +35,10 @@
                 "type": "string"
               }
             },
-            "required": ["label", "digest"],
+            "required": [
+              "label",
+              "digest"
+            ],
             "type": "object"
           },
           "type": "array"
@@ -47,7 +53,10 @@
           "type": "string"
         }
       },
-      "required": ["renderedPromptHash", "sharedContextHash"],
+      "required": [
+        "renderedPromptHash",
+        "sharedContextHash"
+      ],
       "type": "object"
     },
     "FindingKind": {
@@ -66,7 +75,12 @@
           "type": "string"
         },
         {
-          "enum": ["opencode", "cursor-cli", "claude-code", "pi"],
+          "enum": [
+            "opencode",
+            "cursor-cli",
+            "claude-code",
+            "pi"
+          ],
           "type": "string"
         }
       ]
@@ -118,7 +132,10 @@
       "type": "object"
     },
     "NonJudgeSynthesizerStrategy": {
-      "enum": ["parent-agent", "deterministic"],
+      "enum": [
+        "parent-agent",
+        "deterministic"
+      ],
       "type": "string"
     },
     "PanelRequest": {
@@ -188,7 +205,9 @@
           "type": "number"
         }
       },
-      "required": ["workerCount"],
+      "required": [
+        "workerCount"
+      ],
       "type": "object"
     },
     "ProvenancePolicy": {
@@ -227,7 +246,12 @@
       "additionalProperties": false,
       "properties": {
         "effort": {
-          "enum": ["low", "medium", "high", "xhigh"],
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
           "type": "string"
         },
         "maxTokens": {
@@ -253,7 +277,9 @@
                 "type": "string"
               }
             },
-            "required": ["path"],
+            "required": [
+              "path"
+            ],
             "type": "object"
           },
           "type": "array"
@@ -272,7 +298,9 @@
                 "type": "string"
               }
             },
-            "required": ["label"],
+            "required": [
+              "label"
+            ],
             "type": "object"
           },
           "type": "array"
@@ -290,7 +318,10 @@
           "type": "boolean"
         },
         "format": {
-          "enum": ["markdown", "json"],
+          "enum": [
+            "markdown",
+            "json"
+          ],
           "type": "string"
         },
         "requireAttribution": {
@@ -328,7 +359,9 @@
           ]
         }
       },
-      "required": ["strategy"],
+      "required": [
+        "strategy"
+      ],
       "type": "object"
     },
     "WorkerBudget": {
@@ -357,6 +390,12 @@
       "properties": {
         "envProfile": {
           "type": "string"
+        },
+        "readRoots": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "workingDirectory": {
           "type": "string"

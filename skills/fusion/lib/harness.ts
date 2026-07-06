@@ -9,6 +9,7 @@ export function normalizeHarnessDescriptor(
   return {
     kind: harness.kind,
     invocation: harness.invocation,
+    transport: harness.transport,
     version: harness.version,
   };
 }

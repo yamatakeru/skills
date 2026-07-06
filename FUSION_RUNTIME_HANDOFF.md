@@ -1,13 +1,79 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-06 (upstream fidelity round — complete)
+Date: 2026-07-06 (SDK transport round — complete)
 
 This handoff captures the state of the Fusion runtime after the usable
-milestone, the worker-investigation round, the harness-backed judge round
-(judge as default synthesizer, upstream-superset judge output contract,
-per-module test split, simplify cleanup), and the docs half of the upstream
-fidelity round. The design authority is `docs/fusion/` (spec, domain model,
-glossary, ADR 0001-0027).
+milestone, the worker-investigation round, the harness-backed judge round,
+the upstream fidelity round, and the SDK transport round (reserved
+milestones 1 and 6). The design authority is `docs/fusion/` (spec, domain
+model, glossary, ADR 0001-0029).
+
+## SDK Transport Round (2026-07-06): Complete
+
+Implements ADR 0028 (SDK transport default, transport axis, zero runtime
+dependencies) and ADR 0029 (permission pre-decision, declared read roots).
+Grilled decisions: scope = both harnesses; permission resolution =
+deny-by-default with structured errors, with `readRoots` as the explicit
+escape hatch; CLI adapters retained as `--transport cli` opt-in with no
+automatic fallback; `HarnessDescriptor.transport` axis with `InvocationMode`
+narrowed; dependency strategy = zero runtime deps with `@opencode-ai/sdk`
+as a pinned type-only devDependency plus an import-guard test (a recorded
+cheap-panel run unanimously endorsed zero-dep; the panel's blind spots —
+server lifecycle, local server security, version probing — are recorded
+below).
+
+What landed:
+
+- `opencode-sdk-adapter.ts`: raw HTTP/SSE client against a run-scoped
+  self-spawned `opencode serve` (127.0.0.1, ephemeral port, one fresh-port
+  respawn retry, 30s readiness, guaranteed reaping). Config injected via
+  `OPENCODE_CONFIG_CONTENT`: a `fusion-worker` agent whose permission map
+  realizes the read-only policy (bash command-pattern allowlist, wildcard
+  deny elsewhere, `external_directory` globs from `readRoots`), plus the
+  deprecated `experimental.continue_loop_on_deny` safety net. Observes
+  model/usage/cost/session/tool events over SSE; auto-rejects unexpected
+  permission asks; surfaces provider retry loops as warnings.
+- `claude-code-sdk-adapter.ts`: same headless spawn, full stream-json
+  parsing (session id, resolved model, usage, cost, num_turns,
+  permission_denials), `--add-dir` from `readRoots`.
+- CLI: `--transport sdk|cli` (default sdk, uniform for workers and judge),
+  repeatable `--read-root`.
+
+Live verification (all recorded or replayable):
+
+- Milestone 6 repro: the exact recorded worker-2 request that
+  deterministically dropped on the CLI path completed on the SDK transport
+  (full answer, observed model and usage). Model substituted to
+  `opencode/deepseek-v4-flash-free` because `opencode-go/deepseek-v4-flash`
+  was in a provider-side retry outage that day.
+- ADR 0029 both arms: config-denied external read surfaced as a
+  model-visible tool error, loop continued, denial disclosed in the
+  completed answer; the same read succeeded with the directory declared as
+  a read root.
+- SDK smoke panel (recorded): 3 workers + judge all `transport: "sdk"`,
+  compliance tier `full` — the ADR 0022 degraded-compliance divergence is
+  closed on the default transport. CLI opt-in smoke (recorded): workers and
+  judge uniformly `"cli"`, degraded tier preserved.
+- Reviews: CodeRabbit x3 (6 findings, then 2, all verified and fixed),
+  live-run endpoint corrections (`/event` bare-Event stream, title-only
+  session body, `msg_`-prefixed message ids, user-echo part filtering),
+  and a simplify pass (dead code, arg-builder dedup, es2020 fix).
+
+Mechanics and caveats learned live (also in ADR 0029 status):
+
+- `external_directory` must be governed via the permission map only;
+  putting it in the agent tools map blocks the read-root allows.
+- OpenCode's enforcement boundary is its self-resolved project root, which
+  can be wider than the declared workspace root; read roots govern only
+  paths outside that resolved root.
+- The injected config merges with the user's global opencode config, so
+  effective permissions can be wider than declared — disclosed as a
+  standing compliance-evidence note by the adapter.
+- `opencode serve` runs unsecured on localhost (no
+  `OPENCODE_SERVER_PASSWORD`); binding is 127.0.0.1-only. Hardening
+  (password + auth header) is a follow-up candidate.
+- Server startup can flake under rapid successive spawns; mitigated by the
+  respawn retry.
 
 ## Upstream Fidelity Round (2026-07-06): Complete
 
@@ -265,9 +331,10 @@ recorder refuses to write otherwise without an explicit override.
 
 ## Known Limitations (honest state)
 
-- Compliance tier is `degraded`, not `full`: the OpenCode CLI adapter cannot
-  yet prove effective tool-policy enforcement, and neither adapter provides
-  full session/tool-event evidence. Full compliance was not claimed.
+- Compliance tier reaches `full` on the default SDK transport (verified in
+  the recorded SDK smoke). The `--transport cli` opt-in path remains
+  `degraded`: the OpenCode CLI adapter still cannot prove tool-policy
+  enforcement (ADR 0022, now scoped to that path only).
 - `--reasoning-max-tokens` and `--max-turns` currently map to no harness CLI
   mechanism; they are honest warnings, not effective knobs, until the CLIs
   grow support.
@@ -281,9 +348,10 @@ recorder refuses to write otherwise without an explicit override.
 - The judge is one invocation of the parent-model-by-default; a weak judge
   model degrades analysis quality. Judge validation failures fall back
   gracefully but forfeit the structured analysis for that run.
-- The judge runs with no tools — a deliberate, provisional divergence from
-  upstream's web-tools judge with a mandatory re-decision when the SDK
-  transport lands (ADR 0026).
+- The judge runs with no tools — a deliberate divergence whose re-decision
+  duty fired when the SDK transport landed (ADR 0026); the re-decision is
+  scheduled for the milestone 5 judge-quality comparison round with its
+  measured tools-on/tools-off (and tool-free-grounding) arms as input.
 - Judge model-name attribution resolution is exact-only (raw, then
   case-insensitive, then provider-prefix-stripped bare name); partial names
   like `gpt-4` against `openai/gpt-4-turbo` degrade to unattributed with a
@@ -301,13 +369,10 @@ recorder refuses to write otherwise without an explicit override.
 
 ## Next Milestones (reserved)
 
-1. Stronger compliance evidence toward `full` tier: tool-policy proof for
-   OpenCode workers, session/tool-event capture, SDK transports where they
-   provide better evidence. SDK transport must also handle worker permission
-   requests programmatically; the CLI path's auto-reject currently aborts
-   the agent loop and drops the worker (see milestone 6). Landing this
-   expires the infrastructure rationales of ADR 0026 and triggers the
-   mandatory re-decision on judge tools.
+1. DONE (2026-07-06, ADR 0028): SDK transport with tool-policy proof,
+   session/tool-event capture, and programmatic permission handling; the
+   recorded SDK smoke reached compliance tier `full`. The ADR 0026
+   re-decision duty is now live and assigned to milestone 5.
 2. CI automation of the smoke matrix (needs credential management and paid
    calls in CI; deferred by the acceptance criteria).
 3. Consider removing the emergency internal fallback once the skill matures
@@ -321,25 +386,14 @@ recorder refuses to write otherwise without an explicit override.
    reference). Also the mandatory measurement input for the ADR 0026 judge-
    tools re-decision (tools-on vs tools-off arms, plus the reserved
    tool-free-grounding arm).
-6. Fix OpenCode worker dropouts caused by permission auto-reject aborting
-   the agent loop. Root cause diagnosed 2026-07-06 by replaying the recorded
-   worker-2 prompt from `.fusion-runs/fusion-e7eb8340-*`: when a worker's
-   tool call is permission-rejected (here an `external_directory` read of a
-   path mentioned in the shared context), headless `opencode run` ends the
-   turn at `step_finish reason: tool-calls` without a final text step and
-   exits 0, so the adapter reports "opencode returned invalid JSON output:
-   no result text found". Controls: a successful tool call continues to a
-   text-bearing second step; a single rejected call reproduces the dropout
-   deterministically. This corrects the earlier output-format-incompatibility
-   hypothesis; model dependence (`deepseek-v4-flash` 2/2, `grok-composer-2.5-fast`
-   1/2 failed, `gpt-5.5` 0/2) reflects only how eagerly each model reads
-   external paths. The durable fix belongs in the SDK-transport work
-   (milestone 1): handle permission requests programmatically — pre-grant
-   the read-only policy or return denials to the model as structured tool
-   errors so the loop continues. Avoiding external-path mentions in worker
-   context is a stopgap only. The same dogfooding runs also produced the
-   first live judge-quote verification warning (ADR 0024 substring check
-   caught a fabricated quote); artifacts are under `.fusion-runs/`.
+6. DONE (2026-07-06, ADR 0029): the permission-abort dropout class is
+   eliminated on the default transport via permission pre-decision plus
+   declared read roots; the recorded worker-2 repro from
+   `.fusion-runs/fusion-e7eb8340-*` (root cause: a permission-rejected
+   `external_directory` read ended the headless turn without a final text
+   step) now completes with the denial disclosed. The external-path stopgap
+   is superseded: declare `--read-root` or inline the content. The CLI
+   opt-in path retains the historical dropout behavior.
 
 ## Useful Commands
 
