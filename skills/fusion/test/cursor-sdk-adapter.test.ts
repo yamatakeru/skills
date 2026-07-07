@@ -248,6 +248,26 @@ describe("Fusion Cursor SDK adapter", () => {
     );
   });
 
+  test("cleans up the injected CURSOR_CONFIG_DIR when the executor throws", async () => {
+    let capturedDir: string | undefined;
+    const adapter = new CursorSdkAdapter({
+      executor: async (execution) => {
+        capturedDir = execution.env?.CURSOR_CONFIG_DIR;
+        await readFile(join(String(capturedDir), "cli-config.json"), "utf8");
+        throw new Error("spawn ENOENT");
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("error");
+    expect(result.errors?.join("\n")).toContain("spawn ENOENT");
+    expect(capturedDir).toBeDefined();
+    await expect(
+      readFile(join(String(capturedDir), "cli-config.json"), "utf8"),
+    ).rejects.toThrow();
+  });
+
   test("treats non-JSON ActionRequiredError output as a disclosed worker failure", async () => {
     const adapter = new CursorSdkAdapter({
       executor: async () => ({

@@ -53,6 +53,23 @@ evidence and warnings, and compliance landed at the expected `degraded`
 tier ("isolated context not proven; observed tool policy does not match
 request"), consistent with ADR 0032's expected initial tier.
 
+PR #3 CodeRabbit review triage (2026-07-08, recorded panel
+`fusion-fbd4baae-e161-4ec2-9e87-5184e00f7e02`: gpt-5.5 + deepseek-v4-flash
+via opencode + composer-2.5 via cursor, sonnet judge — first production use
+of the cursor harness): 4 findings, none merge-blocking, unanimous across
+workers. Dispositions: (1) "full-capable" wording — rejected; it is the
+defined capability-class term from the "Full-Capable Harness Criteria"
+section directly above, and the suggested rewording would erase the
+deliberate full-vs-degraded distinction between OpenCode/Claude Code and
+cursor; (2) executor-throw cleanup regression test — adopted in the PR;
+(3) `LazyCursorModels`/`LazyOpenCodeModels` duplication — real but
+deferred, consistent with the recorded `unmappedPreferenceWarnings`
+precedent; extract a shared `LazyModelList` when a third copy appears
+(e.g. the pi harness); (4) adapter-registry duplicate registered-checks —
+rejected; the guards check different values (explicit preference vs
+selector output), and if anything the two error messages should be
+differentiated, not shared.
+
 Remaining before merge: none blocking; merge when ready.
 
 ## Cursor Harness Round (2026-07-07): Phase 1 (Capability Probe) Complete
