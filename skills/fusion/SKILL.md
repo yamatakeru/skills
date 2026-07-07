@@ -12,7 +12,7 @@ compatibility: >-
   bundled self-contained TypeScript CLI; no node_modules are required inside the
   skill directory.
 metadata:
-  version: "0.7.0"
+  version: "0.8.0"
   kind: "blind-panel synthesis"
   mode: "blind"
   canonical-runtime: "bun-cli"
@@ -105,16 +105,24 @@ Model entry routing:
 - Claude aliases `fable`, `opus`, `sonnet`, `haiku`, and `claude-*` IDs route
   to Claude Code.
 - `openai-flagship` and `budget-smart` resolve through the bundled alias table.
-- `opencode:<entry>` and `claude-code:<entry>` force the harness.
+- `opencode:<entry>` and `claude-code:<entry>` force those harnesses.
+- `cursor:<model-id>` selects Cursor. Cursor is explicit-prefix only: it is
+  never selected by aliases, bare model patterns, or default composition.
 - Unknown entries are errors, not guesses.
 
 OpenCode-backed entries are checked against `opencode models`. Claude Code has
 no model enumeration command; Claude-backed entries use latest aliases and
-`--fallback-model`, then are validated by the worker attempt.
+`--fallback-model`, then are validated by the worker attempt. Cursor-backed
+entries are checked against `cursor-agent models`.
 
 The judge model defaults to the parent model. Use `--judge-model <entry>` to
 override it; judge model entries use the same routing rules as panel model
-entries.
+entries. Cursor can be used for judging with `--judge-model cursor:<model-id>`
+or `--synthesizer cursor` on the SDK transport.
+
+In the library contract, `PanelSpec.workers` is the per-slot preference list:
+each slot may carry `{ model, harness }`. There is no legacy parallel-array
+compatibility path.
 
 ## CLI Options
 
@@ -130,7 +138,9 @@ entries.
 - `--max-turns <n>`: per-worker turn budget where the harness supports it.
 - `--transport <sdk|cli>`: worker and judge transport; default is `sdk`.
   `cli` is an explicit opt-in to the legacy CLI adapters with degraded
-  compliance evidence; the runtime never falls back to it silently.
+  compliance evidence; the runtime never falls back to it silently. Cursor is
+  implemented only on `sdk`, so `cursor:` entries under `--transport cli` are
+  usage errors.
 - `--read-root <dir>`: declare a directory outside the workspace as readable
   (recursive) for every worker in the run; repeatable.
 - `--record`: write split artifacts under `.fusion-runs/<panelRunId>/` when
@@ -138,7 +148,7 @@ entries.
 - `--json`: print the complete `PanelResult` JSON instead of Markdown.
 - `--judge-model <entry>`: override the judge model; defaults to
   `--parent-model` when available.
-- `--synthesizer <parent-agent|deterministic|opencode|claude-code>`:
+- `--synthesizer <parent-agent|deterministic|opencode|cursor|claude-code>`:
   harness-backed judge is the default; `parent-agent` and `deterministic` are
   explicit-only escapes.
 - `--timeout-ms <n>`: per-worker timeout.
@@ -171,6 +181,11 @@ Reads outside the workspace are denied unless the parent declares the
 directory with `--read-root`. A denied request surfaces to the worker as a
 structured tool error: the worker keeps running and discloses the denial in
 its answer instead of being dropped from the panel.
+
+Cursor is a disclosed degraded harness in this release. Its web-enabled worker
+profile denies shell entirely instead of providing the read-only bash
+allowlist, reads are open by default so `--read-root` only maps to
+`--add-dir`, and recursive delegation cannot currently be denied.
 
 ## Partial Results
 

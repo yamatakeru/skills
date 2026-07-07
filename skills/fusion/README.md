@@ -94,6 +94,12 @@ to inspect OpenCode-backed model IDs:
 opencode models
 ```
 
+Use this command to inspect Cursor-backed model IDs:
+
+```bash
+cursor-agent models
+```
+
 ## Usage
 
 Ask for the skill explicitly when the task warrants independent deliberation:
@@ -113,7 +119,9 @@ fusion --models sonnet,openai-flagship,budget-smart で、このAPI設計案を�
 Supported model entries are provider-qualified OpenCode models such as
 `openai/gpt-5.5`, Claude aliases such as `sonnet`, alias-table names such as
 `openai-flagship` and `budget-smart`, and explicit harness prefixes such as
-`opencode:openai/gpt-5.5` or `claude-code:sonnet`. Unknown entries are errors.
+`opencode:openai/gpt-5.5`, `claude-code:sonnet`, or
+`cursor:composer-2.5-fast`. Cursor is explicit-prefix only and is available
+only with the SDK transport. Unknown entries are errors.
 
 ## Limits
 

@@ -648,8 +648,12 @@ describe("Fusion OpenCode SDK adapter", () => {
   });
 
   test("returns an error result when the opencode binary cannot spawn", async () => {
+    const serverFactory: OpenCodeServerFactory = async () => {
+      throw new Error("opencode serve failed to spawn: ENOENT");
+    };
     const adapter = new OpenCodeSdkAdapter({
       command: "fusion-test-missing-opencode-binary",
+      serverFactory,
       versionExecutor: versionExecutor,
     });
 

@@ -31,11 +31,10 @@ OpenCode, Cursor, Claude Code, or pi.
 
 ## Cursor Harness
 
-The third implemented reference harness (`HarnessKind` `cursor`, renamed from
-the pre-transport-axis `cursor-cli`). Cursor-backed model entries are selected
-only through the explicit `cursor:` forcing prefix. Its worker profile keeps
-web tools and denies shell entirely, with the divergences from the default
-tool policy disclosed as compliance evidence.
+The third implemented reference harness (`HarnessKind` `cursor`). Cursor-backed
+model entries are selected only through the explicit `cursor:` forcing prefix.
+Its worker profile keeps web tools and denies shell entirely, with the
+divergences from the default tool policy disclosed as compliance evidence.
 
 ## Harness Adapter
 
@@ -199,10 +198,11 @@ actually used is recorded in the harness evidence (ADR 0028).
 
 The default transport: the adapter consumes the harness's structured machine
 protocol — the OpenCode server API (REST + SSE against a self-spawned,
-run-scoped `opencode serve`) or the Claude Code stream-json agent protocol —
-implemented with zero npm runtime dependencies. It provides observed model,
-session id, usage, tool events, permission outcomes, and effective tool
-policy evidence that plain CLI stdout cannot (ADR 0028).
+run-scoped `opencode serve`), the Claude Code stream-json agent protocol, or
+the Cursor stream-json agent protocol — implemented with zero npm runtime
+dependencies. It provides observed model, session id, usage, tool events,
+permission outcomes, and effective tool policy evidence that plain CLI stdout
+cannot (ADR 0028/0032).
 
 ## CLI Transport
 
@@ -342,8 +342,8 @@ documentation rewrites.
 
 The per-slot value object in `PanelSpec.workers` pairing an optional model
 preference with an optional harness preference for one panel slot. It replaced
-the parallel `modelPreferences` array and the untyped forced-harness routing
-that previously traveled through user policy (ADR 0031).
+the old parallel-array model slot contract and the untyped forced-harness
+routing that previously traveled through user policy (ADR 0031).
 
 ## Emergency Internal Fallback
 

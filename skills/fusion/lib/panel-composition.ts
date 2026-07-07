@@ -39,9 +39,11 @@ export interface ResolvePanelCompositionOptions {
   panelists?: number;
   panelistsExplicit?: boolean;
   opencodeCommand?: string;
+  cursorCommand?: string;
   executor?: CommandExecutor;
   cwd?: string;
   opencodeModels?: string[];
+  cursorModels?: string[];
 }
 
 export interface ResolvedPanelModel {
@@ -59,13 +61,16 @@ export interface ResolvedPanelComposition {
   resolvedModels: ResolvedPanelModel[];
   warnings: string[];
   opencodeModels: string[];
+  cursorModels: string[];
 }
 
 export interface ResolveModelEntryOptions {
   opencodeCommand?: string;
+  cursorCommand?: string;
   executor?: CommandExecutor;
   cwd?: string;
   opencodeModels?: string[];
+  cursorModels?: string[];
 }
 
 interface ModelSource {
@@ -90,6 +95,7 @@ export async function resolvePanelComposition(
 
   const warnings: string[] = [];
   const opencodeModels = new LazyOpenCodeModels(options);
+  const cursorModels = new LazyCursorModels(options);
   const explicitModels = options.models?.filter((entry) => entry.length > 0);
   const resolvedModels =
     explicitModels !== undefined
@@ -98,25 +104,23 @@ export async function resolvePanelComposition(
           panelists,
           options,
           opencodeModels,
+          cursorModels,
         )
       : await resolveDefaultModels(
           panelists,
           options.parentModel,
           warnings,
           opencodeModels,
+          cursorModels,
         );
-
-  const forcedHarnesses = Object.fromEntries(
-    resolvedModels.map((model, index) => [
-      `worker-${index + 1}`,
-      model.harness,
-    ]),
-  );
 
   return {
     panelSpec: {
       workerCount: resolvedModels.length,
-      modelPreferences: resolvedModels.map((model) => model.modelPreference),
+      workers: resolvedModels.map((model) => ({
+        model: model.modelPreference,
+        harness: { kind: model.harness, invocation: "headless" },
+      })),
       parentModel:
         options.parentModel === undefined
           ? undefined
@@ -124,22 +128,11 @@ export async function resolvePanelComposition(
     },
     harnessSelectionPolicy: {
       availableHarnesses: unique(resolvedModels.map((model) => model.harness)),
-      userPolicy: {
-        fusionForcedHarnesses: forcedHarnesses,
-        fusionComposition: {
-          resolvedModels: resolvedModels.map((model) => ({
-            slot: model.slot,
-            entry: model.entry,
-            resolvedModelId: model.resolvedModelId,
-            harness: model.harness,
-            fallbackUsed: model.fallbackUsed,
-          })),
-        },
-      },
     },
     resolvedModels,
     warnings,
     opencodeModels: opencodeModels.snapshot(),
+    cursorModels: cursorModels.snapshot(),
   };
 }
 
@@ -148,10 +141,12 @@ export async function resolveModelEntry(
   options: ResolveModelEntryOptions = {},
 ): Promise<ResolvedPanelModel> {
   const opencodeModels = new LazyOpenCodeModels(options);
+  const cursorModels = new LazyCursorModels(options);
   const model = await tryResolveSource(
     sourceFromEntry("explicit", entry),
     new Set(),
     opencodeModels,
+    cursorModels,
     { allowDuplicate: true, required: true },
   );
   if (model === undefined) {
@@ -165,6 +160,7 @@ async function resolveExplicitModels(
   panelists: number,
   options: ResolvePanelCompositionOptions,
   opencodeModels: LazyOpenCodeModels,
+  cursorModels: LazyCursorModels,
 ): Promise<ResolvedPanelModel[]> {
   if (options.panelistsExplicit === true && entries.length !== panelists) {
     throw new RangeError(
@@ -178,6 +174,7 @@ async function resolveExplicitModels(
       sourceFromEntry("explicit", entry),
       new Set(),
       opencodeModels,
+      cursorModels,
       { allowDuplicate: true, required: true },
     );
     if (model === undefined) {
@@ -193,6 +190,7 @@ async function resolveDefaultModels(
   parentModel: string | undefined,
   warnings: string[],
   opencodeModels: LazyOpenCodeModels,
+  cursorModels: LazyCursorModels,
 ): Promise<ResolvedPanelModel[]> {
   const sources: ModelSource[] = [];
   if (parentModel === undefined) {
@@ -208,7 +206,12 @@ async function resolveDefaultModels(
   const used = new Set<string>();
   const resolved: ResolvedPanelModel[] = [];
   for (const source of sources) {
-    const model = await tryResolveSource(source, used, opencodeModels);
+    const model = await tryResolveSource(
+      source,
+      used,
+      opencodeModels,
+      cursorModels,
+    );
     if (model === undefined) {
       warnings.push(
         `Default ${source.slot} slot (${source.entry}) was unavailable or duplicated and was refilled.`,
@@ -237,6 +240,7 @@ async function resolveDefaultModels(
       },
       used,
       opencodeModels,
+      cursorModels,
     );
     if (refill === undefined) {
       throw new Error(
@@ -254,6 +258,7 @@ async function tryResolveSource(
   source: ModelSource,
   used: Set<string>,
   opencodeModels: LazyOpenCodeModels,
+  cursorModels: LazyCursorModels,
   options: { allowDuplicate?: boolean; required?: boolean } = {},
 ): Promise<ResolvedPanelModel | undefined> {
   for (const [index, candidateId] of source.candidateIds.entries()) {
@@ -268,6 +273,17 @@ async function tryResolveSource(
       if (options.required === true && source.candidateIds.length === 1) {
         throw new Error(
           `OpenCode model is not available according to opencode models: ${routed.modelId}`,
+        );
+      }
+      continue;
+    }
+    if (
+      routed.harness === "cursor" &&
+      !(await cursorModels.includes(routed.modelId))
+    ) {
+      if (options.required === true && source.candidateIds.length === 1) {
+        throw new Error(
+          `Cursor model is not available according to cursor-agent models: ${routed.modelId}`,
         );
       }
       continue;
@@ -298,6 +314,11 @@ function sourceFromEntry(
   const prefix = forcedPrefix(normalized);
   const unprefixed = prefix?.entry ?? normalized;
   if (modelAliasTable[unprefixed] !== undefined) {
+    if (prefix?.harness === "cursor") {
+      throw new Error(
+        `Cursor model entries must use a concrete cursor model id, not an alias: ${normalized}`,
+      );
+    }
     return {
       slot,
       entry: normalized,
@@ -311,6 +332,7 @@ function sourceFromEntry(
     slot,
     entry: normalized,
     candidateIds: [routed.modelId],
+    forcedHarness: prefix?.harness,
   };
 }
 
@@ -360,13 +382,16 @@ function routeWithForcedHarness(
     }
     return { modelId: entry, harness };
   }
+  if (harness === "cursor") {
+    return { modelId: entry, harness };
+  }
   throw new Error(`Unsupported Fusion harness prefix: ${harness}`);
 }
 
 function forcedPrefix(
   entry: string,
 ): { harness: HarnessKind; entry: string } | undefined {
-  const match = /^(opencode|claude-code):(.+)$/u.exec(entry);
+  const match = /^(opencode|claude-code|cursor):(.+)$/u.exec(entry);
   if (match === null) {
     return undefined;
   }
@@ -480,12 +505,67 @@ class LazyOpenCodeModels {
   }
 }
 
+class LazyCursorModels {
+  private loadedModels: string[] | undefined;
+
+  constructor(
+    private readonly options:
+      ResolvePanelCompositionOptions | ResolveModelEntryOptions,
+  ) {
+    this.loadedModels = options.cursorModels;
+  }
+
+  async includes(modelId: string): Promise<boolean> {
+    const models = await this.load();
+    return models.includes(modelId);
+  }
+
+  snapshot(): string[] {
+    return this.loadedModels ?? [];
+  }
+
+  private async load(): Promise<string[]> {
+    if (this.loadedModels !== undefined) {
+      return this.loadedModels;
+    }
+
+    const executor = this.options.executor ?? executeCommand;
+    const result = await executor({
+      command: this.options.cursorCommand ?? "cursor-agent",
+      args: ["models"],
+      cwd: this.options.cwd,
+    });
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `cursor-agent models failed with code ${result.exitCode}: ${snippet(result.stderr || result.stdout)}`,
+      );
+    }
+    this.loadedModels = parseCursorModels(result.stdout);
+    if (this.loadedModels.length === 0) {
+      throw new Error("cursor-agent models returned no model ids.");
+    }
+    return this.loadedModels;
+  }
+}
+
 function parseOpenCodeModels(stdout: string): string[] {
   return unique(
     stdout
       .split(/\r?\n/u)
       .map((line) => stripAnsi(line).trim())
       .filter(isProviderQualifiedModel),
+  );
+}
+
+export function parseCursorModels(stdout: string): string[] {
+  return unique(
+    stdout
+      .split(/\r?\n/u)
+      .map((line) => stripAnsi(line).trim())
+      .flatMap((line) => {
+        const match = /^(\S+)\s+-\s+.+$/u.exec(line);
+        return match === null ? [] : [match[1]];
+      }),
   );
 }
 

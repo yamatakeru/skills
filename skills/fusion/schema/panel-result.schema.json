@@ -100,7 +100,7 @@
         {
           "enum": [
             "opencode",
-            "cursor-cli",
+            "cursor",
             "claude-code",
             "pi"
           ],

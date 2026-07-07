@@ -12,6 +12,7 @@ import {
 import {
   ClaudeCodeHeadlessCliAdapter,
   ClaudeCodeSdkAdapter,
+  CursorSdkAdapter,
   OpenCodeHeadlessCliAdapter,
   OpenCodeSdkAdapter,
   type PanelResult,
@@ -145,6 +146,43 @@ describe("Fusion CLI parsing", () => {
     });
   });
 
+  test("allows explicit cursor judge strategy without an implicit judge model", async () => {
+    const options = parseArgs([
+      "--models",
+      "claude-code:sonnet",
+      "--synthesizer",
+      "cursor",
+      "Use Cursor for judging.",
+    ]);
+
+    const prepared = await preparePanelRequest(options, {
+      cwd: "/tmp",
+      panelRunId: "judge-cursor",
+    });
+
+    expect(prepared.request.synthesizer).toEqual({ strategy: "cursor" });
+    expect(prepared.warnings.join("\n")).toContain(
+      "No --parent-model or --judge-model",
+    );
+  });
+
+  test("rejects cursor selection under CLI transport", async () => {
+    const options = parseArgs([
+      "--transport",
+      "cli",
+      "--models",
+      "cursor:composer-2.5-fast",
+      "Use Cursor.",
+    ]);
+
+    await expect(
+      preparePanelRequest(options, {
+        cwd: "/tmp",
+        panelRunId: "cursor-transport",
+      }),
+    ).rejects.toThrow("requires --transport sdk");
+  });
+
   test("resolves read roots into worker environment", async () => {
     const options = parseArgs([
       "--models",
@@ -171,6 +209,7 @@ describe("Fusion CLI parsing", () => {
     try {
       expect(sdkRuntime.runners.opencode).toBeInstanceOf(OpenCodeSdkAdapter);
       expect(sdkRuntime.runners.claudeCode).toBeInstanceOf(ClaudeCodeSdkAdapter);
+      expect(sdkRuntime.runners.cursor).toBeInstanceOf(CursorSdkAdapter);
       expect(cliRuntime.runners.opencode).toBeInstanceOf(
         OpenCodeHeadlessCliAdapter,
       );
@@ -184,6 +223,17 @@ describe("Fusion CLI parsing", () => {
         }),
       ).toEqual({
         kind: "opencode",
+        invocation: "headless",
+          transport: "sdk",
+      });
+      expect(
+        sdkRuntime.registry.selectHarness({
+          workerId: "worker-1",
+          harnessPreference: { kind: "cursor", invocation: "headless" },
+          policy: { availableHarnesses: ["cursor"] },
+        }),
+      ).toEqual({
+        kind: "cursor",
         invocation: "headless",
         transport: "sdk",
       });

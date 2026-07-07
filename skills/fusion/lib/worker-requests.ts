@@ -17,18 +17,21 @@ export type WorkerRequestBuildInput = Omit<PanelRequest, "contextManifest"> & {
 };
 
 export const defaultHarnessSelector: HarnessSelector = {
-  selectHarness({ workerId, modelPreference, policy }): HarnessDescriptor {
+  selectHarness({ workerId, modelPreference, harnessPreference, policy }): HarnessDescriptor {
     const availableHarnesses = policy.availableHarnesses;
-    const forcedHarness = forcedHarnessForWorker(workerId, policy.userPolicy);
-    if (forcedHarness !== undefined) {
-      if (!isHarnessAvailable(forcedHarness, availableHarnesses)) {
+    const preference = harnessPreference;
+    if (preference !== undefined && preference.kind !== undefined) {
+      const slotHarness = preference.kind;
+      if (!isHarnessAvailable(slotHarness, availableHarnesses)) {
         throw new RangeError(
-          `Forced Fusion harness is not available for ${workerId}: ${forcedHarness}`,
+          `Fusion harness preference is not available for ${workerId}: ${slotHarness}`,
         );
       }
       return {
-        kind: forcedHarness,
-        invocation: "headless",
+        kind: slotHarness,
+        invocation: preference.invocation ?? "headless",
+        transport: preference.transport,
+        version: preference.version,
       };
     }
 
@@ -61,7 +64,16 @@ function selectFallbackHarness(
   if (isHarnessAvailable("opencode", availableHarnesses)) {
     return "opencode";
   }
-  return availableHarnesses?.[0] ?? "opencode";
+  const fallback = availableHarnesses?.find((harness) => harness !== "cursor");
+  if (fallback !== undefined) {
+    return fallback;
+  }
+  if (availableHarnesses?.includes("cursor")) {
+    throw new RangeError(
+      "Cursor harness selection requires an explicit cursor: model entry.",
+    );
+  }
+  return "opencode";
 }
 
 function isHarnessAvailable(
@@ -99,24 +111,6 @@ function isClaudeModelIdentifier(value: string | undefined): boolean {
   );
 }
 
-function forcedHarnessForWorker(
-  workerId: string,
-  userPolicy: Record<string, unknown> | undefined,
-): HarnessKind | undefined {
-  const forcedHarnesses = userPolicy?.fusionForcedHarnesses;
-  if (
-    forcedHarnesses === undefined ||
-    forcedHarnesses === null ||
-    typeof forcedHarnesses !== "object" ||
-    Array.isArray(forcedHarnesses)
-  ) {
-    return undefined;
-  }
-
-  const forcedHarness = (forcedHarnesses as Record<string, unknown>)[workerId];
-  return typeof forcedHarness === "string" ? forcedHarness : undefined;
-}
-
 export function buildWorkerRequests(
   request: WorkerRequestBuildInput,
   defaults: Partial<DefaultPolicies> = {},
@@ -132,10 +126,12 @@ export function buildWorkerRequests(
   });
   return Array.from({ length: request.panelSpec.workerCount }, (_, index) => {
     const workerId = `worker-${index + 1}`;
-    const modelPreference = request.panelSpec.modelPreferences?.[index];
+    const slot = request.panelSpec.workers?.[index];
+    const modelPreference = slot?.model;
     const harness = harnessSelector.selectHarness({
       workerId,
       modelPreference,
+      harnessPreference: slot?.harness,
       policy: request.harnessSelectionPolicy,
     });
 

@@ -27,9 +27,8 @@ The current reference harness set is `opencode`, `cursor`, `claude-code`, and
 `pi`. The reference selector prefers `opencode` by default and prefers
 `claude-code` for Claude-family model preferences when available. This is an
 overrideable reference policy, not a portable protocol requirement. `cursor`
-(renamed from the pre-transport-axis `cursor-cli`, ADR 0030) is the third
-implemented reference target, reachable only through explicit selection; `pi`
-remains a name-only candidate.
+is the third implemented reference target, reachable only through explicit
+selection; `pi` remains a name-only candidate.
 
 If `availableHarnesses` is provided as an empty list, no harness is selectable;
 the selector should fail rather than silently choosing a default.
@@ -204,8 +203,9 @@ judge-defaults-to-outer-model behavior. `--judge-model <model-entry>`
 overrides it and resolves through the same model-entry routing as panel
 composition; it maps to `SynthesizerPreference.model`. `--synthesizer
 parent-agent` and `--synthesizer deterministic` remain implemented but are
-explicit-only escapes, never a silent default. The panel-wide timeout and
-`ReasoningPreference` also apply to the judge invocation.
+explicit-only escapes, never a silent default. `cursor` is also a valid
+harness-backed judge strategy on the SDK transport. The panel-wide timeout
+and `ReasoningPreference` apply to the judge invocation.
 
 The judge invocation reuses the worker adapter path with its own provenance:
 `synthesis.started` / `synthesis.completed` carry the judge's strategy,
@@ -243,8 +243,8 @@ complete without model-backed synthesis. When the judge succeeds, the
 deterministic output is demoted to recorded artifacts only (audit reference);
 otherwise it remains in the panel report. It is a stability and testability
 mechanism, not the final quality target. Synthesis artifacts identify their
-strategy, for example `parent-agent`, `deterministic`, `opencode`, or
-`claude-code`.
+strategy, for example `parent-agent`, `deterministic`, `opencode`, `cursor`,
+or `claude-code`.
 
 Partial failure defaults follow OpenRouter semantics (ADR 0019):
 `allowPartial: true`, continue with disclosure when at least one worker

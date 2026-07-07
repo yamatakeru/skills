@@ -77,13 +77,31 @@
         {
           "enum": [
             "opencode",
-            "cursor-cli",
+            "cursor",
             "claude-code",
             "pi"
           ],
           "type": "string"
         }
       ]
+    },
+    "HarnessPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "invocation": {
+          "$ref": "#/definitions/InvocationMode"
+        },
+        "kind": {
+          "$ref": "#/definitions/HarnessKind"
+        },
+        "transport": {
+          "$ref": "#/definitions/TransportMode"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "HarnessSelectionPolicy": {
       "additionalProperties": false,
@@ -106,6 +124,13 @@
         }
       },
       "type": "object"
+    },
+    "InvocationMode": {
+      "enum": [
+        "headless",
+        "subagent"
+      ],
+      "type": "string"
     },
     "ModelPreference": {
       "additionalProperties": false,
@@ -192,12 +217,6 @@
     "PanelSpec": {
       "additionalProperties": false,
       "properties": {
-        "modelPreferences": {
-          "items": {
-            "$ref": "#/definitions/ModelPreference"
-          },
-          "type": "array"
-        },
         "parentModel": {
           "$ref": "#/definitions/ModelPreference"
         },
@@ -206,6 +225,12 @@
           "maximum": 20,
           "minimum": 1,
           "type": "number"
+        },
+        "workers": {
+          "items": {
+            "$ref": "#/definitions/WorkerSlotPreference"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -367,6 +392,13 @@
       ],
       "type": "object"
     },
+    "TransportMode": {
+      "enum": [
+        "cli",
+        "sdk"
+      ],
+      "type": "string"
+    },
     "WorkerBudget": {
       "additionalProperties": false,
       "properties": {
@@ -405,6 +437,18 @@
         },
         "workspaceRoot": {
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "WorkerSlotPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "harness": {
+          "$ref": "#/definitions/HarnessPreference"
+        },
+        "model": {
+          "$ref": "#/definitions/ModelPreference"
         }
       },
       "type": "object"

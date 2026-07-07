@@ -30,6 +30,15 @@ export class AdapterRegistry implements WorkerRunner, HarnessSelector {
   }
 
   selectHarness(input: HarnessSelectionInput): HarnessDescriptor {
+    const preferredHarness = input.harnessPreference?.kind;
+    if (
+      preferredHarness !== undefined &&
+      !this.runners.has(preferredHarness)
+    ) {
+      throw new RangeError(
+        `Selected Fusion harness is not registered: ${preferredHarness}`,
+      );
+    }
     const policy = withRegisteredHarnesses(
       input.policy,
       this.availableHarnesses(),

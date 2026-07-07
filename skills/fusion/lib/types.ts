@@ -6,14 +6,14 @@ export type ComplianceTier =
 type ExtensibleString = string & {};
 
 export type HarnessKind =
-  "opencode" | "cursor-cli" | "claude-code" | "pi" | ExtensibleString;
+  "opencode" | "cursor" | "claude-code" | "pi" | ExtensibleString;
 export type InvocationMode = "headless" | "subagent";
 export type TransportMode = "cli" | "sdk";
 export type PanelStatus = "ok" | "partial" | "failed";
 export type WorkerStatus =
   "ok" | "timeout" | "error" | "invalid-output" | "refused";
 export type NonJudgeSynthesizerStrategy = "parent-agent" | "deterministic";
-export type ImplementedJudgeHarness = "opencode" | "claude-code";
+export type ImplementedJudgeHarness = "opencode" | "cursor" | "claude-code";
 
 export type FindingKind =
   | "consensus"
@@ -118,8 +118,13 @@ export interface PanelSpec {
    * @maximum 20
    */
   workerCount: number;
-  modelPreferences?: ModelPreference[];
+  workers?: WorkerSlotPreference[];
   parentModel?: ModelPreference;
+}
+
+export interface WorkerSlotPreference {
+  model?: ModelPreference;
+  harness?: HarnessPreference;
 }
 
 export interface HarnessSelectionPolicy {
@@ -378,6 +383,7 @@ export interface HarnessSelector {
 export interface HarnessSelectionInput {
   workerId: string;
   modelPreference?: ModelPreference;
+  harnessPreference?: HarnessPreference;
   policy: HarnessSelectionPolicy;
 }
 
@@ -437,7 +443,11 @@ export function isNonJudgeSynthesizerStrategy(
 export function isImplementedJudgeHarness(
   strategy: string | undefined,
 ): strategy is ImplementedJudgeHarness {
-  return strategy === "opencode" || strategy === "claude-code";
+  return (
+    strategy === "opencode" ||
+    strategy === "cursor" ||
+    strategy === "claude-code"
+  );
 }
 
 export function isHarnessSynthesizerStrategy(
