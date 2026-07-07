@@ -36,9 +36,24 @@ Phase-2 verify results:
   no-`--force` profile returns), `CURSOR_CONFIG_DIR` merge-vs-replace,
   hooks.json Task interception feasibility.
 
-Remaining before merge: simplify pass consideration, CodeRabbit review
-(blocked at implementation time: CLI signed out), recorded worker/judge
-smoke runs (ADR 0030 acceptance criteria 2-3).
+Review: simplify considered (adapter matches house style; the
+`unmappedPreferenceWarnings` triplication across adapters differs per
+harness-mapped preferences and was left as an out-of-round refactor);
+CodeRabbit reviewed the branch (1 minor finding — injected-config temp-dir
+leak on writeFile failure — fixed).
+
+Recorded smoke (ADR 0030 acceptance criteria 2-3): panel run
+`fusion-94e9eb05-8a36-4020-bf9a-20092d92d850` (recorded under
+`.fusion-runs/`) ran two cursor workers (`cursor:auto`,
+`cursor:composer-2.5`) and a cursor judge (`cursor:composer-2.5`) — panel
+`ok`, judge produced the five-key analysis with attribution, all required
+provenance events present, requested-id vs observed-display-name evidence
+recorded (`auto` / `Auto`), every standing gap disclosure present in worker
+evidence and warnings, and compliance landed at the expected `degraded`
+tier ("isolated context not proven; observed tool policy does not match
+request"), consistent with ADR 0032's expected initial tier.
+
+Remaining before merge: none blocking; merge when ready.
 
 ## Cursor Harness Round (2026-07-07): Phase 1 (Capability Probe) Complete
 
