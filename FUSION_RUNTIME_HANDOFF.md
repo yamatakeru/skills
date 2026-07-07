@@ -1,12 +1,59 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-07 (cursor harness round — phase 2 implemented, review pending)
+Date: 2026-07-08 (cursor probe round — probe complete, phase 3 in flight)
 
 This handoff captures the state of the Fusion runtime after the usable
 milestone, the worker-investigation round, the harness-backed judge round,
 the upstream fidelity round, the SDK transport round (reserved milestones 1
-and 6), and phase 1 of the cursor harness round. The design authority is
-`docs/fusion/` (spec, domain model, glossary, ADR 0001-0032).
+and 6), the cursor harness round (PR #3, merged), and the cursor probe
+round. The design authority is `docs/fusion/` (spec, domain model,
+glossary, ADR 0001-0034).
+
+## Cursor Probe Round (2026-07-08): Probe Complete, Phase 3 In Flight
+
+Goal: resolve the two degraded reasons cursor workers carried ("isolated
+context not proven; observed tool policy does not match request") — or
+establish they are unresolvable. Grilled decisions before the probe:
+isolation claims use panel-state semantics uniformly (ADR 0033; glossary
+sharpened), the probe ran under a mandatory restore-to-pristine
+constraint, and results land on `feature/cursor-probe-round`.
+
+Probe results (cursor-agent 2026.07.01-41b2de7, Pro; fourteen recorded
+runs t1-t14; all live): everything closed in cursor's favor — see ADR
+0034 for the full findings and the decided hooks enforcement profile. In
+one line each:
+
+- `<cwd>/.cursor/hooks.json` fires in headless `--print` runs (cwd-based;
+  `CURSOR_CONFIG_DIR` hooks and `--add-dir` hooks do not load).
+- `preToolUse` deny blocks `Task` (recursion denial enforceable;
+  `subagentStart` never fires headless); hooks also gate subagent-internal
+  tool calls.
+- `beforeShellExecution` implements the ADR 0022 read-only allowlist under
+  `--force` (web tools XOR shell allowlist is dissolved).
+- `beforeReadFile` reproduces ADR 0029 deny-unless-declared read roots.
+- `failClosed: true` blocks on hook crash (no fail-open policy loss).
+- `CURSOR_CONFIG_DIR` permissions **replace** the global config (marker
+  deny control test); injected runs never touch the global config, but
+  non-injected runs write model state back to it — always inject.
+- `AGENTS.md` / `.cursor/rules/*.mdc` inject from cwd; account-level User
+  Rules inject regardless of injection (created/verified/deleted a marker
+  rule) — permanent compliance note, not an isolation breaker (ADR 0033).
+
+Cleanup proof: `~/.cursor/cli-config.json` and `~/.cursor/hooks.json`
+byte-identical to pre-probe snapshots (diff-verified); the marker User
+Rule deleted and its absence re-verified live (t14). Probe artifacts
+(transcripts, hook event logs, restore script, snapshots) under
+`~/.claude/jobs/09634e98/tmp/probe/`.
+
+Phase 3 scope (implementation): flip
+`adapterClaimsIsolatedContext` to the uniform fresh+session-id rule (ADR
+0033), implement the ADR 0034 hooks profile (scratch-cwd run dir,
+run-scoped `.cursor/hooks.json` + hook script, failClosed, shell
+allowlist, Task deny, read-root gate; drop the config-level `Shell(**)`
+deny in favor of the hook authority), report an observed tool policy
+matching the panel default when enforcement is equivalent, update the
+standing-gap warnings/notes to the ADR 0034 disclosure set, tests +
+schema/typecheck, recorded smoke targeting tier `full`.
 
 ## Cursor Harness Round (2026-07-07): Phase 2 Implemented (Review Pending)
 
