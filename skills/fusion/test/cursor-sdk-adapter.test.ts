@@ -204,6 +204,50 @@ describe("Fusion Cursor SDK adapter", () => {
     );
   });
 
+  test("records error tool results (live-verified Read(**) denial shape)", async () => {
+    const adapter = new CursorSdkAdapter({
+      executor: async () => ({
+        exitCode: 0,
+        stdout: streamJson([
+          {
+            type: "system",
+            subtype: "init",
+            session_id: "cursor-session-5",
+            model: "Composer 2.5 Fast",
+            permissionMode: "default",
+          },
+          {
+            type: "tool_call",
+            subtype: "completed",
+            call_id: "tool-read-denied",
+            tool_call: {
+              readToolCall: {
+                result: { error: { errorMessage: "Permission denied" } },
+              },
+            },
+          },
+          {
+            type: "result",
+            is_error: false,
+            result: "disclosed the read denial",
+            session_id: "cursor-session-5",
+          },
+        ]),
+        stderr: "",
+        durationMs: 11,
+      }),
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.toolUseSummary?.toolsUsed).toEqual(["Read"]);
+    expect(result.toolUseSummary?.deniedRequests).toBeUndefined();
+    expect(result.complianceEvidence?.notes?.join("\n")).toContain(
+      "Cursor tool Read ended with status error: Permission denied",
+    );
+  });
+
   test("treats non-JSON ActionRequiredError output as a disclosed worker failure", async () => {
     const adapter = new CursorSdkAdapter({
       executor: async () => ({

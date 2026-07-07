@@ -52,6 +52,7 @@ interface CursorToolObservation {
     | "rejected"
     | "permissionDenied"
     | "writePermissionDenied"
+    | "error"
     | "unknown";
   detail?: string;
 }
@@ -640,6 +641,7 @@ function cursorToolResult(
     "rejected",
     "permissionDenied",
     "writePermissionDenied",
+    "error",
   ] as const) {
     const detailRecord = objectField(result, status);
     if (detailRecord !== undefined) {
@@ -654,6 +656,7 @@ function formatCursorToolDetail(
 ): string | undefined {
   return (
     stringField(record, "error") ??
+    stringField(record, "errorMessage") ??
     stringField(record, "reason") ??
     stringField(record, "message") ??
     stringField(record, "command") ??
