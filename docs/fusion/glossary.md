@@ -27,7 +27,15 @@ execution environment.
 ## Harness
 
 An execution environment capable of invoking workers. Examples may include
-OpenCode, Cursor CLI, Claude Code, or pi.
+OpenCode, Cursor, Claude Code, or pi.
+
+## Cursor Harness
+
+The third implemented reference harness (`HarnessKind` `cursor`, renamed from
+the pre-transport-axis `cursor-cli`). Cursor-backed model entries are selected
+only through the explicit `cursor:` forcing prefix. Its worker profile keeps
+web tools and denies shell entirely, with the divergences from the default
+tool policy disclosed as compliance evidence.
 
 ## Harness Adapter
 
@@ -329,6 +337,13 @@ The bundled table mapping stable alias names such as `openai-flagship` and
 `budget-smart` to ordered, provider-qualified model ID fallback lists. It
 absorbs model generation changes through skill updates instead of prompt or
 documentation rewrites.
+
+## Worker Slot Preference
+
+The per-slot value object in `PanelSpec.workers` pairing an optional model
+preference with an optional harness preference for one panel slot. It replaced
+the parallel `modelPreferences` array and the untyped forced-harness routing
+that previously traveled through user policy (ADR 0031).
 
 ## Emergency Internal Fallback
 

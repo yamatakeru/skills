@@ -1,12 +1,67 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-06 (SDK transport round — complete)
+Date: 2026-07-07 (cursor harness round — phase 1 complete)
 
 This handoff captures the state of the Fusion runtime after the usable
 milestone, the worker-investigation round, the harness-backed judge round,
-the upstream fidelity round, and the SDK transport round (reserved
-milestones 1 and 6). The design authority is `docs/fusion/` (spec, domain
-model, glossary, ADR 0001-0029).
+the upstream fidelity round, the SDK transport round (reserved milestones 1
+and 6), and phase 1 of the cursor harness round. The design authority is
+`docs/fusion/` (spec, domain model, glossary, ADR 0001-0032).
+
+## Cursor Harness Round (2026-07-07): Phase 1 (Capability Probe) Complete
+
+Adopts Cursor as the third reference harness (ADR 0030: kind renamed
+`cursor-cli`→`cursor`, explicit `cursor:` prefix routing only, default
+composition unchanged, judge-eligible, full tier a target not a gate,
+independent of milestone 5). Grilled decisions also promoted per-worker
+harness routing into the portable contract: `PanelSpec.workers?:
+WorkerSlotPreference[]` (`{model?, harness?}`) replaces `modelPreferences`
+and the untyped `fusionForcedHarnesses` userPolicy bag (ADR 0031). The
+probe-informed transport and enforcement decisions are ADR 0032.
+
+Probe (live, cursor-agent 2026.07.01-41b2de7; account upgraded Free→Pro
+mid-probe after hitting the Free usage limit — the non-JSON
+`ActionRequiredError` failure mode is itself a recorded finding):
+
+- stream-json is Claude-Code-shaped and satisfies ADR 0028's
+  protocol-surface `sdk` definition: init (session_id, model display name,
+  permissionMode), tool_call started/completed with structured results
+  (`success` / `rejected` / `permissionDenied` / `writePermissionDenied`),
+  terminal result with usage tokens. Undocumented `thinking` / `connection`
+  / `retry` events appear; parser must tolerate non-JSON lines.
+- Enforcement recipe verified end to end: `CURSOR_CONFIG_DIR` (undocumented)
+  injects a run-scoped `cli-config.json` without touching the user's global
+  config or breaking login auth; headless default auto-rejects
+  non-allowlisted shell without hanging and the worker survives and
+  discloses (the ADR 0029 target semantics); `Write(**)` / `Delete(**)` /
+  `Mcp(*)` denies hold, including under `--add-dir`.
+- Hard limits found: deny precedence is absolute (specific allows cannot
+  pierce `Shell(**)`), web tools run only under `--force`, so web tools and
+  a shell allowlist are mutually exclusive; `--mode ask/plan` hard-rejects
+  shell but does NOT hard-block edits (forced editToolCall wrote a real
+  file); `Task` (subagents) is undeniable by any probed token; reads are
+  open by default ($HOME readable, no workspace jail); untrusted dirs
+  require `--trust`; 3 parallel spawns clean; `cursor-agent models`
+  enumerates; init echoes the model display name, not the id.
+- Decisions (ADR 0032): sdk-only adapter (no cursor CLI-transport path);
+  worker profile = `--trust --force` + deny `Shell(**)/Write(**)/
+  Delete(**)/Mcp(*)` (web on, shell off, divergences disclosed — upstream
+  fidelity beat the local ADR 0022 allowlist when forced to choose); judge
+  profile = no `--force` + the same denies plus `Read(**)` (untested,
+  verify in phase 2); recursion denial stays prompt-level with a standing
+  evidence gap (hooks.json interception is the follow-up); expected initial
+  tier for cursor workers is `degraded`.
+
+Phase 2 (implementation, Codex) scope: `cursor` in `HarnessKind` and
+routing (`cursor:` prefix, `resolveModelEntry`, `cursor-agent models`
+availability check), the ADR 0031 contract migration, the cursor SDK
+adapter (spawn + full stream parse + config injection + display-name/id
+evidence), judge eligibility (`isImplementedJudgeHarness`), SKILL.md bump,
+schema regen. Phase 2 verify list: `Read(**)` deny for the judge profile,
+`Shell(command:args)` vs space syntax in allow entries, whether
+`CURSOR_CONFIG_DIR` merges with or replaces the user global config
+(standing evidence note either way), hooks.json Task interception
+feasibility. Acceptance criteria are enumerated in ADR 0030.
 
 ## SDK Transport Round (2026-07-06): Complete
 
@@ -365,15 +420,20 @@ recorder refuses to write otherwise without an explicit override.
   after a review panel showed it silently misattributes model variants.
 - Judge quote verification is substring matching; paraphrased quotes surface
   as warnings even when semantically faithful.
-- Forced per-worker harness routing travels through
-  `harnessSelectionPolicy.userPolicy.fusionForcedHarnesses` because `PanelSpec`
-  has no per-worker harness field; revisit if the portable contract grows one.
+- Forced per-worker harness routing still travels through
+  `harnessSelectionPolicy.userPolicy.fusionForcedHarnesses` in the code; the
+  contract-level fix (`PanelSpec.workers`, ADR 0031) is decided and lands
+  with cursor round phase 2.
 - Judge harness selection is resolved eagerly in the CLI
   (`resolveSynthesizerPreference`) rather than inside `buildJudgeRequest`;
   unifying it would change the documented `SynthesizerPreference` contract
   and was deliberately skipped in the simplify round.
 
 ## Next Milestones (reserved)
+
+0. IN FLIGHT (2026-07-07, ADR 0030-0032): cursor harness round — phase 1
+   (probe + decisions + docs) complete; phase 2 (implementation) pending.
+   Independent of milestone 5.
 
 1. DONE (2026-07-06, ADR 0028): SDK transport with tool-policy proof,
    session/tool-event capture, and programmatic permission handling; the

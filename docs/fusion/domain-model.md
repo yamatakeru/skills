@@ -77,6 +77,13 @@ table with ordered fallbacks, availability checks per harness, and
 deduplication by resolved model ID with refill. Explicit user selection
 replaces the default composition.
 
+### WorkerSlotPreference
+
+The per-slot pairing of an optional model preference and an optional harness
+preference in `PanelSpec.workers`. Composition resolves each explicit model
+entry into one slot preference; worker construction honors the slot's harness
+ahead of pattern-based selection (ADR 0031).
+
 ### SynthesizerPreference
 
 Identifies who authors the synthesis: a harness kind for the harness-backed
@@ -138,9 +145,12 @@ A harness adapter is full-capable only when it can:
 - capture worker output and tool events;
 - record session or run id, usage, errors, and relevant harness metadata.
 
-OpenCode and Claude Code are the first full-capable reference targets. Cursor CLI
-and pi are useful candidates, but should be treated as conditional or degraded
-until their adapters prove equivalent policy enforcement and evidence.
+OpenCode and Claude Code are the first full-capable reference targets. Cursor
+is the third implemented reference target: its adapter ships with disclosed
+evidence gaps (recursion denial unenforceable, reads open by default) and is
+expected to report degraded compliance until those gaps close (ADR 0030/0032).
+pi remains a candidate and should be treated as conditional or degraded until
+its adapter proves equivalent policy enforcement and evidence.
 
 The first usable reference runtime requires both OpenCode and Claude Code worker
 adapters to exercise the same portable `WorkerRequest` to `WorkerResult`
