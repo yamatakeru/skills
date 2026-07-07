@@ -150,11 +150,16 @@ async function writeCursorConfig(
   profile: CursorExecutionProfile,
 ): Promise<string> {
   const configDir = await mkdtemp(join(tmpdir(), "fusion-cursor-"));
-  await writeFile(
-    join(configDir, "cli-config.json"),
-    `${JSON.stringify(buildCursorConfigContent(profile), null, 2)}\n`,
-    "utf8",
-  );
+  try {
+    await writeFile(
+      join(configDir, "cli-config.json"),
+      `${JSON.stringify(buildCursorConfigContent(profile), null, 2)}\n`,
+      "utf8",
+    );
+  } catch (error) {
+    await rm(configDir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
   return configDir;
 }
 
