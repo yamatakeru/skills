@@ -6,6 +6,7 @@ import {
   AdapterRegistry,
   ClaudeCodeSdkAdapter,
   ClaudeCodeHeadlessCliAdapter,
+  CursorSdkAdapter,
   buildWorkerRequests,
   createContextManifest,
   defaultPolicies,
@@ -116,6 +117,7 @@ export async function preparePanelRequest(
   input: { cwd?: string; panelRunId?: string } = {},
 ): Promise<PreparedPanelRequest> {
   const cwd = input.cwd ?? process.cwd();
+  rejectCursorWithCliTransport(options);
   const composition = await resolvePanelComposition({
     parentModel: options.parentModel,
     models: options.models,
@@ -433,6 +435,7 @@ export interface FusionRuntime {
   runners: {
     opencode: WorkerRunner;
     claudeCode: WorkerRunner;
+    cursor?: WorkerRunner;
   };
   dispose(): Promise<void>;
 }
@@ -442,7 +445,8 @@ export function createFusionRuntime(transport: TransportMode): FusionRuntime {
     case "sdk": {
       const opencode = new OpenCodeSdkAdapter();
       const claudeCode = new ClaudeCodeSdkAdapter();
-      return runtimeFromRunners(transport, opencode, claudeCode);
+      const cursor = new CursorSdkAdapter();
+      return runtimeFromRunners(transport, opencode, claudeCode, cursor);
     }
     case "cli": {
       const opencode = new OpenCodeHeadlessCliAdapter();
@@ -456,16 +460,24 @@ function runtimeFromRunners(
   transport: TransportMode,
   opencode: WorkerRunner,
   claudeCode: WorkerRunner,
+  cursor?: WorkerRunner,
 ): FusionRuntime {
+  const registry = new AdapterRegistry({ transport })
+    .register("opencode", opencode)
+    .register("claude-code", claudeCode);
+  if (cursor !== undefined) {
+    registry.register("cursor", cursor);
+  }
   return {
     transport,
-    registry: new AdapterRegistry({ transport })
-      .register("opencode", opencode)
-      .register("claude-code", claudeCode),
-    runners: { opencode, claudeCode },
+    registry,
+    runners: { opencode, claudeCode, cursor },
     async dispose() {
       await disposeRunner(opencode);
       await disposeRunner(claudeCode);
+      if (cursor !== undefined) {
+        await disposeRunner(cursor);
+      }
     },
   };
 }
@@ -580,6 +592,15 @@ async function resolveSynthesizerPreference(
     };
   }
 
+  if (explicitStrategy !== undefined) {
+    return {
+      preference: { strategy: explicitStrategy },
+      warnings: [
+        "No --parent-model or --judge-model was provided; the judge will use the selected harness default model.",
+      ],
+    };
+  }
+
   const harness = defaultHarnessSelector.selectHarness({
     workerId: "judge",
     policy: composition.harnessSelectionPolicy,
@@ -601,6 +622,7 @@ async function resolveJudgeModel(
     return resolveModelEntry(options.judgeModel, {
       cwd,
       opencodeModels: knownOpenCodeModels(composition),
+      cursorModels: knownCursorModels(composition),
     });
   }
 
@@ -618,6 +640,7 @@ async function resolveJudgeModel(
   return resolveModelEntry(options.parentModel, {
     cwd,
     opencodeModels: knownOpenCodeModels(composition),
+    cursorModels: knownCursorModels(composition),
   });
 }
 
@@ -627,6 +650,39 @@ function knownOpenCodeModels(
   return composition.opencodeModels.length === 0
     ? undefined
     : composition.opencodeModels;
+}
+
+function knownCursorModels(
+  composition: ResolvedPanelComposition,
+): string[] | undefined {
+  return composition.cursorModels.length === 0
+    ? undefined
+    : composition.cursorModels;
+}
+
+function rejectCursorWithCliTransport(options: CliOptions): void {
+  if (options.transport !== "cli") {
+    return;
+  }
+  const cursorEntry = [
+    options.parentModel,
+    options.judgeModel,
+    ...(options.models ?? []),
+  ].find((entry) => entryForcesCursor(entry));
+  if (cursorEntry !== undefined) {
+    throw new UsageError(
+      `Cursor model entry "${cursorEntry}" requires --transport sdk; the cursor harness has no cli transport adapter.`,
+    );
+  }
+  if (options.synthesizer === "cursor") {
+    throw new UsageError(
+      "--synthesizer cursor requires --transport sdk; the cursor harness has no cli transport adapter.",
+    );
+  }
+}
+
+function entryForcesCursor(entry: string | undefined): boolean {
+  return /^cursor:/u.test(entry ?? "");
 }
 
 export function renderMarkdownReport(
@@ -755,7 +811,7 @@ export function usage(): string {
     "  --json                    Print complete PanelResult JSON.",
     "  --transport <mode>        Worker transport: sdk or cli (default: sdk).",
     "  --judge-model <entry>     Override the default parent-model judge.",
-    "  --synthesizer <strategy>  parent-agent, deterministic, opencode, or claude-code.",
+    "  --synthesizer <strategy>  parent-agent, deterministic, opencode, cursor, or claude-code.",
     "  --timeout-ms <n>          Per-worker timeout.",
   ].join("\n");
 }

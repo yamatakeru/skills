@@ -21,7 +21,8 @@ describe("Fusion adapter registry", () => {
     expect(() =>
       registry.selectHarness({
         workerId: "worker-1",
-        policy: { availableHarnesses: ["claude-code"] },
+        harnessPreference: { kind: "claude-code", invocation: "headless" },
+        policy: {},
       }),
     ).toThrow("not registered");
   });

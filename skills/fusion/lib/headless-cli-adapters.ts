@@ -13,6 +13,7 @@ export interface CommandExecution {
   command: string;
   args: string[];
   cwd?: string;
+  env?: Record<string, string | undefined>;
   timeoutMs?: number;
 }
 
@@ -153,6 +154,10 @@ export async function executeCommand(
     let timedOut = false;
     const child = spawn(execution.command, execution.args, {
       cwd: execution.cwd,
+      env:
+        execution.env === undefined
+          ? process.env
+          : { ...process.env, ...execution.env },
       stdio: ["ignore", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];

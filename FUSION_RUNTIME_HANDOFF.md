@@ -1,12 +1,131 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-06 (SDK transport round — complete)
+Date: 2026-07-07 (cursor harness round — phase 2 implemented, review pending)
 
 This handoff captures the state of the Fusion runtime after the usable
 milestone, the worker-investigation round, the harness-backed judge round,
-the upstream fidelity round, and the SDK transport round (reserved
-milestones 1 and 6). The design authority is `docs/fusion/` (spec, domain
-model, glossary, ADR 0001-0029).
+the upstream fidelity round, the SDK transport round (reserved milestones 1
+and 6), and phase 1 of the cursor harness round. The design authority is
+`docs/fusion/` (spec, domain model, glossary, ADR 0001-0032).
+
+## Cursor Harness Round (2026-07-07): Phase 2 Implemented (Review Pending)
+
+Phase 2 landed on `feature/cursor-harness` (implemented by Codex/GPT-5.5
+from ADR 0030/0031/0032; committed and verified by the parent agent). All
+phase-2 scope items shipped: `cursor` HarnessKind with `cursor:`-prefix-only
+routing and `cursor-agent models` availability check (cli-transport
+selection is a disclosed error), the ADR 0031 `PanelSpec.workers` /
+`WorkerSlotPreference` migration with `modelPreferences` and
+`fusionForcedHarnesses` removed shim-free, the cursor SDK adapter
+(`lib/cursor-sdk-adapter.ts`: spawn + full stream parse + run-scoped
+`CURSOR_CONFIG_DIR` deny injection + worker/judge profiles + standing gap
+disclosures), judge eligibility, SKILL.md 0.8.0, schema regen. `bun test`
+106 pass / 0 fail; typecheck clean.
+
+Phase-2 verify results:
+
+- `Read(**)` deny for the judge profile: **verified effective live**
+  (cursor-agent 2026.07.01, Pro). A forced Read under the judge deny list
+  returned `result.error.errorMessage: "Permission denied"`, the model never
+  saw the file content, and the worker survived and disclosed. Note the
+  denial arrives as an `error` result variant, NOT `permissionDenied`; the
+  adapter recognizes the `error` variant (recorded as evidence, not counted
+  as a denied request since `error` is not always a denial).
+- Still open (carried forward): `Shell(command:args)` vs space syntax in
+  allow entries (moot under the web-enabled profile, relevant if the
+  no-`--force` profile returns), `CURSOR_CONFIG_DIR` merge-vs-replace,
+  hooks.json Task interception feasibility.
+
+Review: simplify considered (adapter matches house style; the
+`unmappedPreferenceWarnings` triplication across adapters differs per
+harness-mapped preferences and was left as an out-of-round refactor);
+CodeRabbit reviewed the branch (1 minor finding — injected-config temp-dir
+leak on writeFile failure — fixed).
+
+Recorded smoke (ADR 0030 acceptance criteria 2-3): panel run
+`fusion-94e9eb05-8a36-4020-bf9a-20092d92d850` (recorded under
+`.fusion-runs/`) ran two cursor workers (`cursor:auto`,
+`cursor:composer-2.5`) and a cursor judge (`cursor:composer-2.5`) — panel
+`ok`, judge produced the five-key analysis with attribution, all required
+provenance events present, requested-id vs observed-display-name evidence
+recorded (`auto` / `Auto`), every standing gap disclosure present in worker
+evidence and warnings, and compliance landed at the expected `degraded`
+tier ("isolated context not proven; observed tool policy does not match
+request"), consistent with ADR 0032's expected initial tier.
+
+PR #3 CodeRabbit review triage (2026-07-08, recorded panel
+`fusion-fbd4baae-e161-4ec2-9e87-5184e00f7e02`: gpt-5.5 + deepseek-v4-flash
+via opencode + composer-2.5 via cursor, sonnet judge — first production use
+of the cursor harness): 4 findings, none merge-blocking, unanimous across
+workers. Dispositions: (1) "full-capable" wording — rejected; it is the
+defined capability-class term from the "Full-Capable Harness Criteria"
+section directly above, and the suggested rewording would erase the
+deliberate full-vs-degraded distinction between OpenCode/Claude Code and
+cursor; (2) executor-throw cleanup regression test — adopted in the PR;
+(3) `LazyCursorModels`/`LazyOpenCodeModels` duplication — real but
+deferred, consistent with the recorded `unmappedPreferenceWarnings`
+precedent; extract a shared `LazyModelList` when a third copy appears
+(e.g. the pi harness); (4) adapter-registry duplicate registered-checks —
+rejected; the guards check different values (explicit preference vs
+selector output), and if anything the two error messages should be
+differentiated, not shared.
+
+Remaining before merge: none blocking; merge when ready.
+
+## Cursor Harness Round (2026-07-07): Phase 1 (Capability Probe) Complete
+
+Adopts Cursor as the third reference harness (ADR 0030: kind renamed
+`cursor-cli`→`cursor`, explicit `cursor:` prefix routing only, default
+composition unchanged, judge-eligible, full tier a target not a gate,
+independent of milestone 5). Grilled decisions also promoted per-worker
+harness routing into the portable contract: `PanelSpec.workers?:
+WorkerSlotPreference[]` (`{model?, harness?}`) replaces `modelPreferences`
+and the untyped `fusionForcedHarnesses` userPolicy bag (ADR 0031). The
+probe-informed transport and enforcement decisions are ADR 0032.
+
+Probe (live, cursor-agent 2026.07.01-41b2de7; account upgraded Free→Pro
+mid-probe after hitting the Free usage limit — the non-JSON
+`ActionRequiredError` failure mode is itself a recorded finding):
+
+- stream-json is Claude-Code-shaped and satisfies ADR 0028's
+  protocol-surface `sdk` definition: init (session_id, model display name,
+  permissionMode), tool_call started/completed with structured results
+  (`success` / `rejected` / `permissionDenied` / `writePermissionDenied`),
+  terminal result with usage tokens. Undocumented `thinking` / `connection`
+  / `retry` events appear; parser must tolerate non-JSON lines.
+- Enforcement recipe verified end to end: `CURSOR_CONFIG_DIR` (undocumented)
+  injects a run-scoped `cli-config.json` without touching the user's global
+  config or breaking login auth; headless default auto-rejects
+  non-allowlisted shell without hanging and the worker survives and
+  discloses (the ADR 0029 target semantics); `Write(**)` / `Delete(**)` /
+  `Mcp(*)` denies hold, including under `--add-dir`.
+- Hard limits found: deny precedence is absolute (specific allows cannot
+  pierce `Shell(**)`), web tools run only under `--force`, so web tools and
+  a shell allowlist are mutually exclusive; `--mode ask/plan` hard-rejects
+  shell but does NOT hard-block edits (forced editToolCall wrote a real
+  file); `Task` (subagents) is undeniable by any probed token; reads are
+  open by default ($HOME readable, no workspace jail); untrusted dirs
+  require `--trust`; 3 parallel spawns clean; `cursor-agent models`
+  enumerates; init echoes the model display name, not the id.
+- Decisions (ADR 0032): sdk-only adapter (no cursor CLI-transport path);
+  worker profile = `--trust --force` + deny `Shell(**)/Write(**)/
+  Delete(**)/Mcp(*)` (web on, shell off, divergences disclosed — upstream
+  fidelity beat the local ADR 0022 allowlist when forced to choose); judge
+  profile = no `--force` + the same denies plus `Read(**)` (untested,
+  verify in phase 2); recursion denial stays prompt-level with a standing
+  evidence gap (hooks.json interception is the follow-up); expected initial
+  tier for cursor workers is `degraded`.
+
+Phase 2 (implementation, Codex) scope: `cursor` in `HarnessKind` and
+routing (`cursor:` prefix, `resolveModelEntry`, `cursor-agent models`
+availability check), the ADR 0031 contract migration, the cursor SDK
+adapter (spawn + full stream parse + config injection + display-name/id
+evidence), judge eligibility (`isImplementedJudgeHarness`), SKILL.md bump,
+schema regen. Phase 2 verify list: `Read(**)` deny for the judge profile,
+`Shell(command:args)` vs space syntax in allow entries, whether
+`CURSOR_CONFIG_DIR` merges with or replaces the user global config
+(standing evidence note either way), hooks.json Task interception
+feasibility. Acceptance criteria are enumerated in ADR 0030.
 
 ## SDK Transport Round (2026-07-06): Complete
 
@@ -365,15 +484,21 @@ recorder refuses to write otherwise without an explicit override.
   after a review panel showed it silently misattributes model variants.
 - Judge quote verification is substring matching; paraphrased quotes surface
   as warnings even when semantically faithful.
-- Forced per-worker harness routing travels through
-  `harnessSelectionPolicy.userPolicy.fusionForcedHarnesses` because `PanelSpec`
-  has no per-worker harness field; revisit if the portable contract grows one.
+- Forced per-worker harness routing now travels through the portable
+  `PanelSpec.workers` / `WorkerSlotPreference` contract (ADR 0031, landed
+  with cursor round phase 2); the `fusionForcedHarnesses` userPolicy bag is
+  gone.
 - Judge harness selection is resolved eagerly in the CLI
   (`resolveSynthesizerPreference`) rather than inside `buildJudgeRequest`;
   unifying it would change the documented `SynthesizerPreference` contract
   and was deliberately skipped in the simplify round.
 
 ## Next Milestones (reserved)
+
+0. IN FLIGHT (2026-07-07, ADR 0030-0032): cursor harness round — phase 1
+   (probe + decisions + docs) and phase 2 (implementation, on
+   `feature/cursor-harness`) complete; review, recorded smokes, and merge
+   pending. Independent of milestone 5.
 
 1. DONE (2026-07-06, ADR 0028): SDK transport with tool-policy proof,
    session/tool-event capture, and programmatic permission handling; the

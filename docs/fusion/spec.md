@@ -5,7 +5,7 @@
 Draft
 
 This document sketches the portable Fusion protocol contract. It is
-harness-neutral and does not make OpenCode, Cursor CLI, Claude Code, pi, or any
+harness-neutral and does not make OpenCode, Cursor, Claude Code, pi, or any
 other concrete harness normative.
 
 ## Core Invariants
@@ -23,10 +23,12 @@ The initial reference runtime targets headless worker invocation only. SDK or AP
 control is preferred over raw CLI control when available because it can provide
 stronger session, permission, event, and metadata evidence.
 
-The current reference harness set is `opencode`, `cursor-cli`, `claude-code`, and
+The current reference harness set is `opencode`, `cursor`, `claude-code`, and
 `pi`. The reference selector prefers `opencode` by default and prefers
 `claude-code` for Claude-family model preferences when available. This is an
-overrideable reference policy, not a portable protocol requirement.
+overrideable reference policy, not a portable protocol requirement. `cursor`
+is the third implemented reference target, reachable only through explicit
+selection; `pi` remains a name-only candidate.
 
 If `availableHarnesses` is provided as an empty list, no harness is selectable;
 the selector should fail rather than silently choosing a default.
@@ -91,9 +93,12 @@ a model is allowed only by explicit selection.
 
 Model entries route to harnesses by pattern (`provider/model` to OpenCode,
 Claude aliases to Claude Code, alias-table names via the table), with optional
-`opencode:` / `claude-code:` forcing prefixes. Unrecognized entries are errors.
-While the harness set is OpenCode and Claude Code, Claude models route
-unconditionally to Claude Code.
+`opencode:` / `claude-code:` / `cursor:` forcing prefixes. Unrecognized
+entries are errors. Claude models route unconditionally to Claude Code.
+Cursor-backed entries are reachable only through the explicit `cursor:`
+prefix because Cursor's model namespace overlaps every other provider's
+(ADR 0030); resolved slot routing is carried as
+`WorkerSlotPreference.harness` (ADR 0031).
 
 ## Reference Worker Prompt Policy
 
@@ -136,6 +141,13 @@ operations, destructive commands, and recursive delegation remain denied by
 default. Same-panel tool parity and provenance recording of differences follow
 ADR 0006; the opencode adapter's inability to enforce tool policy remains
 recorded degraded-compliance evidence.
+
+On the cursor harness the full default policy is not expressible: web tools
+and a shell allowlist are mutually exclusive under its absolute-precedence
+permission model, recursion denial for its subagent tool is unenforceable,
+and reads are open by default. The cursor worker profile keeps web tools and
+denies shell entirely, with every divergence disclosed as warnings and
+compliance evidence (ADR 0032).
 
 ## Reference Runtime Recording
 
@@ -191,8 +203,9 @@ judge-defaults-to-outer-model behavior. `--judge-model <model-entry>`
 overrides it and resolves through the same model-entry routing as panel
 composition; it maps to `SynthesizerPreference.model`. `--synthesizer
 parent-agent` and `--synthesizer deterministic` remain implemented but are
-explicit-only escapes, never a silent default. The panel-wide timeout and
-`ReasoningPreference` also apply to the judge invocation.
+explicit-only escapes, never a silent default. `cursor` is also a valid
+harness-backed judge strategy on the SDK transport. The panel-wide timeout
+and `ReasoningPreference` apply to the judge invocation.
 
 The judge invocation reuses the worker adapter path with its own provenance:
 `synthesis.started` / `synthesis.completed` carry the judge's strategy,
@@ -230,8 +243,8 @@ complete without model-backed synthesis. When the judge succeeds, the
 deterministic output is demoted to recorded artifacts only (audit reference);
 otherwise it remains in the panel report. It is a stability and testability
 mechanism, not the final quality target. Synthesis artifacts identify their
-strategy, for example `parent-agent`, `deterministic`, `opencode`, or
-`claude-code`.
+strategy, for example `parent-agent`, `deterministic`, `opencode`, `cursor`,
+or `claude-code`.
 
 Partial failure defaults follow OpenRouter semantics (ADR 0019):
 `allowPartial: true`, continue with disclosure when at least one worker
@@ -274,7 +287,7 @@ type ComplianceTier =
 
 type HarnessKind =
   | "opencode"
-  | "cursor-cli"
+  | "cursor"
   | "pi"
   | "claude-code"
   | string;
@@ -367,8 +380,13 @@ interface ContextManifest {
 
 interface PanelSpec {
   workerCount: number; // 1..20 (MAX_PANEL_WORKERS)
-  modelPreferences?: ModelPreference[];
+  workers?: WorkerSlotPreference[]; // index-aligned; missing entries use defaults (ADR 0031)
   parentModel?: ModelPreference;
+}
+
+interface WorkerSlotPreference {
+  model?: ModelPreference;
+  harness?: HarnessPreference;
 }
 
 interface HarnessSelectionPolicy {
