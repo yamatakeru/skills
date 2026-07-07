@@ -552,7 +552,13 @@ describe("Fusion Cursor SDK adapter", () => {
     await writeFile(scriptPath, cursorHookScriptContent(), "utf8");
     const env = {
       ...process.env,
-      FUSION_CURSOR_SHELL_ALLOWLIST: JSON.stringify(["git status", "ls", "cat"]),
+      FUSION_CURSOR_SHELL_ALLOWLIST: JSON.stringify([
+        "git status",
+        "ls",
+        "cat",
+        "rg",
+        "git log",
+      ]),
       FUSION_CURSOR_READ_ROOTS: JSON.stringify([scratch]),
     };
     const runHook = (payload: unknown): { permission?: string } => {
@@ -571,6 +577,31 @@ describe("Fusion Cursor SDK adapter", () => {
       expect(shell("lsof").permission).toBe("deny");
       expect(shell("catastrophe.sh").permission).toBe("deny");
       expect(shell("rm -rf /").permission).toBe("deny");
+      for (const command of [
+        "ls && rm -rf /",
+        "git status; rm -rf /",
+        "git status || rm -rf /",
+        "rg pattern | sh",
+        "ls > /tmp/evil",
+        "ls >> /tmp/evil",
+        "cat < /etc/shadow",
+        "ls $(rm -rf /)",
+        "ls `rm -rf /`",
+        "cat <(echo x)",
+        "ls & rm -rf /",
+        "ls" + "\n" + "rm -rf /",
+        "FOO=bar ls",
+      ]) {
+        expect(shell(command).permission).toBe("deny");
+      }
+      for (const command of [
+        'rg "a && b"',
+        "rg 'a && b'",
+        'git log --grep="x|y"',
+        "rg foo$ file.txt",
+      ]) {
+        expect(shell(command).permission).toBe("allow");
+      }
 
       expect(
         runHook({ hook_event_name: "preToolUse", tool_name: "Task" }).permission,

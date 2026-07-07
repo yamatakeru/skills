@@ -364,6 +364,59 @@ function isPathInsideRoot(candidate, root) {
   );
 }
 
+function findShellControlSyntax(command) {
+  let inSingleQuotes = false;
+  let inDoubleQuotes = false;
+  let escaping = false;
+
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index];
+
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+
+    if (!inSingleQuotes && char === "\\\\") {
+      escaping = true;
+      continue;
+    }
+
+    if (!inDoubleQuotes && char === "'") {
+      inSingleQuotes = !inSingleQuotes;
+      continue;
+    }
+
+    if (!inSingleQuotes && char === '"') {
+      inDoubleQuotes = !inDoubleQuotes;
+      continue;
+    }
+
+    if (inSingleQuotes || inDoubleQuotes) {
+      continue;
+    }
+
+    if (
+      char === ";" ||
+      char === "&" ||
+      char === "|" ||
+      char === "\\x60" ||
+      char === "<" ||
+      char === ">" ||
+      char === "\\n" ||
+      char === "\\r"
+    ) {
+      return "has control syntax";
+    }
+
+    if (char === "$" && command[index + 1] === "(") {
+      return "has control syntax";
+    }
+  }
+
+  return undefined;
+}
+
 let raw = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
@@ -381,6 +434,14 @@ process.stdin.on("end", () => {
   if (eventName === "beforeShellExecution") {
     const command = String(payload.command || "").trim();
     const allowlist = parseJsonArrayEnv("FUSION_CURSOR_SHELL_ALLOWLIST");
+    if (findShellControlSyntax(command)) {
+      respond({
+        permission: "deny",
+        user_message: "Shell command denied by Fusion policy.",
+        agent_message: POLICY_NAME + " denied shell command containing shell control syntax.",
+      });
+      return;
+    }
     if (allowlist.some((prefix) => command === prefix || command.startsWith(prefix + " "))) {
       respond({ permission: "allow" });
       return;

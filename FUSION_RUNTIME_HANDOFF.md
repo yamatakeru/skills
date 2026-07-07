@@ -31,7 +31,9 @@ one line each:
 - `beforeShellExecution` implements the ADR 0022 read-only allowlist under
   `--force` (web tools XOR shell allowlist is dissolved).
 - `beforeReadFile` reproduces ADR 0029 deny-unless-declared read roots.
-- `failClosed: true` blocks on hook crash (no fail-open policy loss).
+- `failClosed: true` blocks when the hook fails to start (probed with a
+  nonexistent hook command; a hook that starts and then crashes mid-run
+  was not probed).
 - `CURSOR_CONFIG_DIR` permissions **replace** the global config (marker
   deny control test); injected runs never touch the global config, but
   non-injected runs write model state back to it — always inject.
@@ -81,6 +83,30 @@ can read arbitrary paths shell-side. This is parity with the ADR 0022
 allowlist on every harness (opencode's permission map allows `cat *`
 too), not a cursor-specific regression; recorded as a cross-harness
 follow-up question for the allowlist policy itself.
+
+PR #4 review triage (2026-07-08): CodeRabbit (GitHub PR integration; the
+CLI review hung and was abandoned) returned three findings. A recorded
+Fusion cheap panel (`fusion-1299bc41-8b92-42e3-a467-395bb7a94a66`;
+partial — the fable worker and judge failed on claude-code errors,
+gpt-5.5 and deepseek completed) plus parent-agent verification judged
+all three valid. The two ADR 0034 wording fixes landed (the fail-closed
+evidence shows startup failure, not a crash; the `Shell(**)` prose
+untangled). The major finding was real: the hook's prefix match admitted
+compound commands (`git status && rm -rf /` passed
+`startsWith("git status ")`) while the hook is the sole worker shell
+authority. Fixed (Codex, parent-reviewed): the embedded hook script now
+runs a quote-aware control-syntax scanner before prefix matching —
+unquoted `;`, `&`, `|`, backtick, `<`, `>`, `$(`, and newlines deny,
+while quoted metacharacters (`rg "a && b"`, `git log --grep="x|y"`) and
+bare `$` stay allowed — with 17 new behavioral assertions; `bun test`
+111 pass, typecheck clean. Parity verified from opencode source
+(`packages/opencode/src/tool/shell.ts`): opencode tree-sitter-parses
+compound commands and permission-checks each subcommand separately, so
+it does NOT share this hole; the earlier `cat` parity note applies only
+to single-command shell-side reads. New follow-ups: whether opencode's
+`cmd *` pattern admits redirection on a single statement (`ls > file`),
+and a probe for cursor `failClosed` on a hook that starts and then
+crashes mid-run.
 
 ## Cursor Harness Round (2026-07-07): Phase 2 Implemented (Review Pending)
 

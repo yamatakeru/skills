@@ -43,9 +43,11 @@ findings are live-verified:
   receives the absolute path and can deny reads outside declared roots
   (denial surfaces as the known `error`/"blocked by a hook" variant). The
   open-by-default read gap closes.
-- **`failClosed: true` holds when the hook crashes.** A nonexistent hook
-  command blocked the action instead of failing open, so hook failure
-  cannot silently disable policy.
+- **`failClosed: true` holds when the hook fails to start.** A
+  nonexistent hook command blocked the action instead of failing open, so
+  a hook that cannot execute does not silently disable policy. (A hook
+  that starts and then crashes mid-run was not probed; fail-closed there
+  is documented behavior, not verified.)
 - **Hooks also gate subagent-internal tool calls** (`preToolUse` fired for
   a spawned subagent's `Read`), giving defense in depth if a Task ever
   slips through.
@@ -66,14 +68,18 @@ findings are live-verified:
 ### Worker profile (hooks-enforced, web-enabled)
 
 Workers keep `--trust --force` and the run-scoped `CURSOR_CONFIG_DIR`
-config with deny `["Shell(**)" removed — see below]`, and add a run-scoped
-**hooks layer**: the adapter creates a scratch run directory as the
-process cwd containing `.cursor/hooks.json` and the hook script, with
-`failClosed: true` on every gating entry:
+config, and add a run-scoped **hooks layer**: the adapter creates a
+scratch run directory as the process cwd containing `.cursor/hooks.json`
+and the hook script, with `failClosed: true` on every gating entry:
 
 - `beforeShellExecution`: allow the ADR 0022 read-only command list, deny
   otherwise. The config-level `Shell(**)` deny is dropped so the allowlist
-  can function; the hook is now the shell authority.
+  can function; the hook is now the shell authority. Before prefix
+  matching, the hook rejects any command containing unquoted shell
+  control syntax (command separators, `&`, pipes, redirection, backtick
+  or `$(` command substitution), so an allowlisted prefix cannot smuggle
+  a compound command such as `git status && rm -rf /`; quoted
+  metacharacters (`rg "a && b"`) remain allowed.
 - `preToolUse`: deny `tool_name === "Task"` (recursion denial, enforced).
 - `beforeReadFile`: deny paths outside the declared read roots
   (`readRoots` plus the target workspace), restoring ADR 0029
