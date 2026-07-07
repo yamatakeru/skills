@@ -1,12 +1,112 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-07 (cursor harness round — phase 2 implemented, review pending)
+Date: 2026-07-08 (cursor probe round — probe complete, phase 3 in flight)
 
 This handoff captures the state of the Fusion runtime after the usable
 milestone, the worker-investigation round, the harness-backed judge round,
 the upstream fidelity round, the SDK transport round (reserved milestones 1
-and 6), and phase 1 of the cursor harness round. The design authority is
-`docs/fusion/` (spec, domain model, glossary, ADR 0001-0032).
+and 6), the cursor harness round (PR #3, merged), and the cursor probe
+round. The design authority is `docs/fusion/` (spec, domain model,
+glossary, ADR 0001-0034).
+
+## Cursor Probe Round (2026-07-08): Probe Complete, Phase 3 In Flight
+
+Goal: resolve the two degraded reasons cursor workers carried ("isolated
+context not proven; observed tool policy does not match request") — or
+establish they are unresolvable. Grilled decisions before the probe:
+isolation claims use panel-state semantics uniformly (ADR 0033; glossary
+sharpened), the probe ran under a mandatory restore-to-pristine
+constraint, and results land on `feature/cursor-probe-round`.
+
+Probe results (cursor-agent 2026.07.01-41b2de7, Pro; fourteen recorded
+runs t1-t14; all live): everything closed in cursor's favor — see ADR
+0034 for the full findings and the decided hooks enforcement profile. In
+one line each:
+
+- `<cwd>/.cursor/hooks.json` fires in headless `--print` runs (cwd-based;
+  `CURSOR_CONFIG_DIR` hooks and `--add-dir` hooks do not load).
+- `preToolUse` deny blocks `Task` (recursion denial enforceable;
+  `subagentStart` never fires headless); hooks also gate subagent-internal
+  tool calls.
+- `beforeShellExecution` implements the ADR 0022 read-only allowlist under
+  `--force` (web tools XOR shell allowlist is dissolved).
+- `beforeReadFile` reproduces ADR 0029 deny-unless-declared read roots.
+- `failClosed: true` blocks when the hook fails to start (probed with a
+  nonexistent hook command; a hook that starts and then crashes mid-run
+  was not probed).
+- `CURSOR_CONFIG_DIR` permissions **replace** the global config (marker
+  deny control test); injected runs never touch the global config, but
+  non-injected runs write model state back to it — always inject.
+- `AGENTS.md` / `.cursor/rules/*.mdc` inject from cwd; account-level User
+  Rules inject regardless of injection (created/verified/deleted a marker
+  rule) — permanent compliance note, not an isolation breaker (ADR 0033).
+
+Cleanup proof: `~/.cursor/cli-config.json` and `~/.cursor/hooks.json`
+byte-identical to pre-probe snapshots (diff-verified); the marker User
+Rule deleted and its absence re-verified live (t14). Probe artifacts
+(transcripts, hook event logs, restore script, snapshots) under
+`~/.claude/jobs/09634e98/tmp/probe/`.
+
+Phase 3 (implemented by Codex/GPT-5.5 from ADR 0033/0034; reviewed and
+patched by the parent agent): `adapterClaimsIsolatedContext` flipped to
+the uniform fresh+session-id rule; hooks profile implemented
+(scratch-cwd run dir with `.cursor/hooks.json` + embedded bun hook
+script, failClosed on every gating entry, shell allowlist via
+`beforeShellExecution`, Task deny via `preToolUse`, read-root gate via
+`beforeReadFile`; worker config deny drops `Shell(**)` — the hook is the
+shell authority — judge config deny unchanged); observed tool policy now
+echoes the request like the incumbent adapters; ADR 0032 standing-gap
+warnings replaced with the ADR 0034 disclosure notes; hook-blocked
+`error` results ("blocked by a hook") count as denials while generic
+errors still do not. Parent-agent review fixes: word-boundary allowlist
+matching (`ls` must not admit `lsof`; exact match or prefix+space,
+matching the OpenCode permission-map semantics) and an empty judge
+shell allowlist (config `Shell(**)` deny is the judge authority; the
+note no longer implies a judge allowlist). `bun test` 111 pass / 0
+fail; typecheck clean; simplify considered (surgical fixes only).
+
+Recorded phase-3 smoke: panel run
+`fusion-28e7cf14-f853-4d1b-acf0-1cc314a97bfa` (two cursor workers
+`cursor:auto` + `cursor:composer-2.5`, cursor judge, recorded) — panel
+`ok`, **compliance tier `full`** with `isolatedContext: true` on both
+workers; live enforcement evidence inside the run: `git status` allowed
+by the hook allowlist, `echo` denied ("Shell command denied by Fusion
+policy"), `/etc/hosts` read denied ("Read outside declared roots denied
+by Fusion policy"), workers survived and disclosed all denials;
+requested-id `auto` vs observed display-name `Auto` evidence intact.
+Both degraded reasons from the phase-2 smoke are resolved.
+
+Shell-cwd note: `git status` inside the smoke reported the repository
+even though the process cwd is the scratch dir — the Shell tool appears
+to execute relative to the workspace root, and `cat` in the allowlist
+can read arbitrary paths shell-side. This is parity with the ADR 0022
+allowlist on every harness (opencode's permission map allows `cat *`
+too), not a cursor-specific regression; recorded as a cross-harness
+follow-up question for the allowlist policy itself.
+
+PR #4 review triage (2026-07-08): CodeRabbit (GitHub PR integration; the
+CLI review hung and was abandoned) returned three findings. A recorded
+Fusion cheap panel (`fusion-1299bc41-8b92-42e3-a467-395bb7a94a66`;
+partial — the fable worker and judge failed on claude-code errors,
+gpt-5.5 and deepseek completed) plus parent-agent verification judged
+all three valid. The two ADR 0034 wording fixes landed (the fail-closed
+evidence shows startup failure, not a crash; the `Shell(**)` prose
+untangled). The major finding was real: the hook's prefix match admitted
+compound commands (`git status && rm -rf /` passed
+`startsWith("git status ")`) while the hook is the sole worker shell
+authority. Fixed (Codex, parent-reviewed): the embedded hook script now
+runs a quote-aware control-syntax scanner before prefix matching —
+unquoted `;`, `&`, `|`, backtick, `<`, `>`, `$(`, and newlines deny,
+while quoted metacharacters (`rg "a && b"`, `git log --grep="x|y"`) and
+bare `$` stay allowed — with 17 new behavioral assertions; `bun test`
+111 pass, typecheck clean. Parity verified from opencode source
+(`packages/opencode/src/tool/shell.ts`): opencode tree-sitter-parses
+compound commands and permission-checks each subcommand separately, so
+it does NOT share this hole; the earlier `cat` parity note applies only
+to single-command shell-side reads. New follow-ups: whether opencode's
+`cmd *` pattern admits redirection on a single statement (`ls > file`),
+and a probe for cursor `failClosed` on a hook that starts and then
+crashes mid-run.
 
 ## Cursor Harness Round (2026-07-07): Phase 2 Implemented (Review Pending)
 

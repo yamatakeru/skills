@@ -73,6 +73,11 @@ The property that a worker runs in a separate or otherwise proven clean context
 so that prior panel state, peer outputs, or synthesis drafts cannot influence the
 worker.
 
+Isolation is about panel state only. Harness-level environment inputs that
+reach every session alike (user-level rules or instructions, global harness
+configuration) do not negate isolation; they are disclosed as compliance
+evidence instead.
+
 ## Full Compliance
 
 A Fusion run that uses true independent workers, same prompt, same shared

@@ -12,7 +12,7 @@ compatibility: >-
   bundled self-contained TypeScript CLI; no node_modules are required inside the
   skill directory.
 metadata:
-  version: "0.8.0"
+  version: "0.9.0"
   kind: "blind-panel synthesis"
   mode: "blind"
   canonical-runtime: "bun-cli"
@@ -182,10 +182,11 @@ directory with `--read-root`. A denied request surfaces to the worker as a
 structured tool error: the worker keeps running and discloses the denial in
 its answer instead of being dropped from the panel.
 
-Cursor is a disclosed degraded harness in this release. Its web-enabled worker
-profile denies shell entirely instead of providing the read-only bash
-allowlist, reads are open by default so `--read-root` only maps to
-`--add-dir`, and recursive delegation cannot currently be denied.
+Cursor workers use a run-scoped scratch cwd with project hooks to enforce the
+read-only bash allowlist, recursive delegation denial, and declared read-root
+semantics while keeping web tools enabled. Cursor sessions still disclose
+account-level User Rules injection and undocumented `CURSOR_CONFIG_DIR` plus
+headless hook loading as smoke-monitored environment surfaces.
 
 ## Partial Results
 

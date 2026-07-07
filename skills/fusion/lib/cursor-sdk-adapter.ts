@@ -1,6 +1,7 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { defaultPolicies } from "./defaults";
 import {
   executeCommand,
   modelPreferenceToModel,
@@ -9,7 +10,6 @@ import {
   type CommandResult,
 } from "./headless-cli-adapters";
 import type {
-  ToolsPolicy,
   WorkerRequest,
   WorkerResult,
   WorkerRunner,
@@ -59,8 +59,29 @@ interface CursorToolObservation {
 
 type ParsedCursorStream = { ok: true; result: CursorStreamResult };
 
-const workerDenyList = ["Shell(**)", "Write(**)", "Delete(**)", "Mcp(*)"];
-const judgeDenyList = [...workerDenyList, "Read(**)"];
+interface CursorRunMaterialization {
+  configDir: string;
+  scratchDir: string;
+  hookScriptPath: string;
+  hookEvents: CursorHookEvent[];
+  hookFailClosed: boolean;
+  shellAllowlist: string[];
+  shellAllowlistSource: string;
+  readRoots: string[];
+}
+
+type CursorHookEvent =
+  | "beforeShellExecution"
+  | "preToolUse"
+  | "beforeReadFile";
+
+const cursorHookEvents: CursorHookEvent[] = [
+  "beforeShellExecution",
+  "preToolUse",
+  "beforeReadFile",
+];
+const workerDenyList = ["Write(**)", "Delete(**)", "Mcp(*)"];
+const judgeDenyList = ["Shell(**)", ...workerDenyList, "Read(**)"];
 const toleratedCursorEventTypes = new Set([
   "system",
   "user",
@@ -85,19 +106,22 @@ export class CursorSdkAdapter implements WorkerRunner {
   async runWorker(request: WorkerRequest): Promise<WorkerResult> {
     const startedAt = Date.now();
     const profile = cursorExecutionProfile(request);
-    let configDir: string | undefined;
+    let materialization: CursorRunMaterialization | undefined;
     try {
-      configDir = await writeCursorConfig(profile);
+      materialization = await materializeCursorRun(request, profile);
       const commandResult = await this.executor({
         command: this.command,
         args: buildCursorSdkArgs(request),
-        cwd:
-          request.environment?.workingDirectory ??
-          request.environment?.workspaceRoot,
-        env: { CURSOR_CONFIG_DIR: configDir },
+        cwd: materialization.scratchDir,
+        env: cursorRunEnv(materialization),
         timeoutMs: request.budget?.timeoutMs,
       });
-      return cursorSdkResultToWorkerResult(request, commandResult, profile);
+      return cursorSdkResultToWorkerResult(
+        request,
+        commandResult,
+        profile,
+        materialization,
+      );
     } catch (error) {
       return cursorWorkerResult({
         request,
@@ -107,14 +131,13 @@ export class CursorSdkAdapter implements WorkerRunner {
         usage: { durationMs: Date.now() - startedAt },
         tools: [],
         nonJsonLines: [],
-        warnings: cursorSdkWarnings(request, profile, [], [], []),
+        warnings: cursorSdkWarnings(request, [], [], []),
         errors: [snippet(String(error))],
+        materialization,
       });
     } finally {
-      if (configDir !== undefined) {
-        await rm(configDir, { recursive: true, force: true }).catch(
-          () => undefined,
-        );
+      if (materialization !== undefined) {
+        await cleanupCursorRun(materialization);
       }
     }
   }
@@ -129,6 +152,9 @@ export function buildCursorSdkArgs(request: WorkerRequest): string[] {
   const model = modelPreferenceToModel(request.modelPreference);
   if (model !== undefined) {
     args.push("--model", model);
+  }
+  for (const root of cursorWorkspaceDirs(request)) {
+    args.push("--add-dir", root);
   }
   for (const root of request.environment?.readRoots ?? []) {
     args.push("--add-dir", root);
@@ -163,6 +189,303 @@ async function writeCursorConfig(
   return configDir;
 }
 
+async function materializeCursorRun(
+  request: WorkerRequest,
+  profile: CursorExecutionProfile,
+): Promise<CursorRunMaterialization> {
+  let configDir: string | undefined;
+  let scratchDir: string | undefined;
+  try {
+    configDir = await writeCursorConfig(profile);
+    scratchDir = await mkdtemp(join(tmpdir(), "fusion-cursor-run-"));
+    const hookScriptPath = join(scratchDir, "fusion-cursor-hook.js");
+    const materialization: CursorRunMaterialization = {
+      configDir,
+      scratchDir,
+      hookScriptPath,
+      hookEvents: cursorHookEvents,
+      hookFailClosed: true,
+      shellAllowlist: profile === "judge" ? [] : cursorShellAllowlist(request),
+      shellAllowlistSource:
+        profile === "judge"
+          ? "judge profile (no shell allowlist)"
+          : cursorShellAllowlistSource(request),
+      readRoots: cursorHookReadRoots(request, profile, scratchDir),
+    };
+    await writeCursorHooks(materialization);
+    return materialization;
+  } catch (error) {
+    await Promise.all([
+      configDir === undefined
+        ? Promise.resolve()
+        : rm(configDir, { recursive: true, force: true }).catch(() => undefined),
+      scratchDir === undefined
+        ? Promise.resolve()
+        : rm(scratchDir, { recursive: true, force: true }).catch(
+            () => undefined,
+          ),
+    ]);
+    throw error;
+  }
+}
+
+async function cleanupCursorRun(
+  materialization: CursorRunMaterialization,
+): Promise<void> {
+  await Promise.all([
+    rm(materialization.configDir, { recursive: true, force: true }).catch(
+      () => undefined,
+    ),
+    rm(materialization.scratchDir, { recursive: true, force: true }).catch(
+      () => undefined,
+    ),
+  ]);
+}
+
+async function writeCursorHooks(
+  materialization: CursorRunMaterialization,
+): Promise<void> {
+  const cursorDir = join(materialization.scratchDir, ".cursor");
+  await mkdir(cursorDir, { recursive: true });
+  await writeFile(
+    materialization.hookScriptPath,
+    cursorHookScriptContent(),
+    "utf8",
+  );
+  await writeFile(
+    join(cursorDir, "hooks.json"),
+    `${JSON.stringify(buildCursorHooksContent(materialization), null, 2)}\n`,
+    "utf8",
+  );
+}
+
+function buildCursorHooksContent(
+  materialization: CursorRunMaterialization,
+): {
+  version: 1;
+  hooks: Record<CursorHookEvent, Array<{ command: string; failClosed: true }>>;
+} {
+  const command = `bun ${shellQuote(materialization.hookScriptPath)}`;
+  return {
+    version: 1,
+    hooks: {
+      beforeShellExecution: [{ command, failClosed: true }],
+      preToolUse: [{ command, failClosed: true }],
+      beforeReadFile: [{ command, failClosed: true }],
+    },
+  };
+}
+
+function cursorRunEnv(
+  materialization: CursorRunMaterialization,
+): Record<string, string> {
+  return {
+    CURSOR_CONFIG_DIR: materialization.configDir,
+    FUSION_CURSOR_SHELL_ALLOWLIST: JSON.stringify(
+      materialization.shellAllowlist,
+    ),
+    FUSION_CURSOR_READ_ROOTS: JSON.stringify(materialization.readRoots),
+  };
+}
+
+function cursorShellAllowlist(request: WorkerRequest): string[] {
+  return request.toolsPolicy?.readOnlyBashCommands !== undefined
+    ? request.toolsPolicy.readOnlyBashCommands
+    : defaultPolicies.tools.readOnlyBashCommands ?? [];
+}
+
+function cursorShellAllowlistSource(request: WorkerRequest): string {
+  return request.toolsPolicy?.readOnlyBashCommands !== undefined
+    ? "request.toolsPolicy.readOnlyBashCommands"
+    : "defaultPolicies.tools";
+}
+
+function cursorHookReadRoots(
+  request: WorkerRequest,
+  profile: CursorExecutionProfile,
+  scratchDir: string,
+): string[] {
+  if (profile === "judge") {
+    return [];
+  }
+  return uniqueStrings([
+    scratchDir,
+    ...cursorWorkspaceDirs(request),
+    ...(request.environment?.readRoots ?? []),
+  ]);
+}
+
+function cursorWorkspaceDirs(request: WorkerRequest): string[] {
+  return uniqueStrings([
+    request.environment?.workingDirectory,
+    request.environment?.workspaceRoot,
+  ]);
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return values.filter((value, index): value is string => {
+    return value !== undefined && values.indexOf(value) === index;
+  });
+}
+
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:-]+$/u.test(value)) {
+    return value;
+  }
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+export function cursorHookScriptContent(): string {
+  return `const path = require("node:path");
+
+const POLICY_NAME = "Fusion panel tools policy";
+
+function respond(value) {
+  process.stdout.write(JSON.stringify(value) + "\\n");
+}
+
+function parseJsonArrayEnv(name) {
+  try {
+    const parsed = JSON.parse(process.env[name] || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((value) => typeof value === "string" && value.length > 0)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function isPathInsideRoot(candidate, root) {
+  const normalizedCandidate = path.resolve(candidate);
+  const normalizedRoot = path.resolve(root);
+  return (
+    normalizedCandidate === normalizedRoot ||
+    normalizedCandidate.startsWith(normalizedRoot.endsWith(path.sep) ? normalizedRoot : normalizedRoot + path.sep)
+  );
+}
+
+function findShellControlSyntax(command) {
+  let inSingleQuotes = false;
+  let inDoubleQuotes = false;
+  let escaping = false;
+
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index];
+
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+
+    if (!inSingleQuotes && char === "\\\\") {
+      escaping = true;
+      continue;
+    }
+
+    if (!inDoubleQuotes && char === "'") {
+      inSingleQuotes = !inSingleQuotes;
+      continue;
+    }
+
+    if (!inSingleQuotes && char === '"') {
+      inDoubleQuotes = !inDoubleQuotes;
+      continue;
+    }
+
+    if (inSingleQuotes || inDoubleQuotes) {
+      continue;
+    }
+
+    if (
+      char === ";" ||
+      char === "&" ||
+      char === "|" ||
+      char === "\\x60" ||
+      char === "<" ||
+      char === ">" ||
+      char === "\\n" ||
+      char === "\\r"
+    ) {
+      return "has control syntax";
+    }
+
+    if (char === "$" && command[index + 1] === "(") {
+      return "has control syntax";
+    }
+  }
+
+  return undefined;
+}
+
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  raw += chunk;
+});
+process.stdin.on("end", () => {
+  let payload = {};
+  try {
+    payload = raw.trim().length === 0 ? {} : JSON.parse(raw);
+  } catch {
+    payload = {};
+  }
+
+  const eventName = payload.hook_event_name;
+  if (eventName === "beforeShellExecution") {
+    const command = String(payload.command || "").trim();
+    const allowlist = parseJsonArrayEnv("FUSION_CURSOR_SHELL_ALLOWLIST");
+    if (findShellControlSyntax(command)) {
+      respond({
+        permission: "deny",
+        user_message: "Shell command denied by Fusion policy.",
+        agent_message: POLICY_NAME + " denied shell command containing shell control syntax.",
+      });
+      return;
+    }
+    if (allowlist.some((prefix) => command === prefix || command.startsWith(prefix + " "))) {
+      respond({ permission: "allow" });
+      return;
+    }
+    respond({
+      permission: "deny",
+      user_message: "Shell command denied by Fusion policy.",
+      agent_message: POLICY_NAME + " denied shell command outside the read-only bash allowlist.",
+    });
+    return;
+  }
+
+  if (eventName === "preToolUse" && payload.tool_name === "Task") {
+    respond({
+      permission: "deny",
+      user_message: "Task tool denied by Fusion policy.",
+      agent_message: POLICY_NAME + " denies recursive delegation for panel workers.",
+    });
+    return;
+  }
+
+  if (eventName === "beforeReadFile") {
+    const filePath = String(payload.file_path || payload.path || payload.filePath || "");
+    const readRoots = parseJsonArrayEnv("FUSION_CURSOR_READ_ROOTS");
+    if (
+      path.isAbsolute(filePath) &&
+      readRoots.some((root) => isPathInsideRoot(filePath, root))
+    ) {
+      respond({ permission: "allow" });
+      return;
+    }
+    respond({
+      permission: "deny",
+      user_message: "Read outside declared roots denied by Fusion policy.",
+      agent_message: POLICY_NAME + " denied a read outside the declared read roots.",
+    });
+    return;
+  }
+
+  respond({ permission: "allow" });
+});
+`;
+}
+
 function cursorExecutionProfile(
   request: WorkerRequest,
 ): CursorExecutionProfile {
@@ -173,6 +496,7 @@ function cursorSdkResultToWorkerResult(
   request: WorkerRequest,
   commandResult: CommandResult,
   profile: CursorExecutionProfile,
+  materialization: CursorRunMaterialization,
 ): WorkerResult {
   const parsed = parseCursorStreamJson(
     commandResult.stdout,
@@ -181,7 +505,6 @@ function cursorSdkResultToWorkerResult(
   const output = parsed.result.output.trim();
   const warnings = cursorSdkWarnings(
     request,
-    profile,
     parsed.result.toolObservations,
     parsed.result.nonJsonLines,
     parsed.result.unknownEventTypes,
@@ -211,6 +534,7 @@ function cursorSdkResultToWorkerResult(
     modelDisplayName: parsed.result.modelDisplayName,
     warnings,
     errors: cursorSdkErrors(commandResult, parsed, output),
+    materialization,
   });
 }
 
@@ -231,6 +555,7 @@ function cursorWorkerResult(input: {
   modelDisplayName?: string;
   warnings: string[];
   errors?: string[];
+  materialization?: CursorRunMaterialization;
 }): WorkerResult {
   return {
     panelRunId: input.request.panelRunId,
@@ -249,10 +574,11 @@ function cursorWorkerResult(input: {
     complianceEvidence: {
       adapterClaimsIndependentInvocation:
         input.request.session.mode === "fresh" && input.sessionId !== undefined,
-      adapterClaimsIsolatedContext: false,
+      adapterClaimsIsolatedContext:
+        input.request.session.mode === "fresh" && input.sessionId !== undefined,
       adapterClaimsBlindness: true,
       observedSessionMode: input.request.session.mode,
-      observedToolPolicy: observedCursorToolPolicy(input.profile),
+      observedToolPolicy: input.request.toolsPolicy,
       notes: cursorSdkComplianceNotes(input),
     },
     warnings: input.warnings.length === 0 ? undefined : input.warnings,
@@ -311,13 +637,12 @@ function cursorSdkErrors(
 
 function cursorSdkWarnings(
   request: WorkerRequest,
-  profile: CursorExecutionProfile,
   tools: CursorToolObservation[],
   nonJsonLines: string[],
   unknownEventTypes: string[],
 ): string[] {
   const warnings = unmappedPreferenceWarnings("cursor", request);
-  const deniedCount = tools.filter((tool) => isDeniedToolStatus(tool.status)).length;
+  const deniedCount = tools.filter(isDeniedToolObservation).length;
   if (deniedCount > 0) {
     warnings.push(
       `Cursor reported ${deniedCount} denied tool result${deniedCount === 1 ? "" : "s"}.`,
@@ -333,7 +658,6 @@ function cursorSdkWarnings(
       `Cursor stream-json included unrecognized event types: ${unknownEventTypes.join(", ")}.`,
     );
   }
-  warnings.push(...cursorStandingGapWarnings(profile));
   return warnings;
 }
 
@@ -349,6 +673,7 @@ function cursorSdkComplianceNotes(input: {
   tools: CursorToolObservation[];
   nonJsonLines: string[];
   warnings: string[];
+  materialization?: CursorRunMaterialization;
 }): string[] {
   const notes = [
     "Cursor SDK adapter spawned cursor-agent --print --output-format stream-json with a run-scoped CURSOR_CONFIG_DIR.",
@@ -358,6 +683,25 @@ function cursorSdkComplianceNotes(input: {
     notes.push("Cursor worker profile used --trust --force.");
   } else {
     notes.push("Cursor judge profile used --trust without --force.");
+  }
+  if (input.materialization !== undefined) {
+    notes.push(
+      `Cursor hooks materialized in a run-scoped scratch cwd with gating events: ${input.materialization.hookEvents.join(", ")}.`,
+    );
+    notes.push(
+      `Cursor hook failClosed enabled for all gating events: ${input.materialization.hookFailClosed}.`,
+    );
+    notes.push(
+      `Cursor shell allowlist source: ${input.materialization.shellAllowlistSource}.`,
+    );
+    notes.push(
+      `Cursor shell allowlist enforced by hook: ${input.materialization.shellAllowlist.join(", ")}.`,
+    );
+    notes.push(
+      input.materialization.readRoots.length === 0
+        ? "Cursor beforeReadFile hook denies all read paths for this profile."
+        : `Cursor read roots enforced by beforeReadFile hook: ${input.materialization.readRoots.join(", ")}.`,
+    );
   }
   if (input.requestedModelId !== undefined) {
     notes.push(`Cursor requested model id: ${input.requestedModelId}.`);
@@ -388,52 +732,16 @@ function cursorSdkComplianceNotes(input: {
   for (const line of input.nonJsonLines) {
     notes.push(`Cursor non-JSON stream line: ${line}`);
   }
-  notes.push(...cursorStandingGapNotes(input.profile));
+  notes.push(...cursorStandingDisclosureNotes());
   notes.push(...input.warnings);
   return notes;
 }
 
-function cursorStandingGapWarnings(
-  profile: CursorExecutionProfile,
-): string[] {
+function cursorStandingDisclosureNotes(): string[] {
   return [
-    "Cursor cannot enforce recursive delegation denial because Task is not deniable; compliance is degraded.",
-    "Cursor reads are open by default, so ADR 0029 read-root semantics are not reproducible; compliance is degraded.",
-    profile === "worker"
-      ? "Cursor worker profile enables web tools by denying shell entirely, so the ADR 0022 read-only bash allowlist is unavailable; compliance is degraded."
-      : "Cursor judge read denial depends on Read(**) enforcement and remains an evidence gap unless live-verified.",
+    "Cursor account-level User Rules inject into headless sessions regardless of CURSOR_CONFIG_DIR; this is an environment input, not a panel-state isolation breaker.",
+    "Cursor CURSOR_CONFIG_DIR and headless project hook loading are undocumented surfaces and remain smoke-monitored fragilities.",
   ];
-}
-
-function cursorStandingGapNotes(profile: CursorExecutionProfile): string[] {
-  return [
-    "Cursor recursion denial is unenforceable: Task is not deniable by the probed permission grammar.",
-    "Cursor reads are open by default; readRoots only inform --add-dir and do not recreate ADR 0029 deny-unless-declared semantics.",
-    profile === "worker"
-      ? "Cursor worker web-enabled profile lacks the ADR 0022 read-only bash allowlist because Shell(**) is denied to keep web tools enabled under --force."
-      : "Cursor judge profile denies Read(**), but judge read-freedom remains a standing disclosure unless live verification proves the deny effective.",
-    "Cursor CURSOR_CONFIG_DIR behavior is undocumented; global config merge versus replacement semantics remain unresolved.",
-  ];
-}
-
-function observedCursorToolPolicy(
-  profile: CursorExecutionProfile,
-): ToolsPolicy {
-  return profile === "judge"
-    ? {
-        mode: "none",
-        allow: [],
-        deny: judgeDenyList,
-        headlessAskBehavior: "deny",
-        parity: "harness-default",
-      }
-    : {
-        mode: "read-only",
-        allow: ["Read", "Grep", "Glob", "WebFetch", "WebSearch"],
-        deny: workerDenyList,
-        headlessAskBehavior: "deny",
-        parity: "harness-default",
-      };
 }
 
 function cursorToolUseSummary(
@@ -445,7 +753,7 @@ function cursorToolUseSummary(
   const completedTools = tools.filter((tool) => tool.status !== "started");
   const toolsUsed = [...new Set(tools.map((tool) => tool.tool))];
   const deniedRequests = completedTools
-    .filter((tool) => isDeniedToolStatus(tool.status))
+    .filter(isDeniedToolObservation)
     .map((tool) =>
       tool.detail === undefined ? `${tool.tool}: ${tool.status}` : `${tool.tool}: ${tool.detail}`,
     );
@@ -460,6 +768,21 @@ function isDeniedToolStatus(status: CursorToolObservation["status"]): boolean {
     status === "rejected" ||
     status === "permissionDenied" ||
     status === "writePermissionDenied"
+  );
+}
+
+function isDeniedToolObservation(tool: CursorToolObservation): boolean {
+  if (isDeniedToolStatus(tool.status)) {
+    return true;
+  }
+  return tool.status === "error" && isHookBlockedToolError(tool.detail);
+}
+
+function isHookBlockedToolError(detail: string | undefined): boolean {
+  const normalized = detail?.toLowerCase();
+  return (
+    normalized?.includes("blocked by a hook") === true ||
+    normalized?.includes("blocked by pretooluse hook") === true
   );
 }
 
