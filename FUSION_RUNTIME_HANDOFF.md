@@ -45,15 +45,42 @@ Rule deleted and its absence re-verified live (t14). Probe artifacts
 (transcripts, hook event logs, restore script, snapshots) under
 `~/.claude/jobs/09634e98/tmp/probe/`.
 
-Phase 3 scope (implementation): flip
-`adapterClaimsIsolatedContext` to the uniform fresh+session-id rule (ADR
-0033), implement the ADR 0034 hooks profile (scratch-cwd run dir,
-run-scoped `.cursor/hooks.json` + hook script, failClosed, shell
-allowlist, Task deny, read-root gate; drop the config-level `Shell(**)`
-deny in favor of the hook authority), report an observed tool policy
-matching the panel default when enforcement is equivalent, update the
-standing-gap warnings/notes to the ADR 0034 disclosure set, tests +
-schema/typecheck, recorded smoke targeting tier `full`.
+Phase 3 (implemented by Codex/GPT-5.5 from ADR 0033/0034; reviewed and
+patched by the parent agent): `adapterClaimsIsolatedContext` flipped to
+the uniform fresh+session-id rule; hooks profile implemented
+(scratch-cwd run dir with `.cursor/hooks.json` + embedded bun hook
+script, failClosed on every gating entry, shell allowlist via
+`beforeShellExecution`, Task deny via `preToolUse`, read-root gate via
+`beforeReadFile`; worker config deny drops `Shell(**)` — the hook is the
+shell authority — judge config deny unchanged); observed tool policy now
+echoes the request like the incumbent adapters; ADR 0032 standing-gap
+warnings replaced with the ADR 0034 disclosure notes; hook-blocked
+`error` results ("blocked by a hook") count as denials while generic
+errors still do not. Parent-agent review fixes: word-boundary allowlist
+matching (`ls` must not admit `lsof`; exact match or prefix+space,
+matching the OpenCode permission-map semantics) and an empty judge
+shell allowlist (config `Shell(**)` deny is the judge authority; the
+note no longer implies a judge allowlist). `bun test` 111 pass / 0
+fail; typecheck clean; simplify considered (surgical fixes only).
+
+Recorded phase-3 smoke: panel run
+`fusion-28e7cf14-f853-4d1b-acf0-1cc314a97bfa` (two cursor workers
+`cursor:auto` + `cursor:composer-2.5`, cursor judge, recorded) — panel
+`ok`, **compliance tier `full`** with `isolatedContext: true` on both
+workers; live enforcement evidence inside the run: `git status` allowed
+by the hook allowlist, `echo` denied ("Shell command denied by Fusion
+policy"), `/etc/hosts` read denied ("Read outside declared roots denied
+by Fusion policy"), workers survived and disclosed all denials;
+requested-id `auto` vs observed display-name `Auto` evidence intact.
+Both degraded reasons from the phase-2 smoke are resolved.
+
+Shell-cwd note: `git status` inside the smoke reported the repository
+even though the process cwd is the scratch dir — the Shell tool appears
+to execute relative to the workspace root, and `cat` in the allowlist
+can read arbitrary paths shell-side. This is parity with the ADR 0022
+allowlist on every harness (opencode's permission map allows `cat *`
+too), not a cursor-specific regression; recorded as a cross-harness
+follow-up question for the allowlist policy itself.
 
 ## Cursor Harness Round (2026-07-07): Phase 2 Implemented (Review Pending)
 
