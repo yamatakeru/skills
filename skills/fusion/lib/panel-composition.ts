@@ -49,9 +49,11 @@ export interface ResolvePanelCompositionOptions {
 export interface ResolvedPanelModel {
   slot: "parent" | "flagship" | "budget" | "refill" | "explicit";
   entry: string;
+  kind: string;
   resolvedModelId: string;
   harness: HarnessKind;
   modelPreference: ModelPreference;
+  validatedBy: string;
   fallbackUsed?: boolean;
 }
 
@@ -76,6 +78,7 @@ export interface ResolveModelEntryOptions {
 interface ModelSource {
   slot: ResolvedPanelModel["slot"];
   entry: string;
+  kind: string;
   candidateIds: string[];
   forcedHarness?: HarnessKind;
 }
@@ -236,6 +239,7 @@ async function resolveDefaultModels(
       {
         slot: "refill",
         entry: "alias-fallback",
+        kind: "fusion-alias",
         candidateIds: refillCandidates,
       },
       used,
@@ -293,9 +297,11 @@ async function tryResolveSource(
     return {
       slot: source.slot,
       entry: source.entry,
+      kind: source.kind,
       resolvedModelId: routed.modelId,
       harness: routed.harness,
       modelPreference: modelPreferenceFromModelId(routed.modelId, fallbackIds),
+      validatedBy: validatedByForHarness(routed.harness),
       fallbackUsed: index > 0,
     };
   }
@@ -322,6 +328,7 @@ function sourceFromEntry(
     return {
       slot,
       entry: normalized,
+      kind: "fusion-alias",
       candidateIds: candidateIdsForAlias(unprefixed),
       forcedHarness: prefix?.harness,
     };
@@ -331,9 +338,26 @@ function sourceFromEntry(
   return {
     slot,
     entry: normalized,
+    kind: kindForRoutedEntry(unprefixed, routed.harness),
     candidateIds: [routed.modelId],
     forcedHarness: prefix?.harness,
   };
+}
+
+function kindForRoutedEntry(entry: string, harness: HarnessKind): string {
+  if (harness === "cursor") {
+    return "routing-product";
+  }
+  if (harness === "claude-code" && isClaudeTierAlias(entry)) {
+    return "tier-alias";
+  }
+  return "catalog-id";
+}
+
+function validatedByForHarness(harness: HarnessKind): string {
+  return harness === "opencode" || harness === "cursor"
+    ? "harness-list"
+    : "pattern";
 }
 
 function candidateIdsForAlias(alias: string): string[] {
@@ -440,6 +464,10 @@ const claudeModelIdPattern = new RegExp(
 
 function isClaudeModelId(entry: string): boolean {
   return claudeModelIdPattern.test(entry);
+}
+
+function isClaudeTierAlias(entry: string): boolean {
+  return claudeModelAliases.includes(entry.toLowerCase());
 }
 
 function claudeFallbacksForModelId(modelId: string): string[] {

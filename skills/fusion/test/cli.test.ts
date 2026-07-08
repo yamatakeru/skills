@@ -1,12 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildDryRunReport,
   buildSharedContext,
   createFusionRuntime,
   parseArgs,
   preparePanelRequest,
+  renderDryRunReport,
   renderMarkdownReport,
 } from "../bin/fusion-run";
 import {
@@ -19,6 +23,13 @@ import {
 } from "../lib/protocol";
 
 describe("Fusion CLI parsing", () => {
+  test("parses dry-run", () => {
+    const options = parseArgs(["--dry-run", "Preflight this."]);
+
+    expect(options.dryRun).toBe(true);
+    expect(options.prompt).toBe("Preflight this.");
+  });
+
   test("parses shared context, transport, read roots, judge model, and turn budget flags", () => {
     const options = parseArgs([
       "--context",
@@ -83,6 +94,9 @@ describe("Fusion CLI parsing", () => {
       "does not take a value",
     );
     expect(() => parseArgs(["--json=true", "task"])).toThrow(
+      "does not take a value",
+    );
+    expect(() => parseArgs(["--dry-run=true", "task"])).toThrow(
       "does not take a value",
     );
   });
@@ -183,6 +197,140 @@ describe("Fusion CLI parsing", () => {
     ).rejects.toThrow("requires --transport sdk");
   });
 
+  test("builds a dry-run report with the mode discriminator", async () => {
+    const options = parseArgs([
+      "--dry-run",
+      "--json",
+      "--models",
+      "claude-code:sonnet",
+      "--judge-model",
+      "claude-code:haiku",
+      "Preflight this.",
+    ]);
+    const prepared = await preparePanelRequest(options, {
+      cwd: "/tmp",
+      panelRunId: "dry-run-shape",
+    });
+    const report = buildDryRunReport(options, prepared);
+
+    expect(report).toEqual({
+      mode: "dry-run",
+      panelRunId: "dry-run-shape",
+      transport: "sdk",
+      resolvedModels: [
+        {
+          slot: "explicit",
+          entry: "claude-code:sonnet",
+          kind: "tier-alias",
+          harness: "claude-code",
+          resolvedModelId: "sonnet",
+          fallbacks: ["haiku"],
+          validatedBy: "pattern",
+        },
+      ],
+      judge: {
+        strategy: "claude-code",
+        modelEntry: "claude-code:haiku",
+        harness: "claude-code",
+      },
+      manifest: {
+        renderedPromptHash:
+          prepared.request.contextManifest.renderedPromptHash,
+        sharedContextHash: prepared.request.contextManifest.sharedContextHash,
+      },
+      warnings: [],
+    });
+  });
+
+  test("renders a clearly labeled dry-run report", async () => {
+    const options = parseArgs([
+      "--dry-run",
+      "--models",
+      "claude-code:sonnet",
+      "Preflight this.",
+    ]);
+    const prepared = await preparePanelRequest(options, {
+      cwd: "/tmp",
+      panelRunId: "dry-run-render",
+    });
+    const report = renderDryRunReport(buildDryRunReport(options, prepared));
+
+    expect(report).toContain("# Fusion Dry-Run Preflight");
+    expect(report).toContain("no workers or judge were invoked");
+    expect(report).toContain("| explicit | claude-code:sonnet | tier-alias |");
+  });
+
+  test("dry-run json exits 0 and emits DryRunReport JSON", () => {
+    const result = runFusionCli([
+      "--dry-run",
+      "--json",
+      "--models",
+      "claude-code:sonnet",
+      "Preflight this.",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.mode).toBe("dry-run");
+    expect(report.resolvedModels[0]).toMatchObject({
+      entry: "claude-code:sonnet",
+      kind: "tier-alias",
+      validatedBy: "pattern",
+    });
+  });
+
+  test("dry-run exits 1 with the real diagnostic on preparation failure", () => {
+    const result = runFusionCli([
+      "--dry-run",
+      "--transport",
+      "cli",
+      "--models",
+      "cursor:composer-2.5-fast",
+      "Preflight this.",
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'Cursor model entry "cursor:composer-2.5-fast" requires --transport sdk',
+    );
+    expect(result.stdout).toBe("");
+  });
+
+  test("record with dry-run warns and records nothing", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "fusion-dry-run-"));
+    try {
+      const result = runFusionCli(
+        [
+          "--dry-run",
+          "--record",
+          "--models",
+          "claude-code:sonnet",
+          "Preflight this.",
+        ],
+        workspaceRoot,
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(
+        "Dry run writes no artifacts; --record has no effect.",
+      );
+      expect(existsSync(join(workspaceRoot, ".fusion-runs"))).toBe(false);
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("dry-run still requires a prompt", () => {
+    expect(() => parseArgs(["--dry-run"])).toThrow(
+      "Fusion requires a task prompt",
+    );
+    const result = runFusionCli(["--dry-run"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Fusion requires a task prompt.");
+  });
+
   test("resolves read roots into worker environment", async () => {
     const options = parseArgs([
       "--models",
@@ -274,3 +422,23 @@ describe("Fusion CLI parsing", () => {
     expect(report).not.toContain("- Judge: ok via");
   });
 });
+
+function runFusionCli(
+  args: string[],
+  cwd: string = "/tmp",
+): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [fusionRunPath(), ...args], {
+    cwd,
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
+function fusionRunPath(): string {
+  return join(import.meta.dir, "..", "bin", "fusion-run.ts");
+}

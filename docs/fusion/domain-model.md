@@ -77,6 +77,16 @@ table with ordered fallbacks, availability checks per harness, and
 deduplication by resolved model ID with refill. Explicit user selection
 replaces the default composition.
 
+### ModelEntry
+
+The caller-supplied string identifying what to request for a slot, routed to
+a harness by pattern or explicit prefix. A resolved entry carries a
+disclosure-only namespace-kind label (`fusion-alias`, `tier-alias`,
+`catalog-id`, `routing-product`; open vocabulary) and the validation
+authority that actually checked it. The entry is distinct from the observed
+model recorded in the worker result; kinds never drive routing or other
+behavior (ADR 0035).
+
 ### WorkerSlotPreference
 
 The per-slot pairing of an optional model preference and an optional harness

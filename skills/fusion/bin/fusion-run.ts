@@ -18,11 +18,15 @@ import {
   NoopRunRecorder,
   OpenCodeSdkAdapter,
   OpenCodeHeadlessCliAdapter,
+  modelAliasTable,
+  modelPreferenceToModel,
   resolveModelEntry,
   resolvePanelComposition,
   runPanel,
   isImplementedJudgeHarness,
   isNonJudgeSynthesizerStrategy,
+  type DryRunReport,
+  type HarnessKind,
   type PanelResult,
   type PanelRequest,
   type ProvenancePolicy,
@@ -49,6 +53,7 @@ export interface CliOptions {
   maxTurns?: number;
   record: boolean;
   json: boolean;
+  dryRun: boolean;
   transport: TransportMode;
   synthesizer?: string;
   judgeModel?: string;
@@ -59,6 +64,7 @@ export interface CliOptions {
 export interface PreparedPanelRequest {
   request: PanelRequest;
   workerRequests: WorkerRequest[];
+  composition: ResolvedPanelComposition;
   warnings: string[];
 }
 
@@ -74,6 +80,21 @@ async function main(): Promise<number> {
     const options = parseArgs(Bun.argv.slice(2));
     const prepared = await preparePanelRequest(options, { cwd: process.cwd() });
     const request = prepared.request;
+
+    if (options.dryRun) {
+      const report = buildDryRunReport(options, prepared);
+      if (options.record) {
+        report.warnings.push(
+          "Dry run writes no artifacts; --record has no effect.",
+        );
+      }
+      if (options.json) {
+        process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      } else {
+        process.stdout.write(renderDryRunReport(report));
+      }
+      return 0;
+    }
 
     const recorder: RunRecorder = options.record
       ? new FileRunRecorder({
@@ -185,12 +206,115 @@ export async function preparePanelRequest(
   return {
     request,
     workerRequests: manifestedWorkerRequests,
+    composition,
     warnings: [
       ...composition.warnings,
       ...contextResult.warnings,
       ...synthesizerResult.warnings,
     ],
   };
+}
+
+export function buildDryRunReport(
+  options: CliOptions,
+  prepared: PreparedPanelRequest,
+): DryRunReport {
+  const manifest = prepared.request.contextManifest;
+  return {
+    mode: "dry-run",
+    panelRunId: prepared.request.panelRunId,
+    transport: options.transport,
+    resolvedModels: prepared.composition.resolvedModels.map((model) => ({
+      slot: model.slot,
+      entry: model.entry,
+      kind: model.kind,
+      harness: model.harness,
+      resolvedModelId: model.resolvedModelId,
+      fallbacks: model.modelPreference.fallbacks ?? [],
+      validatedBy: model.validatedBy,
+    })),
+    judge: dryRunJudge(options, prepared.request),
+    manifest: {
+      renderedPromptHash: manifest.renderedPromptHash,
+      sharedContextHash: manifest.sharedContextHash,
+    },
+    warnings: [...prepared.warnings],
+  };
+}
+
+function dryRunJudge(
+  options: CliOptions,
+  request: PanelRequest,
+): DryRunReport["judge"] {
+  const strategy = request.synthesizer?.strategy;
+  if (strategy === undefined) {
+    return undefined;
+  }
+  const judge: DryRunReport["judge"] = { strategy };
+  if (!isNonJudgeSynthesizerStrategy(strategy)) {
+    judge.harness = strategy as HarnessKind;
+    const modelEntry = options.judgeModel ?? options.parentModel;
+    if (modelEntry !== undefined) {
+      judge.modelEntry = modelEntry;
+    }
+  }
+  return judge;
+}
+
+export function renderDryRunReport(report: DryRunReport): string {
+  const lines = [
+    "# Fusion Dry-Run Preflight",
+    "",
+    "Preflight only: no workers or judge were invoked, and no panel report was produced.",
+    "",
+    "## Invocation",
+    `- Panel run id: ${report.panelRunId}`,
+    `- Transport: ${report.transport}`,
+    "",
+    "## Resolved Models",
+    "| Slot | Entry | Kind | Harness | Resolved model id | Validated by | Fallbacks |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...report.resolvedModels.map(
+      (model) =>
+        `| ${tableCell(model.slot)} | ${tableCell(model.entry)} | ${tableCell(model.kind)} | ${tableCell(model.harness)} | ${tableCell(model.resolvedModelId)} | ${tableCell(model.validatedBy)} | ${tableCell(renderFallbacks(model.fallbacks))} |`,
+    ),
+    "",
+    "## Judge",
+    ...renderDryRunJudge(report.judge),
+    "",
+    "## Manifest",
+    `- Rendered prompt hash: ${report.manifest.renderedPromptHash}`,
+    `- Shared context hash: ${report.manifest.sharedContextHash}`,
+    "",
+    "## Warnings",
+    report.warnings.length === 0
+      ? "None."
+      : report.warnings.map((warning) => `- ${warning}`).join("\n"),
+    "",
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+function renderDryRunJudge(judge: DryRunReport["judge"]): string[] {
+  if (judge === undefined) {
+    return ["None."];
+  }
+  const lines = [`- Strategy: ${judge.strategy}`];
+  if (judge.modelEntry !== undefined) {
+    lines.push(`- Model entry: ${judge.modelEntry}`);
+  }
+  if (judge.harness !== undefined) {
+    lines.push(`- Harness: ${judge.harness}`);
+  }
+  return lines;
+}
+
+function renderFallbacks(fallbacks: string[]): string {
+  return fallbacks.length === 0 ? "None" : fallbacks.join(", ");
+}
+
+function tableCell(value: string): string {
+  return value.replace(/\|/gu, "\\|").replace(/\s+/gu, " ");
 }
 
 function renderedPromptFromWorkerRequests(
@@ -262,6 +386,7 @@ export function parseArgs(args: string[]): CliOptions {
     readRoots: [],
     record: false,
     json: false,
+    dryRun: false,
     transport: "sdk",
   };
   const promptParts: string[] = [];
@@ -349,6 +474,10 @@ export function parseArgs(args: string[]): CliOptions {
       case "--json":
         rejectValue();
         options.json = true;
+        break;
+      case "--dry-run":
+        rejectValue();
+        options.dryRun = true;
         break;
       case "--transport":
         options.transport = parseTransport(flag, takeValue());
@@ -807,13 +936,24 @@ export function usage(): string {
     "  --reasoning-max-tokens <n>",
     "                            Worker reasoning token budget.",
     "  --max-turns <n>           Per-worker turn budget where supported.",
+    "  --dry-run                 Preflight this exact invocation without running workers or judge.",
     "  --record                  Write .fusion-runs/<panelRunId>/ artifacts.",
-    "  --json                    Print complete PanelResult JSON.",
+    "  --json                    Print structured JSON for this invocation.",
     "  --transport <mode>        Worker transport: sdk or cli (default: sdk).",
     "  --judge-model <entry>     Override the default parent-model judge.",
     "  --synthesizer <strategy>  parent-agent, deterministic, opencode, cursor, or claude-code.",
     "  --timeout-ms <n>          Per-worker timeout.",
+    "",
+    "Alias table:",
+    ...renderAliasTableUsageLines(),
   ].join("\n");
+}
+
+function renderAliasTableUsageLines(): string[] {
+  return Object.entries(modelAliasTable).map(([alias, preference]) => {
+    const primary = modelPreferenceToModel(preference) ?? alias;
+    return `  ${alias}: ${[primary, ...(preference.fallbacks ?? [])].join(" -> ")}`;
+  });
 }
 
 if (import.meta.main) {

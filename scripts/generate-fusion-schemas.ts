@@ -12,6 +12,7 @@ const schemaTypes = [
   { type: "JudgeAnalysis", out: "judge-analysis.schema.json" },
   { type: "SynthesisResult", out: "synthesis-result.schema.json" },
   { type: "PanelResult", out: "panel-result.schema.json" },
+  { type: "DryRunReport", out: "dry-run-report.schema.json" },
 ];
 
 mkdirSync(schemaDirectory, { recursive: true });

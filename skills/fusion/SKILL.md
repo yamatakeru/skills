@@ -12,7 +12,7 @@ compatibility: >-
   bundled self-contained TypeScript CLI; no node_modules are required inside the
   skill directory.
 metadata:
-  version: "0.9.0"
+  version: "0.10.0"
   kind: "blind-panel synthesis"
   mode: "blind"
   canonical-runtime: "bun-cli"
@@ -115,6 +115,14 @@ no model enumeration command; Claude-backed entries use latest aliases and
 `--fallback-model`, then are validated by the worker attempt. Cursor-backed
 entries are checked against `cursor-agent models`.
 
+Alias table resolutions:
+
+- `openai-flagship`: `openai/gpt-5.5` -> `openai/gpt-5.5-fast` ->
+  `openai/gpt-5.4`
+- `budget-smart`: `opencode/deepseek-v4-flash-free` ->
+  `opencode/mimo-v2.5-free` -> `opencode/north-mini-code-free` ->
+  `opencode/nemotron-3-ultra-free`
+
 The judge model defaults to the parent model. Use `--judge-model <entry>` to
 override it; judge model entries use the same routing rules as panel model
 entries. Cursor can be used for judging with `--judge-model cursor:<model-id>`
@@ -136,6 +144,8 @@ compatibility path.
   provider default.
 - `--reasoning-max-tokens <n>`: worker reasoning token budget.
 - `--max-turns <n>`: per-worker turn budget where the harness supports it.
+- `--dry-run`: preflight this exact invocation without running workers or
+  judge.
 - `--transport <sdk|cli>`: worker and judge transport; default is `sdk`.
   `cli` is an explicit opt-in to the legacy CLI adapters with degraded
   compliance evidence; the runtime never falls back to it silently. Cursor is
@@ -144,8 +154,10 @@ compatibility path.
 - `--read-root <dir>`: declare a directory outside the workspace as readable
   (recursive) for every worker in the run; repeatable.
 - `--record`: write split artifacts under `.fusion-runs/<panelRunId>/` when
-  the directory is git-ignored.
-- `--json`: print the complete `PanelResult` JSON instead of Markdown.
+  the directory is git-ignored. With `--dry-run`, it warns and records nothing.
+- `--json`: print the structured report for this invocation instead of
+  Markdown: `PanelResult` for panel runs, `DryRunReport` with
+  `mode: "dry-run"` for dry runs.
 - `--judge-model <entry>`: override the judge model; defaults to
   `--parent-model` when available.
 - `--synthesizer <parent-agent|deterministic|opencode|cursor|claude-code>`:
@@ -156,11 +168,20 @@ compatibility path.
 Reasoning and budget options a harness cannot honor are reported as warnings
 in the panel report, never silently dropped.
 
+For preflight, compose the exact command you intend to run and append
+`--dry-run`. The CLI still resolves composition, judge preference, transport
+guards, and the context manifest, then exits before constructing the runtime or
+recorder. Dry-run invokes no workers and no judge, but it does shell out to
+`opencode models` and `cursor-agent models` when those harness listings are
+needed for availability checks.
+
 Default Markdown output starts with run status, compliance tier, and warnings,
 then lists each worker's full output with worker id, model, harness, and
 status, then the judge analysis. When the judge did not run or failed, the
-report shows deterministic audit synthesis instead. Exit code is 0 for `ok`
-and `partial`, and 1 for `failed` or usage errors.
+report shows deterministic audit synthesis instead. Panel exit code is 0 for
+`ok` and `partial`, and 1 for `failed` or usage errors. Dry-run exit code is 0
+only when the full composition resolves cleanly, otherwise 1 with the same
+diagnostic the real invocation would raise.
 
 ## Worker Rules
 

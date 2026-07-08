@@ -1,13 +1,74 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-08 (cursor probe round — probe complete, phase 3 in flight)
+Date: 2026-07-09 (model-discovery round — implemented, PR pending)
 
 This handoff captures the state of the Fusion runtime after the usable
 milestone, the worker-investigation round, the harness-backed judge round,
 the upstream fidelity round, the SDK transport round (reserved milestones 1
-and 6), the cursor harness round (PR #3, merged), and the cursor probe
-round. The design authority is `docs/fusion/` (spec, domain model,
-glossary, ADR 0001-0034).
+and 6), the cursor harness round (PR #3, merged), the cursor probe
+round (PR #4, merged), and the model-discovery round. The design authority
+is `docs/fusion/` (spec, domain model, glossary, ADR 0001-0036).
+
+## Model-Discovery Round (2026-07-09): ADR 0035/0036 Implemented
+
+Trigger: a proposal for a harness-abstracted "callable models" listing on
+the bundled CLI. Three recorded cheap panels (all opencode-backed workers;
+`.fusion-runs/fusion-3d1ae6e1-*` proposal review, `fusion-ca7c1d05-*`
+namespace-taxonomy stress test, `fusion-9f696d79-*` CLI grammar) plus a
+grilled maintainer session reshaped it twice:
+
+- The word "model" in `--models` spans per-entry namespace kinds
+  (claude tiers vs concrete ids vs opencode catalog vs cursor routing
+  products vs fusion aliases); a flat unified enumeration cannot be honest
+  (claude-code is non-enumerable by design). Entry kinds became a
+  **disclosure-only open vocabulary** — never a dispatch key — with the
+  ownership dimension (user-owned names, e.g. Azure-style deployments)
+  recorded as the expected first future kind (ADR 0035).
+- Entry-list validation (`--validate-model`) was rejected for a fidelity
+  gap (it cannot catch composition-level failures; recorded concrete case:
+  a cursor entry under `--transport cli` passes entry validation, fails
+  the real run). The panel unanimously ranked **`--dry-run` on the real
+  invocation** first: reuse the actual preparation path, exit before
+  recorder/runtime/`runPanel` (ADR 0036). Prompt stays required;
+  `--json` is redefined as "structured report of this invocation"
+  (`PanelResult` for runs, `DryRunReport` with `mode: "dry-run"` for dry
+  runs); exit 0 iff composition resolves cleanly, else the real
+  diagnostic; `--record` warns and records nothing. The model listing
+  stays deferred with its grammar deliberately unlocked.
+
+Implementation (Codex from ADR 0035/0036; parent-reviewed with one
+simplify fix — `kindForRoutedEntry` dropped a redundant forced-harness
+parameter): `ResolvedPanelModel` gained `kind`/`validatedBy`,
+`DryRunReport` added to types and schema generation
+(`dry-run-report.schema.json`), `--dry-run` branch in the CLI, alias-table
+resolutions now visible in `usage()` and SKILL.md (v0.10.0), glossary
+(Model Entry / Entry Kind / Dry-Run Preflight), spec section, domain-model
+ModelEntry value object. `bun test` 122 pass / 0 fail; typecheck clean;
+schema regen idempotent apart from the new file.
+
+Live smoke (all passed): default-composition dry-run (real
+`opencode models` shell-out; fable tier-alias/pattern, alias slots
+fusion-alias/harness-list), explicit `--models` with a cursor entry plus
+sonnet judge under `--json` (real `cursor-agent models` check,
+discriminated JSON), transport-mismatch case exits 1 with the real
+diagnostic, and a recorded 2-worker real panel
+(`fusion-e792eb77-*`: gpt-5.5 + deepseek, sonnet judge) — ok, tier
+`full`, zero warnings, confirming composition changes did not disturb
+real runs.
+
+Review triage (PR #5): CodeRabbit ran twice — the CLI (signed in again by
+review time; the earlier signed-out state was transient; 3 findings) and
+the GitHub PR integration (4 actionable + 1 nitpick). Dispositions: the
+"future date" class (both reviewers) was skipped — commits landed
+2026-07-09 JST (= 2026-07-08 UTC), the reviewer evaluates in UTC, and ADR
+dates follow the maintainer's local date per the 0033/0034 precedent.
+Adopted: `--record`+`--dry-run` warning reworded ("writes no artifacts;
+--record has no effect" — the flag does reach the prepared request, so
+"ignored" was imprecise), `tier-alias` scoped to the claude-code route in
+`kindForRoutedEntry` (previously unreachable-in-practice but now locally
+correct without relying on `routeWithForcedHarness` throwing first), and
+a 30s `spawnSync` timeout in the CLI test helper. No panel adjudication
+needed — all findings were verifiable facts or accepted quick wins.
 
 ## Cursor Probe Round (2026-07-08): Probe Complete, Phase 3 In Flight
 
