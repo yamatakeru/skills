@@ -348,7 +348,7 @@ function kindForRoutedEntry(entry: string, harness: HarnessKind): string {
   if (harness === "cursor") {
     return "routing-product";
   }
-  if (isClaudeTierAlias(entry)) {
+  if (harness === "claude-code" && isClaudeTierAlias(entry)) {
     return "tier-alias";
   }
   return "catalog-id";

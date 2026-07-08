@@ -313,7 +313,7 @@ describe("Fusion CLI parsing", () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain(
-        "Dry run records nothing; --record was ignored.",
+        "Dry run writes no artifacts; --record has no effect.",
       );
       expect(existsSync(join(workspaceRoot, ".fusion-runs"))).toBe(false);
     } finally {
@@ -430,6 +430,7 @@ function runFusionCli(
   const result = spawnSync(process.execPath, [fusionRunPath(), ...args], {
     cwd,
     encoding: "utf8",
+    timeout: 30_000,
   });
   return {
     status: result.status,

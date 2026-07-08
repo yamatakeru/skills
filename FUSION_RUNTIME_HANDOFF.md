@@ -54,8 +54,21 @@ discriminated JSON), transport-mismatch case exits 1 with the real
 diagnostic, and a recorded 2-worker real panel
 (`fusion-e792eb77-*`: gpt-5.5 + deepseek, sonnet judge) — ok, tier
 `full`, zero warnings, confirming composition changes did not disturb
-real runs. Note: the `coderabbit` CLI was signed out during this round;
-review goes through the GitHub PR integration.
+real runs.
+
+Review triage (PR #5): CodeRabbit ran twice — the CLI (signed in again by
+review time; the earlier signed-out state was transient; 3 findings) and
+the GitHub PR integration (4 actionable + 1 nitpick). Dispositions: the
+"future date" class (both reviewers) was skipped — commits landed
+2026-07-09 JST (= 2026-07-08 UTC), the reviewer evaluates in UTC, and ADR
+dates follow the maintainer's local date per the 0033/0034 precedent.
+Adopted: `--record`+`--dry-run` warning reworded ("writes no artifacts;
+--record has no effect" — the flag does reach the prepared request, so
+"ignored" was imprecise), `tier-alias` scoped to the claude-code route in
+`kindForRoutedEntry` (previously unreachable-in-practice but now locally
+correct without relying on `routeWithForcedHarness` throwing first), and
+a 30s `spawnSync` timeout in the CLI test helper. No panel adjudication
+needed — all findings were verifiable facts or accepted quick wins.
 
 ## Cursor Probe Round (2026-07-08): Probe Complete, Phase 3 In Flight
 

@@ -84,7 +84,9 @@ async function main(): Promise<number> {
     if (options.dryRun) {
       const report = buildDryRunReport(options, prepared);
       if (options.record) {
-        report.warnings.push("Dry run records nothing; --record was ignored.");
+        report.warnings.push(
+          "Dry run writes no artifacts; --record has no effect.",
+        );
       }
       if (options.json) {
         process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
