@@ -99,6 +99,8 @@ describe("Fusion panel composition", () => {
     });
 
     expect(model.harness).toBe("opencode");
+    expect(model.kind).toBe("catalog-id");
+    expect(model.validatedBy).toBe("harness-list");
     expect(model.modelPreference).toEqual({
       provider: "openai",
       model: "gpt-5.5",
@@ -115,6 +117,61 @@ describe("Fusion panel composition", () => {
     });
 
     expect(model.resolvedModelId).toBe("openai/gpt-5.5");
+  });
+
+  test("discloses kind and validation authority for alias table entries", async () => {
+    const primary = await resolveModelEntry("openai-flagship", {
+      executor: opencodeModelsExecutor(["openai/gpt-5.5"]),
+    });
+    const fallback = await resolveModelEntry("openai-flagship", {
+      executor: opencodeModelsExecutor(["openai/gpt-5.5-fast"]),
+    });
+
+    expect(primary).toMatchObject({
+      entry: "openai-flagship",
+      kind: "fusion-alias",
+      resolvedModelId: "openai/gpt-5.5",
+      validatedBy: "harness-list",
+      fallbackUsed: false,
+    });
+    expect(fallback).toMatchObject({
+      entry: "openai-flagship",
+      kind: "fusion-alias",
+      resolvedModelId: "openai/gpt-5.5-fast",
+      validatedBy: "harness-list",
+      fallbackUsed: true,
+    });
+  });
+
+  test("discloses kind and validation authority for Claude routed entries", async () => {
+    const tierAlias = await resolveModelEntry("sonnet");
+    const concrete = await resolveModelEntry("claude-opus-4-20250514");
+
+    expect(tierAlias).toMatchObject({
+      kind: "tier-alias",
+      harness: "claude-code",
+      resolvedModelId: "sonnet",
+      validatedBy: "pattern",
+    });
+    expect(concrete).toMatchObject({
+      kind: "catalog-id",
+      harness: "claude-code",
+      resolvedModelId: "claude-opus-4-20250514",
+      validatedBy: "pattern",
+    });
+  });
+
+  test("discloses kind and validation authority for provider-qualified OpenCode entries", async () => {
+    const model = await resolveModelEntry("openai/gpt-5.5", {
+      executor: opencodeModelsExecutor(["openai/gpt-5.5"]),
+    });
+
+    expect(model).toMatchObject({
+      kind: "catalog-id",
+      harness: "opencode",
+      resolvedModelId: "openai/gpt-5.5",
+      validatedBy: "harness-list",
+    });
   });
 
   test("resolves cursor entries only through the explicit cursor prefix", async () => {
@@ -135,6 +192,46 @@ describe("Fusion panel composition", () => {
       "cursor",
     ]);
     expect(composition.cursorModels).toEqual(["composer-2.5-fast"]);
+    expect(composition.resolvedModels[0]).toMatchObject({
+      kind: "routing-product",
+      validatedBy: "harness-list",
+    });
+  });
+
+  test("discloses kind and validation authority for forced prefixes", async () => {
+    const forcedAlias = await resolveModelEntry("opencode:openai-flagship", {
+      executor: opencodeModelsExecutor(["openai/gpt-5.5"]),
+    });
+    const forcedOpenCode = await resolveModelEntry("opencode:openai/gpt-5.5", {
+      executor: opencodeModelsExecutor(["openai/gpt-5.5"]),
+    });
+    const forcedClaude = await resolveModelEntry("claude-code:fable");
+    const forcedCursor = await resolveModelEntry("cursor:sonnet", {
+      executor: commandSwitchExecutor({
+        cursorModels: ["sonnet - Claude Sonnet"],
+      }),
+    });
+
+    expect(forcedAlias).toMatchObject({
+      kind: "fusion-alias",
+      harness: "opencode",
+      validatedBy: "harness-list",
+    });
+    expect(forcedOpenCode).toMatchObject({
+      kind: "catalog-id",
+      harness: "opencode",
+      validatedBy: "harness-list",
+    });
+    expect(forcedClaude).toMatchObject({
+      kind: "tier-alias",
+      harness: "claude-code",
+      validatedBy: "pattern",
+    });
+    expect(forcedCursor).toMatchObject({
+      kind: "routing-product",
+      harness: "cursor",
+      validatedBy: "harness-list",
+    });
   });
 
   test("rejects bare cursor-family names and cursor-prefixed aliases", async () => {

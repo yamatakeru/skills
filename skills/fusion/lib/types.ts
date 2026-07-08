@@ -62,6 +62,24 @@ export interface PanelResult {
   errors?: string[];
 }
 
+export interface DryRunReport {
+  mode: "dry-run";
+  panelRunId: string;
+  transport: "sdk" | "cli";
+  resolvedModels: Array<{
+    slot: "parent" | "flagship" | "budget" | "refill" | "explicit";
+    entry: string;
+    kind: string;
+    harness: HarnessKind;
+    resolvedModelId: string;
+    fallbacks: string[];
+    validatedBy: string;
+  }>;
+  judge?: { strategy: string; modelEntry?: string; harness?: HarnessKind };
+  manifest: { renderedPromptHash: string; sharedContextHash: string };
+  warnings: string[];
+}
+
 export interface WorkerRequest {
   panelRunId: string;
   workerId: string;

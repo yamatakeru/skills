@@ -1,0 +1,139 @@
+{
+  "$ref": "#/definitions/DryRunReport",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "DryRunReport": {
+      "additionalProperties": false,
+      "properties": {
+        "judge": {
+          "additionalProperties": false,
+          "properties": {
+            "harness": {
+              "$ref": "#/definitions/HarnessKind"
+            },
+            "modelEntry": {
+              "type": "string"
+            },
+            "strategy": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "strategy"
+          ],
+          "type": "object"
+        },
+        "manifest": {
+          "additionalProperties": false,
+          "properties": {
+            "renderedPromptHash": {
+              "type": "string"
+            },
+            "sharedContextHash": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "renderedPromptHash",
+            "sharedContextHash"
+          ],
+          "type": "object"
+        },
+        "mode": {
+          "const": "dry-run",
+          "type": "string"
+        },
+        "panelRunId": {
+          "type": "string"
+        },
+        "resolvedModels": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "entry": {
+                "type": "string"
+              },
+              "fallbacks": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "harness": {
+                "$ref": "#/definitions/HarnessKind"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "resolvedModelId": {
+                "type": "string"
+              },
+              "slot": {
+                "enum": [
+                  "parent",
+                  "flagship",
+                  "budget",
+                  "refill",
+                  "explicit"
+                ],
+                "type": "string"
+              },
+              "validatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "slot",
+              "entry",
+              "kind",
+              "harness",
+              "resolvedModelId",
+              "fallbacks",
+              "validatedBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "transport": {
+          "enum": [
+            "sdk",
+            "cli"
+          ],
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "panelRunId",
+        "transport",
+        "resolvedModels",
+        "manifest",
+        "warnings"
+      ],
+      "type": "object"
+    },
+    "HarnessKind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "enum": [
+            "opencode",
+            "cursor",
+            "claude-code",
+            "pi"
+          ],
+          "type": "string"
+        }
+      ]
+    }
+  }
+}
