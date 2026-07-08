@@ -100,6 +100,31 @@ prefix because Cursor's model namespace overlaps every other provider's
 (ADR 0030); resolved slot routing is carried as
 `WorkerSlotPreference.harness` (ADR 0031).
 
+## Reference Model Entry and Preflight Policy
+
+Model entries are not a uniform namespace. Resolved entries carry a
+per-entry, disclosure-only namespace-kind label from an open vocabulary —
+`fusion-alias`, `tier-alias`, `catalog-id`, `routing-product` initially —
+derived from the routing path taken, plus a `validatedBy` field recording
+the strongest validation actually performed (`harness-list` for entries
+checked against a harness model listing, `pattern` for Claude entries whose
+availability only the worker attempt confirms). Kinds must not drive
+behavior: routing authority stays with the composition policy and harness
+adapters, unknown entries stay hard errors, and unknown kinds render
+opaquely with a warning. New kinds (for example a `deployment-id` for
+user-owned indirection) are added when a harness proves the need
+(ADR 0035).
+
+The reference preflight is `--dry-run` on the real invocation: the CLI
+runs the actual preparation path (composition, judge resolution, transport
+guards, context manifest) and exits before any worker or judge invocation,
+reporting resolved typed entries, judge resolution, manifest identity, and
+warnings. The task prompt remains required; with `--json` the output is a
+`DryRunReport` discriminated by `mode: "dry-run"`; exit code is 0 only
+when the full composition resolves cleanly. Entry-list validation and a
+harness-grouped model listing were considered and deferred; the listing's
+grammar is deliberately unlocked (ADR 0036).
+
 ## Reference Worker Prompt Policy
 
 The orchestrator renders the worker prompt once per panel; adapters send it

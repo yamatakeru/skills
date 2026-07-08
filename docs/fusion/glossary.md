@@ -343,6 +343,31 @@ The bundled table mapping stable alias names such as `openai-flagship` and
 absorbs model generation changes through skill updates instead of prompt or
 documentation rewrites.
 
+## Model Entry
+
+The string a caller passes to `--models`, `--judge-model`, or
+`--parent-model`. A model entry identifies what to request, not necessarily a
+concrete model: entries span capability-tier aliases, provider-qualified
+catalog ids, routing products, and Fusion alias-table names, and are routed to
+harnesses by pattern and explicit prefix. A model entry is distinct from the
+observed model a worker actually ran (`WorkerResult.modelUsed`).
+
+## Entry Kind
+
+The disclosure-only namespace-kind label carried by a resolved model entry.
+An open vocabulary assigned per entry from the routing path taken —
+`fusion-alias`, `tier-alias`, `catalog-id`, and `routing-product` initially —
+never a dispatch key for behavior, and never a source of implied properties
+such as enumerability or stability (ADR 0035).
+
+## Dry-Run Preflight
+
+The `--dry-run` early-exit mode of the Fusion CLI: the exact intended
+invocation is resolved through the real preparation path — composition, judge
+resolution, transport guards, context manifest — and reported with typed
+entries, without invoking workers or judge. Availability checks still shell
+out to harness model listings (ADR 0036).
+
 ## Worker Slot Preference
 
 The per-slot value object in `PanelSpec.workers` pairing an optional model
