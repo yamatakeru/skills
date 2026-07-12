@@ -10,9 +10,11 @@ The rest of this file is Claude Code–specific orchestration policy for a Fable
 
 ## Model roles and delegation
 
-Use Fable for planning, coordination, deep analysis, and insight generation. Delegate lightweight research, mechanical edits, and cleanly scoped lightweight subtasks to Sonnet. Delegate heavy research, cleanly scoped heavy subtasks, and all implementation tasks—regardless of size or complexity—to Codex configured with GPT-5.5. Reserve an Opus subagent for work where a single Claude-authored voice is the point—a language-sensitive JP/EN synthesis, a delicate rewrite, a tone- or values-calibration read, or a fast inline critique on a narrow question—cases where blending several workers through a judge would dilute the voice or cost latency you can't spare.
+Use Fable for planning, coordination, deep analysis, and insight generation. Delegate lightweight research, mechanical edits, and cleanly scoped lightweight subtasks to Sonnet. Delegate heavy research, cleanly scoped heavy subtasks, and all implementation tasks—regardless of size or complexity—to Codex configured with GPT-5.6-sol. Reserve an Opus subagent for work where a single Claude-authored voice is the point—a language-sensitive JP/EN synthesis, a delicate rewrite, a tone- or values-calibration read, or a fast inline critique on a narrow question—cases where blending several workers through a judge would dilute the voice or cost latency you can't spare.
 
 For comparison-shaped tasks, follow the Fusion panel policy in AGENTS.md; implementation still goes to Codex. A single Opus pass is the fallback only for the narrow seat above—voice, nuance, or a latency-bound inline read—since for any other second opinion a cheap panel wins on cost, quota, and (on breadth-bound work) coverage.
+
+In the AGENTS.md parallel-implementation (worktree) strategy, the "実装ワーカー" is Codex under this harness.
 
 ## Working with subagents
 
