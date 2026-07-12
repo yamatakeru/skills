@@ -27,10 +27,6 @@ export interface RecordedJudgeRun {
   workerRequests: WorkerRequest[];
   workerResults: WorkerResult[];
   synthesis: SynthesisResult;
-  inputHashes: {
-    workerRequests: string;
-    workerResults: string;
-  };
 }
 
 export interface JudgeReplayArmConfig {
@@ -135,10 +131,6 @@ export async function loadRecordedRun(
     workerRequests,
     workerResults,
     synthesis,
-    inputHashes: {
-      workerRequests: sha256(workerRequestsText),
-      workerResults: sha256(workerResultsText),
-    },
   };
 }
 

@@ -302,7 +302,6 @@ function recordedRun(): RecordedJudgeRun {
     workerRequests,
     workerResults,
     synthesis: { synthesis: "original" },
-    inputHashes: { workerRequests: "unused", workerResults: "unused" },
   };
 }
 

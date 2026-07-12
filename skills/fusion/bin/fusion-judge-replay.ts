@@ -276,19 +276,17 @@ interface ReplayRuntime {
 }
 
 function createReplayRuntime(): ReplayRuntime {
-  const runners: WorkerRunner[] = [
-    new OpenCodeSdkAdapter(),
-    new ClaudeCodeSdkAdapter(),
-    new CursorSdkAdapter(),
-  ];
+  const opencode = new OpenCodeSdkAdapter();
+  const claudeCode = new ClaudeCodeSdkAdapter();
+  const cursor = new CursorSdkAdapter();
   const registry = new AdapterRegistry()
-    .register("opencode", runners[0]!)
-    .register("claude-code", runners[1]!)
-    .register("cursor", runners[2]!);
+    .register("opencode", opencode)
+    .register("claude-code", claudeCode)
+    .register("cursor", cursor);
   return {
     registry,
     async dispose() {
-      for (const runner of runners) {
+      for (const runner of [opencode, claudeCode, cursor]) {
         await (
           runner as WorkerRunner & { dispose?: () => Promise<void> | void }
         ).dispose?.();
