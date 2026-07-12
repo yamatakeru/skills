@@ -12,6 +12,7 @@ import {
   preparePanelRequest,
   renderDryRunReport,
   renderMarkdownReport,
+  UsageError,
 } from "../bin/fusion-run";
 import {
   ClaudeCodeHeadlessCliAdapter,
@@ -72,8 +73,20 @@ describe("Fusion CLI parsing", () => {
   });
 
   test("rejects option-like tokens after the task prompt", () => {
-    expect(() => parseArgs(["--dry-run", "task", "--record"])).toThrow(
-      'Unexpected option-like token after the task prompt: "--record".',
+    const parse = () => parseArgs(["--dry-run", "task", "--record"]);
+
+    expect(parse).toThrow(UsageError);
+    expect(parse).toThrow(
+      'Unexpected option-like token after the task prompt: "--record". Place options before the prompt, or start the invocation with "--" to pass a literal prompt containing "--".',
+    );
+  });
+
+  test("rejects a separator after the task prompt as option-like", () => {
+    const parse = () => parseArgs(["task", "--", "--record"]);
+
+    expect(parse).toThrow(UsageError);
+    expect(parse).toThrow(
+      'Unexpected option-like token after the task prompt: "--". Place options before the prompt, or start the invocation with "--" to pass a literal prompt containing "--".',
     );
   });
 
