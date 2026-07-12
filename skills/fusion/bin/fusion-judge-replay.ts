@@ -12,6 +12,7 @@ import {
   type WorkerRunner,
 } from "../lib/protocol";
 import {
+  assertReplayArtifactsAvailable,
   buildReplayInput,
   loadRecordedRun,
   resolveRecordedRunDir,
@@ -51,6 +52,9 @@ async function main(): Promise<number> {
     const cwd = process.cwd();
     const runDir = resolveRecordedRunDir(options.run, cwd);
     const recorded = await loadRecordedRun(runDir);
+    if (!options.force) {
+      await assertReplayArtifactsAvailable(recorded.runDir, options.arm);
+    }
     const resolvedModel = await resolveModelEntry(options.judgeModel, { cwd });
     const groundingAppendix =
       options.groundingFile === undefined

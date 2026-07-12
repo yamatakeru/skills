@@ -82,6 +82,19 @@ export interface ReplayArtifactPaths {
   manifest: string;
 }
 
+export async function assertReplayArtifactsAvailable(
+  runDir: string,
+  armId: string,
+): Promise<void> {
+  assertSafeArmId(armId);
+  const paths = replayArtifactPaths(runDir, armId);
+  if ((await pathExists(paths.synthesis)) || (await pathExists(paths.manifest))) {
+    throw new Error(
+      `Replay artifacts already exist for arm ${armId}; pass --force to overwrite them.`,
+    );
+  }
+}
+
 export async function loadRecordedRun(
   runDir: string,
 ): Promise<RecordedJudgeRun> {
@@ -133,6 +146,11 @@ export function buildReplayInput(
   recorded: RecordedJudgeRun,
   armConfig: JudgeReplayArmConfig,
 ): BuiltJudgeReplayInput {
+  if (recorded.workerRequests.length !== recorded.workerResults.length) {
+    throw new Error(
+      "Invalid recorded Fusion artifacts: worker-requests.json and worker-results.json must contain the same number of entries.",
+    );
+  }
   const panelRequest: PanelRequest = {
     ...recorded.panelRequest,
     synthesizer: {
@@ -213,11 +231,8 @@ export async function writeReplayArtifacts(
     absoluteRunDir,
     "worker-results.json",
   );
-  const synthesisPath = join(
-    absoluteRunDir,
-    `synthesis-replay-${armId}.json`,
-  );
-  const manifestPath = join(absoluteRunDir, `replay-manifest-${armId}.json`);
+  const { synthesis: synthesisPath, manifest: manifestPath } =
+    replayArtifactPaths(absoluteRunDir, armId);
   if (
     manifestInput.force !== true &&
     ((await pathExists(synthesisPath)) || (await pathExists(manifestPath)))
@@ -316,6 +331,7 @@ function assertWorkerRequests(value: unknown): asserts value is WorkerRequest[] 
 function assertWorkerResults(value: unknown): asserts value is WorkerResult[] {
   if (
     !Array.isArray(value) ||
+    value.length === 0 ||
     value.some(
       (entry) =>
         !isRecord(entry) ||
@@ -326,7 +342,7 @@ function assertWorkerResults(value: unknown): asserts value is WorkerResult[] {
     )
   ) {
     throw new Error(
-      "Invalid recorded Fusion artifact worker-results.json: expected a WorkerResult array.",
+      "Invalid recorded Fusion artifact worker-results.json: expected a non-empty WorkerResult array.",
     );
   }
 }
@@ -416,4 +432,15 @@ async function pathExists(path: string): Promise<boolean> {
     }
     throw error;
   }
+}
+
+function replayArtifactPaths(
+  runDir: string,
+  armId: string,
+): ReplayArtifactPaths {
+  const absoluteRunDir = resolve(runDir);
+  return {
+    synthesis: join(absoluteRunDir, `synthesis-replay-${armId}.json`),
+    manifest: join(absoluteRunDir, `replay-manifest-${armId}.json`),
+  };
 }
