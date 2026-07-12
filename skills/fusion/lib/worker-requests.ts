@@ -1,5 +1,6 @@
 import { mergeDefaultPolicies } from "./defaults";
 import { renderWorkerPrompt } from "./worker-prompt";
+import type { WorkerPromptVariant } from "./worker-prompt";
 import type {
   DefaultPolicies,
   ContextManifest,
@@ -14,6 +15,7 @@ import { validatePanelSpec } from "./validation";
 
 export type WorkerRequestBuildInput = Omit<PanelRequest, "contextManifest"> & {
   contextManifest?: ContextManifest;
+  workerPromptVariant?: WorkerPromptVariant;
 };
 
 export const defaultHarnessSelector: HarnessSelector = {
@@ -123,6 +125,7 @@ export function buildWorkerRequests(
     task: request.prompt,
     outputContract: policies.output,
     sharedContext: request.sharedContext,
+    variant: request.workerPromptVariant,
   });
   return Array.from({ length: request.panelSpec.workerCount }, (_, index) => {
     const workerId = `worker-${index + 1}`;

@@ -72,6 +72,34 @@ describe("Fusion CLI parsing", () => {
     expect(options.transport).toBe("sdk");
   });
 
+  test("parses the experiment-scoped worker prompt variant", async () => {
+    const options = parseArgs([
+      "--worker-prompt-variant",
+      "suppression-only",
+      "--models",
+      "claude-code:sonnet",
+      "Do work",
+    ]);
+
+    expect(options.workerPromptVariant).toBe("suppression-only");
+    const prepared = await preparePanelRequest(options, {
+      cwd: "/tmp",
+      panelRunId: "prompt-variant",
+    });
+    expect(prepared.request.workerPromptVariant).toBe("suppression-only");
+    expect(prepared.workerRequests[0]?.prompt).toContain(
+      "# Worker Instructions",
+    );
+  });
+
+  test("rejects an invalid worker prompt variant", () => {
+    const parse = () =>
+      parseArgs(["--worker-prompt-variant", "unknown", "Do work"]);
+
+    expect(parse).toThrow(UsageError);
+    expect(parse).toThrow("suppression-only, upstream-minimal");
+  });
+
   test("rejects option-like tokens after the task prompt", () => {
     const parse = () => parseArgs(["--dry-run", "task", "--record"]);
 

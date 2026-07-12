@@ -37,6 +37,7 @@ import {
   type SharedContext,
   type TransportMode,
   type WorkerBudget,
+  type WorkerPromptVariant,
   type WorkerRequest,
   type WorkerRunner,
 } from "../lib/protocol";
@@ -58,11 +59,16 @@ export interface CliOptions {
   synthesizer?: string;
   judgeModel?: string;
   timeoutMs?: number;
+  workerPromptVariant?: WorkerPromptVariant;
   prompt: string;
 }
 
+type ExperimentPanelRequest = PanelRequest & {
+  workerPromptVariant?: WorkerPromptVariant;
+};
+
 export interface PreparedPanelRequest {
-  request: PanelRequest;
+  request: ExperimentPanelRequest;
   workerRequests: WorkerRequest[];
   composition: ResolvedPanelComposition;
   warnings: string[];
@@ -180,8 +186,9 @@ export async function preparePanelRequest(
       readRoots: resolveReadRoots(options.readRoots, cwd),
     },
     workerBudget,
+    workerPromptVariant: options.workerPromptVariant,
     provenancePolicy: provenancePolicy(options.record),
-  } satisfies Omit<PanelRequest, "contextManifest">;
+  } satisfies Omit<ExperimentPanelRequest, "contextManifest">;
 
   const workerRequests = buildWorkerRequests(requestWithoutManifest);
   const renderedPrompt = renderedPromptFromWorkerRequests(workerRequests);
@@ -190,7 +197,7 @@ export async function preparePanelRequest(
     userTask: options.prompt,
     sharedContext: contextResult.sharedContext,
   });
-  const request: PanelRequest = {
+  const request: ExperimentPanelRequest = {
     ...requestWithoutManifest,
     contextManifest,
   };
@@ -500,6 +507,12 @@ export function parseArgs(args: string[]): CliOptions {
       case "--timeout-ms":
         options.timeoutMs = parsePositiveInteger(flag, takeValue());
         break;
+      case "--worker-prompt-variant":
+        options.workerPromptVariant = parseWorkerPromptVariant(
+          flag,
+          takeValue(),
+        );
+        break;
       case "--help":
         rejectValue();
         throw new HelpRequested();
@@ -538,6 +551,20 @@ function parseTransport(flag: string, value: string): TransportMode {
       return value;
   }
   throw new UsageError(`${flag} must be one of: sdk, cli.`);
+}
+
+function parseWorkerPromptVariant(
+  flag: string,
+  value: string,
+): WorkerPromptVariant {
+  switch (value) {
+    case "suppression-only":
+    case "upstream-minimal":
+      return value;
+  }
+  throw new UsageError(
+    `${flag} must be one of: suppression-only, upstream-minimal.`,
+  );
 }
 
 function splitFlag(arg: string): [string, string | undefined] {
@@ -952,6 +979,8 @@ export function usage(): string {
     "  --judge-model <entry>     Override the default parent-model judge.",
     "  --synthesizer <strategy>  parent-agent, deterministic, opencode, cursor, or claude-code.",
     "  --timeout-ms <n>          Per-worker timeout.",
+    "  --worker-prompt-variant <suppression-only|upstream-minimal>",
+    "                            Worker prompt variant (experiment-scoped).",
     "",
     "Alias table:",
     ...renderAliasTableUsageLines(),
