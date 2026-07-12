@@ -71,6 +71,30 @@ describe("Fusion CLI parsing", () => {
     expect(options.transport).toBe("sdk");
   });
 
+  test("rejects option-like tokens after the task prompt", () => {
+    expect(() => parseArgs(["--dry-run", "task", "--record"])).toThrow(
+      'Unexpected option-like token after the task prompt: "--record".',
+    );
+  });
+
+  test("parses an unquoted multi-word task prompt", () => {
+    const options = parseArgs(["foo", "bar", "baz"]);
+
+    expect(options.prompt).toBe("foo bar baz");
+  });
+
+  test("parses option-like prompt text after the separator verbatim", () => {
+    const options = parseArgs(["--", "--record", "looks", "like", "a", "flag"]);
+
+    expect(options.prompt).toBe("--record looks like a flag");
+  });
+
+  test("allows double hyphens in the middle of a prompt token", () => {
+    const options = parseArgs(["task", "a--b"]);
+
+    expect(options.prompt).toBe("task a--b");
+  });
+
   test("rejects invalid new CLI flag values", () => {
     expect(() => parseArgs(["--effort", "max", "task"])).toThrow(
       "low, medium, high, xhigh",
