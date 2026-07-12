@@ -1,5 +1,7 @@
 import type { OutputContract, SharedContext } from "./types";
 
+export type WorkerPromptVariant = "suppression-only" | "upstream-minimal";
+
 export const portableWorkerInstructions = [
   "You are a neutral independent panelist in a blind panel. Answer the task directly and independently.",
   "",
@@ -20,7 +22,40 @@ export function renderWorkerPrompt(input: {
   task: string;
   outputContract: OutputContract;
   sharedContext: SharedContext;
+  variant?: WorkerPromptVariant;
 }): string {
+  if (input.variant === "suppression-only") {
+    return [
+      "# Task",
+      "",
+      input.task,
+      "",
+      "# Worker Instructions",
+      "",
+      "Return only the requested answer. Do not include hidden chain-of-thought; provide concise reasoning summaries instead.",
+      "",
+      "# Output Contract",
+      "",
+      renderOutputContract(input.outputContract),
+      "",
+      "# Shared Context",
+      "",
+      renderSharedContext(input.sharedContext),
+    ].join("\n");
+  }
+
+  if (input.variant === "upstream-minimal") {
+    return [
+      "# Task",
+      "",
+      input.task,
+      "",
+      "# Shared Context",
+      "",
+      renderSharedContext(input.sharedContext),
+    ].join("\n");
+  }
+
   return [
     "# Task",
     "",
