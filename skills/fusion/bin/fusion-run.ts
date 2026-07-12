@@ -398,7 +398,16 @@ export function parseArgs(args: string[]): CliOptions {
       break;
     }
     if (!arg.startsWith("--")) {
-      promptParts.push(arg, ...args.slice(index + 1));
+      const trailingArgs = args.slice(index + 1);
+      const optionLikeToken = trailingArgs.find((token) =>
+        token.startsWith("--"),
+      );
+      if (optionLikeToken !== undefined) {
+        throw new UsageError(
+          `Unexpected option-like token after the task prompt: "${optionLikeToken}". Place options before the prompt, or start the invocation with "--" to pass a literal prompt containing "--".`,
+        );
+      }
+      promptParts.push(arg, ...trailingArgs);
       break;
     }
 

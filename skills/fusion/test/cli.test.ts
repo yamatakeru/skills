@@ -12,6 +12,7 @@ import {
   preparePanelRequest,
   renderDryRunReport,
   renderMarkdownReport,
+  UsageError,
 } from "../bin/fusion-run";
 import {
   ClaudeCodeHeadlessCliAdapter,
@@ -69,6 +70,42 @@ describe("Fusion CLI parsing", () => {
     const options = parseArgs(["Do work"]);
 
     expect(options.transport).toBe("sdk");
+  });
+
+  test("rejects option-like tokens after the task prompt", () => {
+    const parse = () => parseArgs(["--dry-run", "task", "--record"]);
+
+    expect(parse).toThrow(UsageError);
+    expect(parse).toThrow(
+      'Unexpected option-like token after the task prompt: "--record". Place options before the prompt, or start the invocation with "--" to pass a literal prompt containing "--".',
+    );
+  });
+
+  test("rejects a separator after the task prompt as option-like", () => {
+    const parse = () => parseArgs(["task", "--", "--record"]);
+
+    expect(parse).toThrow(UsageError);
+    expect(parse).toThrow(
+      'Unexpected option-like token after the task prompt: "--". Place options before the prompt, or start the invocation with "--" to pass a literal prompt containing "--".',
+    );
+  });
+
+  test("parses an unquoted multi-word task prompt", () => {
+    const options = parseArgs(["foo", "bar", "baz"]);
+
+    expect(options.prompt).toBe("foo bar baz");
+  });
+
+  test("parses option-like prompt text after the separator verbatim", () => {
+    const options = parseArgs(["--", "--record", "looks", "like", "a", "flag"]);
+
+    expect(options.prompt).toBe("--record looks like a flag");
+  });
+
+  test("allows double hyphens in the middle of a prompt token", () => {
+    const options = parseArgs(["task", "a--b"]);
+
+    expect(options.prompt).toBe("task a--b");
   });
 
   test("rejects invalid new CLI flag values", () => {
