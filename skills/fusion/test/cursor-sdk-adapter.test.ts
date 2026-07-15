@@ -9,9 +9,37 @@ import {
   cursorHookScriptContent,
   type CommandExecution,
 } from "../lib/protocol";
-import { workerRequest } from "./fixtures";
+import { withFusionPanelDepth, workerRequest } from "./fixtures";
 
 describe("Fusion Cursor SDK adapter", () => {
+  for (const [label, parentDepth, expectedDepth] of [
+    ["defaults an absent panel depth to 0", undefined, "1"],
+    ["increments an inherited panel depth", "1", "2"],
+  ] as const) {
+    test(`${label} for spawned workers`, async () => {
+      await withFusionPanelDepth(parentDepth, async () => {
+        let execution: CommandExecution | undefined;
+        const adapter = new CursorSdkAdapter({
+          executor: async (input) => {
+            execution = input;
+            return {
+              exitCode: 0,
+              stdout: streamJson([
+                { type: "result", is_error: false, result: "ok" },
+              ]),
+              stderr: "",
+              durationMs: 1,
+            };
+          },
+        });
+
+        await adapter.runWorker(workerRequest());
+
+        expect(execution?.env?.FUSION_PANEL_DEPTH).toBe(expectedDepth);
+      });
+    });
+  }
+
   test("spawns cursor-agent with config injection and parses stream evidence", async () => {
     const executions: CommandExecution[] = [];
     const request = {
@@ -146,9 +174,10 @@ describe("Fusion Cursor SDK adapter", () => {
       transport: "sdk",
     });
     expect(result.complianceEvidence?.adapterClaimsIsolatedContext).toBe(true);
-    expect(result.complianceEvidence?.observedToolPolicy).toEqual(
-      request.toolsPolicy,
+    expect(result.complianceEvidence?.enforcement?.source).toBe(
+      "harness-declared",
     );
+    expect(result.complianceEvidence?.containment).toBe("allowlist-enforced");
     const notes = result.complianceEvidence?.notes?.join("\n");
     expect(notes).toContain("requested model id: composer-2.5-fast");
     expect(notes).toContain("observed model display name: Composer 2.5 Fast");
@@ -296,6 +325,9 @@ describe("Fusion Cursor SDK adapter", () => {
       "Write permission denied",
     );
     expect(result.warnings?.join("\n")).toContain("denied tool result");
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(3);
     expect(result.complianceEvidence?.notes?.join("\n")).toContain(
       "Cursor tool Shell ended with status permissionDenied",
     );

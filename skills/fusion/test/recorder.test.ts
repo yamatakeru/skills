@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { describe, expect, spyOn, test } from "bun:test";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,11 +8,14 @@ import {
   HarnessBackedJudgeSynthesizer,
   NoopRunRecorder,
   runPanel,
+  type WorkerRequest,
+  type WorkerResult,
 } from "../lib/protocol";
 import {
   judgeAnalysisJson,
   judgeRunner,
   okRunner,
+  okWorkerResult,
   panelRequest,
 } from "./fixtures";
 
@@ -34,6 +37,87 @@ async function withTempWorkspace(
 describe("Fusion run recorders", () => {
   test("no-op recorder does not record", () => {
     expect(new NoopRunRecorder().status).toBe("not-recorded");
+  });
+
+  test("signal handling writes the marker, cleans up, then exits", async () => {
+    await withTempWorkspace(
+      { prefix: "fusion-recorder-signal-", gitignore: ".fusion-runs/\n" },
+      async (workspaceRoot) => {
+        const order: string[] = [];
+        const existingHandlers = new Set(process.listeners("SIGTERM"));
+        const exit = spyOn(process, "exit").mockImplementation((code) => {
+          order.push(`exit:${code}`);
+          return undefined as never;
+        });
+        try {
+          const recorder = new FileRunRecorder({
+            workspaceRoot,
+            panelRunId: "signal-run",
+            async onSignalCleanup() {
+              const marker = JSON.parse(
+                await readFile(
+                  join(
+                    workspaceRoot,
+                    ".fusion-runs",
+                    "signal-run",
+                    "run-status.json",
+                  ),
+                  "utf8",
+                ),
+              ) as { status: string };
+              order.push(`marker:${marker.status}`);
+              order.push("cleanup");
+            },
+          });
+          await recorder.recordRequest(panelRequest());
+          const handler = process
+            .listeners("SIGTERM")
+            .find((candidate) => !existingHandlers.has(candidate));
+
+          await handler?.("SIGTERM");
+
+          expect(order).toEqual([
+            "marker:aborted",
+            "cleanup",
+            "exit:143",
+          ]);
+        } finally {
+          exit.mockRestore();
+        }
+      },
+    );
+  });
+
+  test("signal cleanup timeout still exits", async () => {
+    await withTempWorkspace(
+      { prefix: "fusion-recorder-timeout-", gitignore: ".fusion-runs/\n" },
+      async (workspaceRoot) => {
+        const exitCodes: Array<string | number | null | undefined> = [];
+        const existingHandlers = new Set(process.listeners("SIGTERM"));
+        const exit = spyOn(process, "exit").mockImplementation((code) => {
+          exitCodes.push(code);
+          return undefined as never;
+        });
+        try {
+          const recorder = new FileRunRecorder({
+            workspaceRoot,
+            panelRunId: "signal-timeout-run",
+            onSignalCleanup: () => new Promise<void>(() => undefined),
+            signalCleanupTimeoutMs: 10,
+          });
+          await recorder.recordRequest(panelRequest());
+          const handler = process
+            .listeners("SIGTERM")
+            .find((candidate) => !existingHandlers.has(candidate));
+
+          await handler?.("SIGTERM");
+
+          expect(exitCodes).toEqual([143]);
+        } finally {
+          exit.mockRestore();
+        }
+      },
+    );
   });
 
   test("file recorder writes split artifacts with redaction", async () => {
@@ -69,8 +153,14 @@ describe("Fusion run recorders", () => {
           join(runDirectory, "events.jsonl"),
           "utf8",
         );
+        const runStatus = JSON.parse(
+          await readFile(join(runDirectory, "run-status.json"), "utf8"),
+        ) as Record<string, string>;
 
         expect(recorder.status).toBe("complete");
+        expect(runStatus.status).toBe("complete");
+        expect(runStatus.startedAt).toBeString();
+        expect(runStatus.endedAt).toBeString();
         expect(requestJson).toContain("[REDACTED]");
         expect(requestJson).not.toContain("do-not-write");
         expect(synthesisJson).toContain("deterministic");
@@ -84,6 +174,124 @@ describe("Fusion run recorders", () => {
           )
           .find((event) => event.type === "compliance.evaluated");
         expect(complianceEvent?.data?.tier).toBe("full");
+      },
+    );
+  });
+
+  test("file recorder resolves the marker to failed for a failed run", async () => {
+    await withTempWorkspace(
+      { prefix: "fusion-failed-recorder-", gitignore: ".fusion-runs/\n" },
+      async (workspaceRoot) => {
+        const request = panelRequest({ panelRunId: "failed-run" });
+        const recorder = new FileRunRecorder({
+          workspaceRoot,
+          panelRunId: request.panelRunId,
+        });
+
+        const result = await runPanel(request, {
+          runner: {
+            async runWorker() {
+              throw new Error("worker failed");
+            },
+          },
+          synthesizer: new DeterministicSynthesizer(),
+          recorder,
+        });
+
+        const runStatus = JSON.parse(
+          await readFile(
+            join(
+              workspaceRoot,
+              ".fusion-runs",
+              request.panelRunId,
+              "run-status.json",
+            ),
+            "utf8",
+          ),
+        ) as Record<string, string>;
+        expect(result.status).toBe("failed");
+        expect(recorder.status).toBe("failed");
+        expect(runStatus.status).toBe("failed");
+        expect(runStatus.startedAt).toBeString();
+        expect(runStatus.endedAt).toBeString();
+      },
+    );
+  });
+
+  test("file recorder persists completed workers while the run is still active", async () => {
+    await withTempWorkspace(
+      { prefix: "fusion-incremental-recorder-", gitignore: ".fusion-runs/\n" },
+      async (workspaceRoot) => {
+        const request = panelRequest({ panelRunId: "incremental-run" });
+        const firstWorker = deferred<WorkerResult>();
+        const secondWorker = deferred<WorkerResult>();
+        const bothInvoked = deferred<void>();
+        const firstPersisted = deferred<void>();
+        const requests = new Map<string, WorkerRequest>();
+        class ObservedFileRunRecorder extends FileRunRecorder {
+          override async recordWorkerResults(
+            results: WorkerResult[],
+          ): Promise<void> {
+            await super.recordWorkerResults(results);
+            if (results.length === 1) {
+              firstPersisted.resolve();
+            }
+          }
+        }
+        const recorder = new ObservedFileRunRecorder({
+          workspaceRoot,
+          panelRunId: request.panelRunId,
+        });
+        const panelPromise = runPanel(request, {
+          runner: {
+            async runWorker(workerRequest) {
+              requests.set(workerRequest.workerId, workerRequest);
+              if (requests.size === 2) {
+                bothInvoked.resolve();
+              }
+              return workerRequest.workerId === "worker-1"
+                ? firstWorker.promise
+                : secondWorker.promise;
+            },
+          },
+          synthesizer: new DeterministicSynthesizer(),
+          recorder,
+        });
+
+        await bothInvoked.promise;
+        firstWorker.resolve(okWorkerResult(requests.get("worker-1")!));
+        await firstPersisted.promise;
+
+        const runDirectory = join(
+          workspaceRoot,
+          ".fusion-runs",
+          request.panelRunId,
+        );
+        const partialResults = JSON.parse(
+          await readFile(join(runDirectory, "worker-results.json"), "utf8"),
+        ) as WorkerResult[];
+        const runningStatus = JSON.parse(
+          await readFile(join(runDirectory, "run-status.json"), "utf8"),
+        ) as Record<string, string>;
+        expect(partialResults.map((result) => result.workerId)).toEqual([
+          "worker-1",
+        ]);
+        expect(runningStatus.status).toBe("running");
+        expect(runningStatus.startedAt).toBeString();
+        expect(runningStatus.endedAt).toBeUndefined();
+        await expect(
+          access(join(runDirectory, "synthesis.json")),
+        ).rejects.toThrow();
+
+        secondWorker.resolve(okWorkerResult(requests.get("worker-2")!));
+        await panelPromise;
+        const finalResults = JSON.parse(
+          await readFile(join(runDirectory, "worker-results.json"), "utf8"),
+        ) as WorkerResult[];
+        expect(finalResults.map((result) => result.workerId)).toEqual([
+          "worker-1",
+          "worker-2",
+        ]);
       },
     );
   });
@@ -200,3 +408,16 @@ describe("Fusion run recorders", () => {
     );
   });
 });
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T): void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolvePromise: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}

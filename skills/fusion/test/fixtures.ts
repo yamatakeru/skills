@@ -3,6 +3,7 @@ import {
   buildWorkerRequests,
   createContextManifest,
   defaultPolicies,
+  deriveContainment,
   normalizeHarnessDescriptor,
   renderWorkerPrompt,
   type CommandExecution,
@@ -123,7 +124,8 @@ export function okWorkerResult(
       adapterClaimsIsolatedContext: true,
       adapterClaimsBlindness: request.blindnessPolicy.noPeerOutputs,
       observedSessionMode: sessionMode,
-      observedToolPolicy: request.toolsPolicy,
+      enforcement: { source: "harness-declared", permissionDenialCount: 0 },
+      containment: deriveContainment(request.toolsPolicy),
     },
   };
 }
@@ -194,4 +196,25 @@ export function judgeAnalysisJson(
     blind_spots: ["No worker verified external references"],
     ...overrides,
   });
+}
+
+export async function withFusionPanelDepth<T>(
+  depth: string | undefined,
+  action: () => Promise<T>,
+): Promise<T> {
+  const original = process.env.FUSION_PANEL_DEPTH;
+  if (depth === undefined) {
+    delete process.env.FUSION_PANEL_DEPTH;
+  } else {
+    process.env.FUSION_PANEL_DEPTH = depth;
+  }
+  try {
+    return await action();
+  } finally {
+    if (original === undefined) {
+      delete process.env.FUSION_PANEL_DEPTH;
+    } else {
+      process.env.FUSION_PANEL_DEPTH = original;
+    }
+  }
 }

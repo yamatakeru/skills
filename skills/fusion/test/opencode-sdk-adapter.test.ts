@@ -1,14 +1,84 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
-  OpenCodeSdkAdapter,
+  OpenCodeSdkAdapter as BaseOpenCodeSdkAdapter,
   buildOpenCodeConfigContent,
+  buildOpenCodePermissionMap,
+  type OpenCodePermissionConfig,
+  type OpenCodeSdkAdapterOptions,
   type OpenCodeServerFactory,
+  type OpenCodeServerFactoryInput,
+  type WorkerRequest,
 } from "../lib/protocol";
-import { workerRequest } from "./fixtures";
+import { withFusionPanelDepth, workerRequest } from "./fixtures";
 
 const encoder = new TextEncoder();
+const ruleDenialError =
+  "The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules [...]";
+const rejectedPermissionError =
+  "The user rejected permission to use this specific tool call.";
+
+class OpenCodeSdkAdapter extends BaseOpenCodeSdkAdapter {
+  private setActiveRequest: (request: WorkerRequest) => void = () => undefined;
+
+  constructor(options: OpenCodeSdkAdapterOptions = {}) {
+    let activeRequest = workerRequest();
+    const requestFetch = options.fetch;
+    super({
+      ...options,
+      fetch:
+        options.baseUrl === undefined || requestFetch === undefined
+          ? requestFetch
+          : async (input, init) => {
+              const url = new URL(String(input));
+              if (url.pathname === "/agent") {
+                const config = buildOpenCodeConfigContent({
+                  toolsPolicy: activeRequest.toolsPolicy,
+                  environment: activeRequest.environment,
+                });
+                return Response.json(
+                  Object.entries(config.agent).map(([name, agent]) => ({
+                    name,
+                    permission: effectivePermissionRules(agent.permission),
+                  })),
+                );
+              }
+              return requestFetch(input, init);
+            },
+    });
+    this.setActiveRequest = (request) => {
+      activeRequest = request;
+    };
+  }
+
+  override runWorker(request: WorkerRequest) {
+    this.setActiveRequest(request);
+    return super.runWorker(request);
+  }
+}
 
 describe("Fusion OpenCode SDK adapter", () => {
+  for (const [label, parentDepth, expectedDepth] of [
+    ["defaults an absent panel depth to 0", undefined, "1"],
+    ["increments an inherited panel depth", "1", "2"],
+  ] as const) {
+    test(`${label} for the spawned serve process`, async () => {
+      await withFusionPanelDepth(parentDepth, async () => {
+        let factoryInput: OpenCodeServerFactoryInput | undefined;
+        const adapter = new OpenCodeSdkAdapter({
+          serverFactory: async (input) => {
+            factoryInput = input;
+            throw new Error("stop after environment capture");
+          },
+          versionExecutor,
+        });
+
+        await adapter.runWorker(workerRequest());
+
+        expect(factoryInput?.env.FUSION_PANEL_DEPTH).toBe(expectedDepth);
+      });
+    });
+  }
+
   test("maps SDK response evidence to a worker result", async () => {
     let promptMessageId: string | undefined;
     const adapter = new OpenCodeSdkAdapter({
@@ -99,6 +169,41 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.usage?.costUsd).toBe(0.03);
     expect(result.toolUseSummary?.toolsUsed).toEqual(["grep"]);
     expect(result.warnings?.join("\n") ?? "").not.toContain("degraded");
+  });
+
+  test("verifies effective rules for an injected base URL before creating a session", async () => {
+    let sessionRequests = 0;
+    const adapter = new BaseOpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          return Response.json([
+            {
+              name: "fusion-worker",
+              permission: [
+                { permission: "*", pattern: "*", action: "deny" },
+                { permission: "bash", pattern: "*", action: "allow" },
+              ],
+            },
+          ]);
+        }
+        if (url.pathname === "/session" && init?.method === "POST") {
+          sessionRequests += 1;
+          return Response.json({ id: "should-not-exist" });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("error");
+    expect(result.errors?.join("\n")).toContain(
+      "OPENCODE_EFFECTIVE_RULES_MISMATCH",
+    );
+    expect(sessionRequests).toBe(0);
   });
 
   test("waits for the SSE stream before sending the prompt", async () => {
@@ -252,6 +357,189 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.toolUseSummary?.deniedRequests).toEqual([
       "Read /private/path",
     ]);
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(1);
+  });
+
+  test("attributes rule pre-denials from tool errors", async () => {
+    const command = "git commit --allow-empty -m x";
+    const { result } = await runOpenCodeEventFixture((messageId) => [
+      toolErrorEvent({
+        id: "tool-rule-denied",
+        callId: "call-rule-denied",
+        messageId,
+        command,
+        error: ruleDenialError,
+      }),
+    ]);
+
+    expect(result.complianceEvidence?.enforcement?.toolEvents).toEqual([
+      { tool: "bash", command, outcome: "denied" },
+    ]);
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(1);
+    expect(result.toolUseSummary?.toolsUsed).toBeUndefined();
+    expect(result.toolUseSummary?.deniedRequests).toEqual([
+      `bash: ${command}`,
+    ]);
+    expect(result.warnings?.join("\n")).toContain(
+      "OpenCode tool bash was denied by permission controls.",
+    );
+  });
+
+  test("reports a tool in both summary classes when denial and success are observed", async () => {
+    const deniedCommand = "git commit --allow-empty -m x";
+    const { result } = await runOpenCodeEventFixture((messageId) => [
+      toolErrorEvent({
+        id: "tool-rule-denied",
+        callId: "call-rule-denied",
+        messageId,
+        command: deniedCommand,
+        error: ruleDenialError,
+      }),
+      {
+        type: "message.part.updated",
+        properties: {
+          part: {
+            id: "tool-succeeded",
+            sessionID: "session-1",
+            messageID: messageId,
+            callID: "call-succeeded",
+            type: "tool",
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: { command: "git status" },
+              output: "",
+            },
+          },
+        },
+      },
+    ]);
+
+    expect(result.toolUseSummary?.toolsUsed).toEqual(["bash"]);
+    expect(result.toolUseSummary?.deniedRequests).toEqual([
+      `bash: ${deniedCommand}`,
+    ]);
+  });
+
+  test("keeps ordinary tool errors classified as failed", async () => {
+    const command = "missing-command";
+    const { result } = await runOpenCodeEventFixture((messageId) => [
+      toolErrorEvent({
+        id: "tool-failed",
+        callId: "call-failed",
+        messageId,
+        command,
+        error: "command not found",
+      }),
+    ]);
+
+    expect(result.complianceEvidence?.enforcement?.toolEvents).toEqual([
+      { tool: "bash", command, outcome: "failed" },
+    ]);
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(0);
+  });
+
+  test("combines permission asks and tool denials without double-counting a call", async () => {
+    const { result, permissionReplies } = await runOpenCodeEventFixture(
+      (messageId) => [
+        {
+          type: "permission.updated",
+          properties: {
+            id: "permission-interactive",
+            sessionID: "session-1",
+            messageID: messageId,
+            callID: "call-interactive",
+            type: "bash",
+            title: "Run guarded command",
+            metadata: {},
+            time: { created: Date.now() },
+          },
+        },
+        toolErrorEvent({
+          id: "tool-interactive",
+          callId: "call-interactive",
+          messageId,
+          command: "guarded-command",
+          error: rejectedPermissionError,
+        }),
+        toolErrorEvent({
+          id: "tool-rule-denied",
+          callId: "call-rule-denied",
+          messageId,
+          command: "git commit --allow-empty -m x",
+          error: ruleDenialError,
+        }),
+      ],
+    );
+
+    expect(permissionReplies).toEqual([{ response: "reject" }]);
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(2);
+    expect(
+      result.complianceEvidence?.enforcement?.toolEvents?.map(
+        (event) => event.outcome,
+      ),
+    ).toEqual(["denied", "denied"]);
+  });
+
+  test("attributes permission-denial errors in synchronous prompt responses", async () => {
+    const command = "git commit --allow-empty -m x";
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return openSseResponse();
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          return new Response(null, { status: 404 });
+        }
+        if (url.pathname === "/session/session-1/message") {
+          return Response.json({
+            info: assistantMessage("assistant-sync"),
+            parts: [
+              {
+                id: "tool-sync-rule-denied",
+                sessionID: "session-1",
+                messageID: "assistant-sync",
+                callID: "call-sync-rule-denied",
+                type: "tool",
+                tool: "bash",
+                state: {
+                  status: "error",
+                  input: { command },
+                  error: ruleDenialError,
+                },
+              },
+            ],
+          });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.complianceEvidence?.enforcement?.toolEvents).toEqual([
+      { tool: "bash", command, outcome: "denied" },
+    ]);
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(1);
   });
 
   test("builds permission config from tools policy and read roots", () => {
@@ -265,22 +553,118 @@ describe("Fusion OpenCode SDK adapter", () => {
       environment: { readRoots: ["/tmp/context"] },
     });
     const agent = config.agent["fusion-worker"];
+    const judge = config.agent["fusion-judge"];
     const bash = agent.permission.bash as Record<string, string>;
     const externalDirectory = agent.permission.external_directory as Record<
       string,
       string
     >;
 
-    expect(agent.tools.read).toBe(true);
-    expect(agent.tools.grep).toBe(true);
-    expect(agent.tools.write).toBe(false);
+    expect(Object.keys(agent.permission)[0]).toBe("*");
+    expect(agent.permission["*"]).toBe("deny");
+    expect(agent.permission.read).toBe("allow");
+    expect(agent.permission.grep).toBe("allow");
+    expect(agent.permission.glob).toBe("allow");
+    expect(agent.permission.list).toBe("deny");
+    expect(agent).not.toHaveProperty("tools");
     expect(agent.permission.edit).toBe("deny");
     expect(bash["*"]).toBe("deny");
     expect(bash["git status *"]).toBe("allow");
     expect(bash["rg *"]).toBe("allow");
     expect(externalDirectory["*"]).toBe("deny");
     expect(externalDirectory["/tmp/context/**"]).toBe("allow");
+    expect(Object.keys(config.agent)).toEqual([
+      "fusion-worker",
+      "fusion-judge",
+    ]);
+    expect(judge).not.toHaveProperty("tools");
+    expect(Object.keys(judge.permission)[0]).toBe("*");
+    expect(judge.permission["*"]).toBe("deny");
+    for (const permission of [
+      "read",
+      "grep",
+      "glob",
+      "list",
+      "edit",
+      "write",
+      "webfetch",
+      "websearch",
+      "skill",
+    ]) {
+      expect(judge.permission[permission]).toBe("deny");
+    }
+    expect(judge.permission.bash).toEqual({ "*": "deny" });
+    expect(judge.permission.external_directory).toEqual({ "*": "deny" });
     expect(config.experimental.continue_loop_on_deny).toBe(true);
+  });
+
+  test("keeps bash permission semantics behind the top-level catch-all", () => {
+    const readOnly = buildOpenCodePermissionMap(
+      {
+        mode: "read-only",
+        readOnlyBashCommands: ["git status", "rg"],
+      },
+      undefined,
+    );
+    const none = buildOpenCodePermissionMap({ mode: "none" }, undefined);
+    const full = buildOpenCodePermissionMap({ mode: "full" }, undefined);
+
+    expect(Object.keys(readOnly)[0]).toBe("*");
+    expect(readOnly.bash).toEqual({
+      "*": "deny",
+      "git status": "allow",
+      "git status *": "allow",
+      rg: "allow",
+      "rg *": "allow",
+    });
+    expect(none.bash).toEqual({ "*": "deny" });
+    expect(none.read).toBe("deny");
+    expect(none.grep).toBe("deny");
+    expect(none.glob).toBe("deny");
+    expect(none.list).toBe("deny");
+    expect(none.webfetch).toBe("deny");
+    expect(none.websearch).toBe("deny");
+    expect(full.bash).toEqual({ "*": "allow" });
+  });
+
+  test("routes no-tools requests to the fusion judge agent", async () => {
+    let promptMessageId: string | undefined;
+    let selectedAgent: string | undefined;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "Judge answer");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          const body = JSON.parse(String(init?.body));
+          selectedAgent = body.agent;
+          promptMessageId = body.messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      workerId: "judge",
+      toolsPolicy: { mode: "none" },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(selectedAgent).toBe("fusion-judge");
   });
 
   test("warns when a model preference cannot be split for OpenCode", async () => {
@@ -335,6 +719,7 @@ describe("Fusion OpenCode SDK adapter", () => {
     });
 
     expect(result.status).toBe("ok");
+    expect(promptBody).not.toHaveProperty("tools");
     expect(promptBody?.model).toBeUndefined();
     expect(result.warnings?.join("\n")).toContain("gpt-5.5");
     expect(result.warnings?.join("\n")).toContain("provider/model");
@@ -576,6 +961,443 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.output).toBe("Idle-terminated answer");
   });
 
+  test("aborts a completed session before disconnecting SSE", async () => {
+    let promptMessageId: string | undefined;
+    const terminalOrder: string[] = [];
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          init?.signal?.addEventListener("abort", () => {
+            terminalOrder.push("disconnect");
+          });
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "Collected answer");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          terminalOrder.push("abort");
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("Collected answer");
+    expect(terminalOrder).toEqual(["abort", "disconnect"]);
+    expect(result.complianceEvidence?.enforcement?.abortOutcome).toEqual({
+      attempted: true,
+      succeeded: true,
+    });
+  });
+
+  test("aborts the session when prompt submission fails", async () => {
+    let abortCalls = 0;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return openSseResponse();
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          return new Response("boom", { status: 500 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          abortCalls += 1;
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("error");
+    expect(abortCalls).toBe(1);
+  });
+
+  test("aborts the session on timeout", async () => {
+    let abortCalls = 0;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return openSseResponse();
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          abortCalls += 1;
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      budget: { timeoutMs: 25 },
+    });
+
+    expect(result.status).toBe("timeout");
+    expect(abortCalls).toBe(1);
+  });
+
+  test("records an abort warning without failing a completed worker", async () => {
+    let promptMessageId: string | undefined;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "Still successful");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return new Response("abort unavailable", { status: 500 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("Still successful");
+    expect(result.warnings?.join("\n")).toContain(
+      "session may linger until server shutdown",
+    );
+    expect(result.complianceEvidence?.notes?.join("\n")).toContain(
+      "session may linger until server shutdown",
+    );
+    expect(result.complianceEvidence?.enforcement?.abortOutcome).toEqual({
+      attempted: true,
+      succeeded: false,
+      error: expect.stringContaining("abort unavailable"),
+    });
+  });
+
+  test("attaches verified effective rules to worker evidence", async () => {
+    let promptMessageId: string | undefined;
+    let observedRules: ReturnType<typeof effectivePermissionRules> = [];
+    let observedJudgeRules: ReturnType<typeof effectivePermissionRules> = [];
+    let agentRequests = 0;
+    const serverFactory: OpenCodeServerFactory = async ({ configContent }) => {
+      observedRules = effectivePermissionRules(
+        configContent.agent["fusion-worker"].permission,
+      );
+      observedJudgeRules = effectivePermissionRules(
+        configContent.agent["fusion-judge"].permission,
+      );
+      return { baseUrl: "http://opencode.test", dispose() {} };
+    };
+    const adapter = new OpenCodeSdkAdapter({
+      serverFactory,
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          agentRequests += 1;
+          return Response.json([
+            { name: "fusion-worker", permission: observedRules },
+            { name: "fusion-judge", permission: observedJudgeRules },
+          ]);
+        }
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "Verified answer");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+    await adapter.dispose();
+    expect(result.status).toBe("ok");
+    expect(result.complianceEvidence?.enforcement?.source).toBe(
+      "verified-effective",
+    );
+    expect(result.complianceEvidence?.enforcement?.effectiveRules).toEqual({
+      rules: observedRules,
+    });
+    expect(agentRequests).toBe(1);
+  });
+
+  test("fails every worker before session creation when effective rules mismatch", async () => {
+    let serverStarts = 0;
+    let agentRequests = 0;
+    let sessionRequests = 0;
+    const serverFactory: OpenCodeServerFactory = async () => {
+      serverStarts += 1;
+      return { baseUrl: "http://opencode.test", dispose() {} };
+    };
+    const adapter = new OpenCodeSdkAdapter({
+      serverFactory,
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          agentRequests += 1;
+          return Response.json([
+            {
+              name: "fusion-worker",
+              permission: [
+                { permission: "*", pattern: "*", action: "deny" },
+                { permission: "bash", pattern: "*", action: "allow" },
+              ],
+            },
+          ]);
+        }
+        if (url.pathname === "/session" && init?.method === "POST") {
+          sessionRequests += 1;
+          return Response.json({ id: "should-not-exist" });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const [first, second] = await Promise.all([
+      adapter.runWorker(workerRequest()),
+      adapter.runWorker({ ...workerRequest(), workerId: "worker-2" }),
+    ]);
+    await adapter.dispose();
+
+    expect(first.status).toBe("error");
+    expect(second.status).toBe("error");
+    expect(first.errors?.join("\n")).toContain(
+      "OPENCODE_EFFECTIVE_RULES_MISMATCH",
+    );
+    expect(first.errors?.join("\n")).toContain('"expected"');
+    expect(first.errors?.join("\n")).toContain('"observed"');
+    expect(first.complianceEvidence?.enforcement?.abortOutcome).toEqual({
+      attempted: false,
+    });
+    expect(serverStarts).toBe(1);
+    expect(agentRequests).toBe(1);
+    expect(sessionRequests).toBe(0);
+  });
+
+  test("rejects effective rules whose order makes git commit allowed", async () => {
+    let observedWorkerRules: ReturnType<typeof effectivePermissionRules> = [];
+    let observedJudgeRules: ReturnType<typeof effectivePermissionRules> = [];
+    const adapter = new OpenCodeSdkAdapter({
+      serverFactory: async ({ configContent }) => {
+        observedWorkerRules = [
+          ...effectivePermissionRules(
+            configContent.agent["fusion-worker"].permission,
+          ),
+          { permission: "bash", pattern: "*", action: "allow" },
+        ];
+        observedJudgeRules = effectivePermissionRules(
+          configContent.agent["fusion-judge"].permission,
+        );
+        return { baseUrl: "http://opencode.test", dispose() {} };
+      },
+      versionExecutor,
+      fetch: async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          return Response.json([
+            { name: "fusion-worker", permission: observedWorkerRules },
+            { name: "fusion-judge", permission: observedJudgeRules },
+          ]);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("error");
+    expect(result.errors?.join("\n")).toContain(
+      "OPENCODE_EFFECTIVE_RULES_MISMATCH",
+    );
+    expect(result.errors?.join("\n")).toContain('"pattern":"git commit -m x"');
+    expect(result.errors?.join("\n")).toContain(
+      '"expected":"deny","observed":"allow"',
+    );
+  });
+
+  test("rejects a divergent non-judge policy on the shared server", async () => {
+    let promptMessageId: string | undefined;
+    let observedWorkerRules: ReturnType<typeof effectivePermissionRules> = [];
+    let observedJudgeRules: ReturnType<typeof effectivePermissionRules> = [];
+    let sessionRequests = 0;
+    const adapter = new OpenCodeSdkAdapter({
+      serverFactory: async ({ configContent }) => {
+        observedWorkerRules = effectivePermissionRules(
+          configContent.agent["fusion-worker"].permission,
+        );
+        observedJudgeRules = effectivePermissionRules(
+          configContent.agent["fusion-judge"].permission,
+        );
+        return { baseUrl: "http://opencode.test", dispose() {} };
+      },
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          return Response.json([
+            { name: "fusion-worker", permission: observedWorkerRules },
+            { name: "fusion-judge", permission: observedJudgeRules },
+          ]);
+        }
+        if (url.pathname === "/session" && init?.method === "POST") {
+          sessionRequests += 1;
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "First worker answer");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const first = await adapter.runWorker(workerRequest());
+    const second = await adapter.runWorker({
+      ...workerRequest(),
+      workerId: "worker-2",
+      toolsPolicy: { mode: "limited", allow: ["Read"] },
+    });
+
+    expect(first.status).toBe("ok");
+    expect(second.status).toBe("error");
+    expect(second.errors?.join("\n")).toContain(
+      "OPENCODE_SHARED_SERVER_POLICY_MISMATCH",
+    );
+    expect(second.errors?.join("\n")).toContain('"configuredPolicy"');
+    expect(second.errors?.join("\n")).toContain('"requestPolicy"');
+    expect(sessionRequests).toBe(1);
+  });
+
+  test("rejects divergent read roots on the shared server", async () => {
+    let promptMessageId: string | undefined;
+    let observedWorkerRules: ReturnType<typeof effectivePermissionRules> = [];
+    let observedJudgeRules: ReturnType<typeof effectivePermissionRules> = [];
+    let sessionRequests = 0;
+    const adapter = new OpenCodeSdkAdapter({
+      serverFactory: async ({ configContent }) => {
+        observedWorkerRules = effectivePermissionRules(
+          configContent.agent["fusion-worker"].permission,
+        );
+        observedJudgeRules = effectivePermissionRules(
+          configContent.agent["fusion-judge"].permission,
+        );
+        return { baseUrl: "http://opencode.test", dispose() {} };
+      },
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          return Response.json([
+            { name: "fusion-worker", permission: observedWorkerRules },
+            { name: "fusion-judge", permission: observedJudgeRules },
+          ]);
+        }
+        if (url.pathname === "/session" && init?.method === "POST") {
+          sessionRequests += 1;
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "First worker answer");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+    const firstRequest = {
+      ...workerRequest(),
+      environment: {
+        workspaceRoot: "/workspace",
+        readRoots: ["/external/first"],
+      },
+    };
+
+    const first = await adapter.runWorker(firstRequest);
+    const second = await adapter.runWorker({
+      ...firstRequest,
+      workerId: "worker-2",
+      environment: {
+        workspaceRoot: "/workspace",
+        readRoots: ["/external/second"],
+      },
+    });
+
+    expect(first.status).toBe("ok");
+    expect(second.status).toBe("error");
+    expect(second.errors?.join("\n")).toContain(
+      "OPENCODE_SHARED_SERVER_POLICY_MISMATCH",
+    );
+    expect(second.errors?.join("\n")).toContain("/external/first");
+    expect(second.errors?.join("\n")).toContain("/external/second");
+    expect(sessionRequests).toBe(1);
+  });
+
   test("disposes the run-scoped server after worker failure", async () => {
     let disposed = false;
     const serverFactory: OpenCodeServerFactory = async () => ({
@@ -647,6 +1469,52 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.errors?.join("\n")).toContain("sending the prompt");
   });
 
+  test("shares one timeout budget across SSE setup and prompt submission", async () => {
+    const timeoutMs = 150;
+    let promptStarted = false;
+    const now = spyOn(Date, "now").mockImplementation(() =>
+      promptStarted ? timeoutMs : 0,
+    );
+    const timers = spyOn(globalThis, "setTimeout");
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return openSseResponse();
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptStarted = true;
+          return new Promise<Response>(() => {});
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    try {
+      const result = await adapter.runWorker({
+        ...workerRequest(),
+        budget: { timeoutMs },
+      });
+      const timeoutDelays = timers.mock.calls.map((call) => call[1]);
+
+      expect(result.status).toBe("timeout");
+      expect(result.errors?.join("\n")).toContain("sending the prompt");
+      expect(timeoutDelays).toContain(timeoutMs);
+      expect(timeoutDelays).toContain(0);
+    } finally {
+      timers.mockRestore();
+      now.mockRestore();
+    }
+  });
+
   test("returns an error result when the opencode binary cannot spawn", async () => {
     const serverFactory: OpenCodeServerFactory = async () => {
       throw new Error("opencode serve failed to spawn: ENOENT");
@@ -678,6 +1546,139 @@ function sseResponse(render: () => Promise<string>): Response {
       },
     }),
     { headers: { "Content-Type": "text/event-stream" } },
+  );
+}
+
+function openSseResponse(): Response {
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start() {},
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+}
+
+function completedAnswerSse(messageId: string, text: string): string {
+  return [
+    sse({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "part-1",
+          sessionID: "session-1",
+          messageID: assistantMessageId(messageId),
+          type: "text",
+          text,
+        },
+      },
+    }),
+    sse({
+      type: "message.updated",
+      properties: {
+        info: assistantMessage(assistantMessageId(messageId)),
+      },
+    }),
+  ].join("");
+}
+
+async function runOpenCodeEventFixture(
+  events: (messageId: string) => unknown[],
+) {
+  let promptMessageId: string | undefined;
+  const permissionReplies: unknown[] = [];
+  const adapter = new OpenCodeSdkAdapter({
+    baseUrl: "http://opencode.test",
+    versionExecutor,
+    fetch: async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/session" && init?.method === "POST") {
+        return Response.json({ id: "session-1" });
+      }
+      if (url.pathname === "/event") {
+        return sseResponse(async () => {
+          const messageId = await waitForValue(() => promptMessageId);
+          return [
+            ...events(assistantMessageId(messageId)),
+            {
+              type: "message.part.updated",
+              properties: {
+                part: {
+                  id: "part-fixture-answer",
+                  sessionID: "session-1",
+                  messageID: assistantMessageId(messageId),
+                  type: "text",
+                  text: "Fixture answer",
+                },
+              },
+            },
+            {
+              type: "message.updated",
+              properties: {
+                info: assistantMessage(assistantMessageId(messageId)),
+              },
+            },
+          ]
+            .map(sse)
+            .join("");
+        });
+      }
+      if (url.pathname === "/session/session-1/prompt_async") {
+        promptMessageId = JSON.parse(String(init?.body)).messageID;
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname.startsWith("/session/session-1/permissions/")) {
+        permissionReplies.push(JSON.parse(String(init?.body)));
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname === "/session/session-1/abort") {
+        return Response.json(true);
+      }
+      throw new Error(`unexpected request: ${url.pathname}`);
+    },
+  });
+
+  return {
+    result: await adapter.runWorker(workerRequest()),
+    permissionReplies,
+  };
+}
+
+function toolErrorEvent(input: {
+  id: string;
+  callId: string;
+  messageId: string;
+  command: string;
+  error: string;
+}) {
+  return {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: input.id,
+        sessionID: "session-1",
+        messageID: input.messageId,
+        callID: input.callId,
+        type: "tool",
+        tool: "bash",
+        state: {
+          status: "error",
+          input: { command: input.command },
+          error: input.error,
+        },
+      },
+    },
+  };
+}
+
+function effectivePermissionRules(permission: OpenCodePermissionConfig) {
+  return Object.entries(permission).flatMap(([permissionId, decision]) =>
+    typeof decision === "string"
+      ? [{ permission: permissionId, pattern: "*", action: decision }]
+      : Object.entries(decision).map(([pattern, action]) => ({
+          permission: permissionId,
+          pattern,
+          action,
+        })),
   );
 }
 

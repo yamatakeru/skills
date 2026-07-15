@@ -22,6 +22,14 @@
       ],
       "type": "object"
     },
+    "ContainmentLevel": {
+      "enum": [
+        "no-shell",
+        "allowlist-enforced",
+        "sandboxed"
+      ],
+      "type": "string"
+    },
     "ContextManifest": {
       "additionalProperties": false,
       "properties": {
@@ -457,6 +465,31 @@
       },
       "type": "object"
     },
+    "RuntimeToolEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "started",
+            "succeeded",
+            "denied",
+            "failed",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "type": "object"
+    },
     "SessionMode": {
       "enum": [
         "fresh",
@@ -694,6 +727,24 @@
       },
       "type": "object"
     },
+    "WorkerAbortOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "attempted": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        },
+        "succeeded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attempted"
+      ],
+      "type": "object"
+    },
     "WorkerBudget": {
       "additionalProperties": false,
       "properties": {
@@ -730,6 +781,12 @@
         "adapterClaimsIsolatedContext": {
           "type": "boolean"
         },
+        "containment": {
+          "$ref": "#/definitions/ContainmentLevel"
+        },
+        "enforcement": {
+          "$ref": "#/definitions/WorkerEnforcementEvidence"
+        },
         "notes": {
           "items": {
             "type": "string"
@@ -738,12 +795,90 @@
         },
         "observedSessionMode": {
           "$ref": "#/definitions/SessionMode"
-        },
-        "observedToolPolicy": {
-          "$ref": "#/definitions/ToolsPolicy"
         }
       },
       "type": "object"
+    },
+    "WorkerEnforcementEvidence": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "abortOutcome": {
+              "$ref": "#/definitions/WorkerAbortOutcome"
+            },
+            "effectiveRules": {
+              "additionalProperties": {},
+              "description": "Effective harness rules observed independently of the request.",
+              "type": "object"
+            },
+            "permissionDenialCount": {
+              "description": "Permission denials demonstrate that enforcement operated as intended.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "const": "verified-effective",
+              "type": "string"
+            },
+            "toolEvents": {
+              "items": {
+                "$ref": "#/definitions/RuntimeToolEvent"
+              },
+              "type": "array"
+            },
+            "violationEvidence": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "effectiveRules",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "abortOutcome": {
+              "$ref": "#/definitions/WorkerAbortOutcome"
+            },
+            "effectiveRules": {
+              "additionalProperties": {},
+              "description": "Effective harness rules observed independently of the request.",
+              "type": "object"
+            },
+            "permissionDenialCount": {
+              "description": "Permission denials demonstrate that enforcement operated as intended.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "const": "harness-declared",
+              "type": "string"
+            },
+            "toolEvents": {
+              "items": {
+                "$ref": "#/definitions/RuntimeToolEvent"
+              },
+              "type": "array"
+            },
+            "violationEvidence": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "WorkerEnvironment": {
       "additionalProperties": false,

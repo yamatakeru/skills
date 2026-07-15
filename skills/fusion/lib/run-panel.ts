@@ -1,7 +1,9 @@
 import { evaluateCompliance } from "./compliance";
+import { deriveContainment } from "./containment";
 import { errorMessage } from "./errors";
 import { normalizeHarnessDescriptor } from "./harness";
 import { describeJudgeInvocation } from "./judge-synthesizer";
+import { compareWorkspace, snapshotWorkspace } from "./watchdog";
 import type {
   PanelRequest,
   PanelResult,
@@ -28,6 +30,11 @@ export async function runPanel(
 ): Promise<PanelResult> {
   validatePanelSpec(request.panelSpec);
 
+  const workspaceRoot =
+    request.workerEnvironment?.workspaceRoot ??
+    request.workerEnvironment?.workingDirectory ??
+    process.cwd();
+  const workspaceSnapshot = await snapshotWorkspace(workspaceRoot);
   const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? createEventIdFactory();
   const events: ProvenanceEvent[] = [];
@@ -83,6 +90,21 @@ export async function runPanel(
     recorder?.recordWorkerRequests?.(workerRequests),
   );
 
+  const completedWorkerResults: WorkerResult[] = [];
+  let workerResultRecording = Promise.resolve();
+  const recordCompletedWorkerResult = async (
+    result: WorkerResult,
+  ): Promise<void> => {
+    completedWorkerResults.push(result);
+    const snapshot = [...completedWorkerResults];
+    workerResultRecording = workerResultRecording.then(() =>
+      recordSafely(recorderWarnings, () =>
+        recorder?.recordWorkerResults?.(snapshot),
+      ),
+    );
+    await workerResultRecording;
+  };
+
   const workerResults = await Promise.all(
     workerRequests.map(async (workerRequest): Promise<WorkerResult> => {
       await emit(
@@ -97,6 +119,7 @@ export async function runPanel(
           { status: result.status },
           workerRequest.workerId,
         );
+        await recordCompletedWorkerResult(result);
         return result;
       } catch (error) {
         const message = errorMessage(error);
@@ -105,7 +128,9 @@ export async function runPanel(
           { error: message },
           workerRequest.workerId,
         );
-        return failedWorkerResult(workerRequest, message);
+        const result = failedWorkerResult(workerRequest, message);
+        await recordCompletedWorkerResult(result);
+        return result;
       }
     }),
   );
@@ -127,6 +152,16 @@ export async function runPanel(
     recorder?.recordSynthesis?.(synthesisResult),
   );
 
+  const workspaceWatchdog = await compareWorkspace(workspaceSnapshot);
+  await emit("workspace.watchdog.completed", {
+    verdict: workspaceWatchdog.verdict,
+    workspaceRoot: workspaceWatchdog.workspaceRoot,
+    changedPaths: workspaceWatchdog.changedPaths,
+    refDiffs: workspaceWatchdog.refDiffs,
+    note: workspaceWatchdog.note,
+    limitations: workspaceWatchdog.limitations,
+  });
+
   // The compliance evaluation requires the compliance.evaluated event to be
   // present, but the event's recorded payload must carry the resulting tier:
   // append the event first and write it to the recorder only after the tier
@@ -146,6 +181,7 @@ export async function runPanel(
     workerResults,
     events,
     synthesisResult,
+    workspaceWatchdog,
   });
   complianceEvent.data = { tier: finalComplianceSummary.tier };
   await recordSafely(recorderWarnings, () =>
@@ -309,7 +345,7 @@ function failedWorkerResult(
     harnessUsed: normalizeHarnessDescriptor(workerRequest.harness),
     complianceEvidence: {
       observedSessionMode: workerRequest.session.mode,
-      observedToolPolicy: workerRequest.toolsPolicy,
+      containment: deriveContainment(workerRequest.toolsPolicy),
       notes: ["Worker runner threw before returning a result."],
     },
     errors: [message],

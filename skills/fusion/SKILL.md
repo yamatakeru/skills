@@ -209,6 +209,11 @@ semantics while keeping web tools enabled. Cursor sessions still disclose
 account-level User Rules injection and undocumented `CURSOR_CONFIG_DIR` plus
 headless hook loading as smoke-monitored environment surfaces.
 
+The shell allowlist is enforced but is not a sandbox. Reports disclose
+containment separately from protocol compliance; see
+[`details/containment.md`](details/containment.md) for the threat model,
+residual holes, evidence layers, and crash recovery.
+
 ## Partial Results
 
 Partial failure is allowed by default. If at least one worker succeeds, the CLI
@@ -235,3 +240,4 @@ optional background and must not contradict the CLI path:
 - `details/blind-panel.md`
 - `details/synthesis.md`
 - `details/provenance.md`
+- `details/containment.md`

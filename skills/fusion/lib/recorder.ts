@@ -1,4 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorMessage } from "./errors";
 import type {
@@ -24,11 +29,19 @@ export interface FileRunRecorderOptions {
   rootDirectory?: string;
   allowUnignoredDirectory?: boolean;
   redactSecrets?: boolean;
+  onSignalCleanup?: () => Promise<void>;
+  signalCleanupTimeoutMs?: number;
 }
 
 export class FileRunRecorder implements RunRecorder {
   private currentStatus: RecordingStatus = "not-recorded";
   private initialized = false;
+  private startedAt: string | undefined;
+  private nextTemporaryFileId = 0;
+  private readonly signalHandlers = new Map<
+    "SIGINT" | "SIGTERM",
+    () => Promise<void>
+  >();
   private readonly runDirectory: string;
   private readonly redactSecrets: boolean;
 
@@ -89,7 +102,7 @@ export class FileRunRecorder implements RunRecorder {
 
   async recordResult(result: PanelResult): Promise<void> {
     await this.writeJson("result.json", result);
-    this.currentStatus = "complete";
+    await this.finalize(result.status === "failed" ? "failed" : "complete");
   }
 
   private async writeJson(fileName: string, value: unknown): Promise<void> {
@@ -106,10 +119,14 @@ export class FileRunRecorder implements RunRecorder {
     options: { append?: boolean } = {},
   ): Promise<void> {
     try {
-      await writeFile(join(this.runDirectory, fileName), content, {
-        flag: options.append === true ? "a" : "w",
-        mode: 0o600,
-      });
+      if (options.append === true) {
+        await writeFile(join(this.runDirectory, fileName), content, {
+          flag: "a",
+          mode: 0o600,
+        });
+      } else {
+        await this.writeFileAtomically(fileName, content);
+      }
       this.currentStatus = "partial";
     } catch (error) {
       this.currentStatus = "failed";
@@ -126,12 +143,116 @@ export class FileRunRecorder implements RunRecorder {
     try {
       await this.assertRecordingDirectoryIsSafe();
       await mkdir(this.runDirectory, { recursive: true, mode: 0o700 });
+      this.startedAt = new Date().toISOString();
+      this.writeRunStatusSync("running");
+      this.registerSignalHandlers();
       this.initialized = true;
       this.currentStatus = "partial";
     } catch (error) {
       this.currentStatus = "failed";
       throw error;
     }
+  }
+
+  private async finalize(status: "complete" | "failed"): Promise<void> {
+    try {
+      await this.writeFileSafely(
+        "run-status.json",
+        `${JSON.stringify({
+          status,
+          startedAt: this.startedAt,
+          endedAt: new Date().toISOString(),
+        }, null, 2)}\n`,
+      );
+      this.currentStatus = status;
+    } finally {
+      this.deregisterSignalHandlers();
+    }
+  }
+
+  private async writeFileAtomically(
+    fileName: string,
+    content: string,
+  ): Promise<void> {
+    const targetPath = join(this.runDirectory, fileName);
+    const temporaryPath = this.temporaryPath(fileName);
+    try {
+      await writeFile(temporaryPath, content, { flag: "wx", mode: 0o600 });
+      await rename(temporaryPath, targetPath);
+    } catch (error) {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private writeRunStatusSync(
+    status: "running" | "aborted",
+  ): void {
+    const content =
+      status === "running"
+        ? { status, startedAt: this.startedAt }
+        : {
+            status,
+            startedAt: this.startedAt,
+            endedAt: new Date().toISOString(),
+          };
+    const targetPath = join(this.runDirectory, "run-status.json");
+    const temporaryPath = this.temporaryPath("run-status.json");
+    try {
+      writeFileSync(temporaryPath, `${JSON.stringify(content, null, 2)}\n`, {
+        flag: "wx",
+        mode: 0o600,
+      });
+      renameSync(temporaryPath, targetPath);
+    } catch (error) {
+      try {
+        rmSync(temporaryPath, { force: true });
+      } catch {
+        // The original status-write error is the actionable failure.
+      }
+      throw error;
+    }
+  }
+
+  private temporaryPath(fileName: string): string {
+    this.nextTemporaryFileId += 1;
+    return join(
+      this.runDirectory,
+      `.${fileName}.${process.pid}.${this.nextTemporaryFileId}.tmp`,
+    );
+  }
+
+  private registerSignalHandlers(): void {
+    const signals = [
+      ["SIGINT", 130],
+      ["SIGTERM", 143],
+    ] as const;
+    for (const [signal, exitCode] of signals) {
+      const handler = async (): Promise<void> => {
+        this.deregisterSignalHandlers();
+        try {
+          this.writeRunStatusSync("aborted");
+        } catch {
+          // Signal handling is best-effort; preserve the expected signal exit.
+        }
+        if (this.options.onSignalCleanup !== undefined) {
+          await runBoundedCleanup(
+            this.options.onSignalCleanup,
+            this.options.signalCleanupTimeoutMs,
+          );
+        }
+        process.exit(exitCode);
+      };
+      this.signalHandlers.set(signal, handler);
+      process.on(signal, handler);
+    }
+  }
+
+  private deregisterSignalHandlers(): void {
+    for (const [signal, handler] of this.signalHandlers) {
+      process.off(signal, handler);
+    }
+    this.signalHandlers.clear();
   }
 
   private async assertRecordingDirectoryIsSafe(): Promise<void> {
@@ -167,6 +288,25 @@ export class FileRunRecorder implements RunRecorder {
       return redactSecretString(value);
     }
     return value;
+  }
+}
+
+export async function runBoundedCleanup(
+  cleanup: () => Promise<void>,
+  timeoutMs = 5_000,
+): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.resolve().then(cleanup).catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
   }
 }
 

@@ -22,9 +22,11 @@ import {
   modelPreferenceToModel,
   resolveModelEntry,
   resolvePanelComposition,
+  runBoundedCleanup,
   runPanel,
   isImplementedJudgeHarness,
   isNonJudgeSynthesizerStrategy,
+  assertTopLevelFusionInvocation,
   type DryRunReport,
   type HarnessKind,
   type PanelResult,
@@ -82,6 +84,7 @@ export class HelpRequested extends Error {}
 
 async function main(): Promise<number> {
   try {
+    assertTopLevelFusionInvocation();
     assertBunRuntime();
     const options = parseArgs(Bun.argv.slice(2));
     const prepared = await preparePanelRequest(options, { cwd: process.cwd() });
@@ -102,29 +105,42 @@ async function main(): Promise<number> {
       return 0;
     }
 
+    const runtime = createFusionRuntime(options.transport);
     const recorder: RunRecorder = options.record
       ? new FileRunRecorder({
           workspaceRoot: process.cwd(),
           panelRunId: request.panelRunId,
+          onSignalCleanup: runtime.dispose,
         })
       : new NoopRunRecorder();
-    const runtime = createFusionRuntime(options.transport);
-    const result = await runPanelWithRuntime(request, prepared, runtime, recorder);
-    if (prepared.warnings.length > 0) {
-      result.warnings = [...prepared.warnings, ...(result.warnings ?? [])];
-    }
-
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    } else {
-      process.stdout.write(
-        renderMarkdownReport(result, {
-          recordingStatus: recorder.status,
-          synthesizer: request.synthesizer?.strategy ?? "judge",
-        }),
+    const deregisterRuntimeSignalCleanup = options.record
+      ? undefined
+      : registerRuntimeSignalCleanup(runtime.dispose);
+    try {
+      const result = await runPanelWithRuntime(
+        request,
+        prepared,
+        runtime,
+        recorder,
       );
+      if (prepared.warnings.length > 0) {
+        result.warnings = [...prepared.warnings, ...(result.warnings ?? [])];
+      }
+
+      if (options.json) {
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      } else {
+        process.stdout.write(
+          renderMarkdownReport(result, {
+            recordingStatus: recorder.status,
+            synthesizer: request.synthesizer?.strategy ?? "judge",
+          }),
+        );
+      }
+      return result.status === "failed" ? 1 : 0;
+    } finally {
+      deregisterRuntimeSignalCleanup?.();
     }
-    return result.status === "failed" ? 1 : 0;
   } catch (error) {
     if (error instanceof HelpRequested) {
       process.stdout.write(`${usage()}\n`);
@@ -621,6 +637,31 @@ export function createFusionRuntime(transport: TransportMode): FusionRuntime {
   }
 }
 
+export function registerRuntimeSignalCleanup(
+  cleanup: () => Promise<void>,
+): () => void {
+  const handlers = new Map<"SIGINT" | "SIGTERM", () => Promise<void>>();
+  const deregister = (): void => {
+    for (const [signal, handler] of handlers) {
+      process.off(signal, handler);
+    }
+    handlers.clear();
+  };
+  for (const [signal, exitCode] of [
+    ["SIGINT", 130],
+    ["SIGTERM", 143],
+  ] as const) {
+    const handler = async (): Promise<void> => {
+      deregister();
+      await runBoundedCleanup(cleanup);
+      process.exit(exitCode);
+    };
+    handlers.set(signal, handler);
+    process.on(signal, handler);
+  }
+  return deregister;
+}
+
 function runtimeFromRunners(
   transport: TransportMode,
   opencode: WorkerRunner,
@@ -633,16 +674,20 @@ function runtimeFromRunners(
   if (cursor !== undefined) {
     registry.register("cursor", cursor);
   }
+  let disposePromise: Promise<void> | undefined;
   return {
     transport,
     registry,
     runners: { opencode, claudeCode, cursor },
     async dispose() {
-      await disposeRunner(opencode);
-      await disposeRunner(claudeCode);
-      if (cursor !== undefined) {
-        await disposeRunner(cursor);
-      }
+      disposePromise ??= (async () => {
+        await disposeRunner(opencode);
+        await disposeRunner(claudeCode);
+        if (cursor !== undefined) {
+          await disposeRunner(cursor);
+        }
+      })();
+      await disposePromise;
     },
   };
 }
@@ -867,6 +912,29 @@ export function renderMarkdownReport(
     `- Compliance tier: ${result.complianceSummary.tier}`,
     `- Synthesizer option: ${options.synthesizer}`,
   ];
+  const watchdog = result.complianceSummary.workspaceWatchdog;
+  lines.push(`- Workspace watchdog: ${watchdog.verdict} — ${watchdog.note}`);
+  lines.push(`- Watchdog limitations: ${watchdog.limitations.join("; ")}.`);
+  if (watchdog.changedPaths !== undefined) {
+    lines.push(`- Watchdog changed paths: ${watchdog.changedPaths.join(", ")}`);
+  }
+  if (watchdog.refDiffs !== undefined) {
+    lines.push(
+      `- Watchdog ref diffs: ${watchdog.refDiffs
+        .map((diff) =>
+          `${diff.refName} (${diff.before ?? "absent"} -> ${diff.after ?? "absent"})`
+        )
+        .join(", ")}`,
+    );
+  }
+  const enforcementSources = result.workerResults.map((worker) =>
+    `${worker.workerId}=${worker.complianceEvidence?.enforcement?.source ?? "not-recorded"}`
+  );
+  lines.push(`- Enforcement sources: ${enforcementSources.join(", ") || "none"}`);
+  const containments = result.workerResults.map((worker) =>
+    `${worker.workerId}=${worker.complianceEvidence?.containment ?? "not-recorded"}`
+  );
+  lines.push(`- Containment: ${containments.join(", ") || "none"}`);
   const judgeCompliance = result.complianceSummary.judgeCompliance;
   if (judgeCompliance !== undefined) {
     lines.push(`- ${renderJudgeStatusLine(result)}`);

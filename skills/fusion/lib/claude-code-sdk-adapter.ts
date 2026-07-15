@@ -5,6 +5,8 @@ import {
   type CommandExecutor,
   type CommandResult,
 } from "./headless-cli-adapters";
+import { deriveContainment } from "./containment";
+import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
 import type {
   WorkerRequest,
   WorkerResult,
@@ -47,6 +49,7 @@ export class ClaudeCodeSdkAdapter implements WorkerRunner {
       cwd:
         request.environment?.workingDirectory ??
         request.environment?.workspaceRoot,
+      env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
       timeoutMs: request.budget?.timeoutMs,
     });
     return sdkResultToWorkerResult(request, commandResult);
@@ -86,7 +89,11 @@ function sdkResultToWorkerResult(
       adapterClaimsIsolatedContext: request.session.mode === "fresh",
       adapterClaimsBlindness: true,
       observedSessionMode: request.session.mode,
-      observedToolPolicy: request.toolsPolicy,
+      enforcement: {
+        source: "harness-declared",
+        permissionDenialCount: permissionDenials.length,
+      },
+      containment: deriveContainment(request.toolsPolicy),
       notes: claudeSdkComplianceNotes(
         request,
         permissionDenials,
