@@ -18,7 +18,6 @@ const recordedArtifactNames = [
   "request.json",
   "worker-requests.json",
   "worker-results.json",
-  "synthesis.json",
 ] as const;
 
 export interface RecordedJudgeRun {
@@ -26,7 +25,7 @@ export interface RecordedJudgeRun {
   panelRequest: PanelRequest;
   workerRequests: WorkerRequest[];
   workerResults: WorkerResult[];
-  synthesis: SynthesisResult;
+  synthesis?: SynthesisResult;
 }
 
 export interface JudgeReplayArmConfig {
@@ -107,7 +106,7 @@ export async function loadRecordedRun(
     absoluteRunDir,
     "worker-results.json",
   );
-  const synthesisText = await readRecordedArtifact(
+  const synthesisText = await readOptionalRecordedArtifact(
     absoluteRunDir,
     "synthesis.json",
   );
@@ -117,12 +116,17 @@ export async function loadRecordedRun(
     "worker-requests.json",
   );
   const workerResults = parseArtifact(workerResultsText, "worker-results.json");
-  const synthesis = parseArtifact(synthesisText, "synthesis.json");
+  const synthesis =
+    synthesisText === undefined
+      ? undefined
+      : parseArtifact(synthesisText, "synthesis.json");
 
   assertPanelRequest(panelRequest);
   assertWorkerRequests(workerRequests);
   assertWorkerResults(workerResults);
-  assertSynthesisResult(synthesis);
+  if (synthesis !== undefined) {
+    assertSynthesisResult(synthesis);
+  }
   assertConsistentRunIds(panelRequest, workerRequests, workerResults);
 
   return {
@@ -382,6 +386,23 @@ async function readRecordedArtifact(
   } catch (error) {
     throw new Error(
       `Recorded Fusion run is missing or cannot read ${name} at ${path}: ${errorMessage(error)}`,
+    );
+  }
+}
+
+async function readOptionalRecordedArtifact(
+  runDir: string,
+  name: "synthesis.json",
+): Promise<string | undefined> {
+  const path = join(runDir, name);
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw new Error(
+      `Recorded Fusion run cannot read ${name} at ${path}: ${errorMessage(error)}`,
     );
   }
 }

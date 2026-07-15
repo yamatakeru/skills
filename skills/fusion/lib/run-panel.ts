@@ -90,6 +90,21 @@ export async function runPanel(
     recorder?.recordWorkerRequests?.(workerRequests),
   );
 
+  const completedWorkerResults: WorkerResult[] = [];
+  let workerResultRecording = Promise.resolve();
+  const recordCompletedWorkerResult = async (
+    result: WorkerResult,
+  ): Promise<void> => {
+    completedWorkerResults.push(result);
+    const snapshot = [...completedWorkerResults];
+    workerResultRecording = workerResultRecording.then(() =>
+      recordSafely(recorderWarnings, () =>
+        recorder?.recordWorkerResults?.(snapshot),
+      ),
+    );
+    await workerResultRecording;
+  };
+
   const workerResults = await Promise.all(
     workerRequests.map(async (workerRequest): Promise<WorkerResult> => {
       await emit(
@@ -104,6 +119,7 @@ export async function runPanel(
           { status: result.status },
           workerRequest.workerId,
         );
+        await recordCompletedWorkerResult(result);
         return result;
       } catch (error) {
         const message = errorMessage(error);
@@ -112,7 +128,9 @@ export async function runPanel(
           { error: message },
           workerRequest.workerId,
         );
-        return failedWorkerResult(workerRequest, message);
+        const result = failedWorkerResult(workerRequest, message);
+        await recordCompletedWorkerResult(result);
+        return result;
       }
     }),
   );
