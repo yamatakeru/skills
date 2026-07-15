@@ -22,6 +22,7 @@ import {
   modelPreferenceToModel,
   resolveModelEntry,
   resolvePanelComposition,
+  runBoundedCleanup,
   runPanel,
   isImplementedJudgeHarness,
   isNonJudgeSynthesizerStrategy,
@@ -112,22 +113,34 @@ async function main(): Promise<number> {
           onSignalCleanup: runtime.dispose,
         })
       : new NoopRunRecorder();
-    const result = await runPanelWithRuntime(request, prepared, runtime, recorder);
-    if (prepared.warnings.length > 0) {
-      result.warnings = [...prepared.warnings, ...(result.warnings ?? [])];
-    }
-
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    } else {
-      process.stdout.write(
-        renderMarkdownReport(result, {
-          recordingStatus: recorder.status,
-          synthesizer: request.synthesizer?.strategy ?? "judge",
-        }),
+    const deregisterRuntimeSignalCleanup = options.record
+      ? undefined
+      : registerRuntimeSignalCleanup(runtime.dispose);
+    try {
+      const result = await runPanelWithRuntime(
+        request,
+        prepared,
+        runtime,
+        recorder,
       );
+      if (prepared.warnings.length > 0) {
+        result.warnings = [...prepared.warnings, ...(result.warnings ?? [])];
+      }
+
+      if (options.json) {
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      } else {
+        process.stdout.write(
+          renderMarkdownReport(result, {
+            recordingStatus: recorder.status,
+            synthesizer: request.synthesizer?.strategy ?? "judge",
+          }),
+        );
+      }
+      return result.status === "failed" ? 1 : 0;
+    } finally {
+      deregisterRuntimeSignalCleanup?.();
     }
-    return result.status === "failed" ? 1 : 0;
   } catch (error) {
     if (error instanceof HelpRequested) {
       process.stdout.write(`${usage()}\n`);
@@ -622,6 +635,31 @@ export function createFusionRuntime(transport: TransportMode): FusionRuntime {
       return runtimeFromRunners(transport, opencode, claudeCode);
     }
   }
+}
+
+export function registerRuntimeSignalCleanup(
+  cleanup: () => Promise<void>,
+): () => void {
+  const handlers = new Map<"SIGINT" | "SIGTERM", () => Promise<void>>();
+  const deregister = (): void => {
+    for (const [signal, handler] of handlers) {
+      process.off(signal, handler);
+    }
+    handlers.clear();
+  };
+  for (const [signal, exitCode] of [
+    ["SIGINT", 130],
+    ["SIGTERM", 143],
+  ] as const) {
+    const handler = async (): Promise<void> => {
+      deregister();
+      await runBoundedCleanup(cleanup);
+      process.exit(exitCode);
+    };
+    handlers.set(signal, handler);
+    process.on(signal, handler);
+  }
+  return deregister;
 }
 
 function runtimeFromRunners(

@@ -98,7 +98,12 @@ describe("Fusion OpenCode containment integration", () => {
         for (const command of ["git status", "git status --short"]) {
           expect(effectiveDecision(rules, "bash", command)).toBe("allow");
         }
-        for (const command of ["git commit -m x", "pip install x"]) {
+        for (const command of [
+          "git commit -m x",
+          "pip install x",
+          "rm -rf /",
+          "git push",
+        ]) {
           expect(effectiveDecision(rules, "bash", command)).toBe("deny");
         }
         expect(effectiveDecision(rules, "mcp_some_tool", "*")).toBe("deny");

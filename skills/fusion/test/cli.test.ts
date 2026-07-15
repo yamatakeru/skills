@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -10,6 +10,7 @@ import {
   createFusionRuntime,
   parseArgs,
   preparePanelRequest,
+  registerRuntimeSignalCleanup,
   renderDryRunReport,
   renderMarkdownReport,
   UsageError,
@@ -475,6 +476,31 @@ describe("Fusion CLI parsing", () => {
     } finally {
       await sdkRuntime.dispose();
       await cliRuntime.dispose();
+    }
+  });
+
+  test("cleans up the no-record runtime on signals before exiting", async () => {
+    const order: string[] = [];
+    const existingHandlers = new Set(process.listeners("SIGTERM"));
+    const exit = spyOn(process, "exit").mockImplementation((code) => {
+      order.push(`exit:${code}`);
+      return undefined as never;
+    });
+    const deregister = registerRuntimeSignalCleanup(async () => {
+      order.push("cleanup");
+    });
+    try {
+      const handler = process
+        .listeners("SIGTERM")
+        .find((candidate) => !existingHandlers.has(candidate));
+
+      await handler?.("SIGTERM");
+
+      expect(order).toEqual(["cleanup", "exit:143"]);
+      expect(process.listeners("SIGTERM")).not.toContain(handler);
+    } finally {
+      deregister();
+      exit.mockRestore();
     }
   });
 

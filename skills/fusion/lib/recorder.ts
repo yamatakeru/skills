@@ -236,31 +236,15 @@ export class FileRunRecorder implements RunRecorder {
           // Signal handling is best-effort; preserve the expected signal exit.
         }
         if (this.options.onSignalCleanup !== undefined) {
-          await this.runSignalCleanup(this.options.onSignalCleanup);
+          await runBoundedCleanup(
+            this.options.onSignalCleanup,
+            this.options.signalCleanupTimeoutMs,
+          );
         }
         process.exit(exitCode);
       };
       this.signalHandlers.set(signal, handler);
       process.on(signal, handler);
-    }
-  }
-
-  private async runSignalCleanup(cleanup: () => Promise<void>): Promise<void> {
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        Promise.resolve().then(cleanup).catch(() => undefined),
-        new Promise<void>((resolve) => {
-          timeout = setTimeout(
-            resolve,
-            this.options.signalCleanupTimeoutMs ?? 5_000,
-          );
-        }),
-      ]);
-    } finally {
-      if (timeout !== undefined) {
-        clearTimeout(timeout);
-      }
     }
   }
 
@@ -304,6 +288,25 @@ export class FileRunRecorder implements RunRecorder {
       return redactSecretString(value);
     }
     return value;
+  }
+}
+
+export async function runBoundedCleanup(
+  cleanup: () => Promise<void>,
+  timeoutMs = 5_000,
+): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.resolve().then(cleanup).catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
   }
 }
 

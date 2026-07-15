@@ -364,6 +364,9 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     warnings: string[],
     abortOutcome: WorkerAbortOutcome,
   ): Promise<OpenCodeObservation> {
+    const timeoutMs = request.budget?.timeoutMs;
+    const deadline =
+      timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
     const messageId = `msg_${randomUUID().replace(/-/gu, "")}`;
     const controller = new AbortController();
     const observer = observeOpenCodeEvents({
@@ -378,7 +381,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     try {
       await withTimeout(
         observer.ready,
-        request.budget?.timeoutMs,
+        remainingTimeoutMs(deadline),
         "opencode SDK worker timed out opening SSE stream.",
       );
       const promptPromise = this.promptAsyncOrSync(
@@ -392,7 +395,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
       promptPromise.catch(() => undefined);
       const syncObservation = await withTimeout(
         promptPromise,
-        request.budget?.timeoutMs,
+        remainingTimeoutMs(deadline),
         "opencode SDK worker timed out sending the prompt.",
       );
       if (syncObservation !== undefined) {
@@ -400,7 +403,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
       }
       return await withTimeout(
         observer.observation,
-        request.budget?.timeoutMs,
+        remainingTimeoutMs(deadline),
         "opencode SDK worker timed out waiting for SSE completion.",
       );
     } finally {
@@ -587,21 +590,23 @@ function openCodePermissionDenialCount(
 ): number {
   const denials = new Set<string>();
   for (const [index, reject] of permissionRejects.entries()) {
-    denials.add(
-      reject.callId === undefined
-        ? `permission:${index}`
-        : `call:${reject.callId}`,
-    );
+    denials.add(openCodeDenialKey("permission", index, reject.callId));
   }
   for (const [index, tool] of tools.entries()) {
     if (openCodeRuntimeToolOutcome(tool.status) !== "denied") {
       continue;
     }
-    denials.add(
-      tool.callId === undefined ? `tool:${index}` : `call:${tool.callId}`,
-    );
+    denials.add(openCodeDenialKey("tool", index, tool.callId));
   }
   return denials.size;
+}
+
+function openCodeDenialKey(
+  source: "permission" | "tool",
+  index: number,
+  callId: string | undefined,
+): string {
+  return callId === undefined ? `${source}:${index}` : `call:${callId}`;
 }
 
 function openCodeComplianceNotes(input: {
@@ -641,15 +646,35 @@ function toolUseSummary(
   if (tools.length === 0 && permissionRejects.length === 0) {
     return undefined;
   }
+  const toolsUsed = new Set<string>();
+  const deniedRequests: string[] = [];
+  const denials = new Set<string>();
+  for (const [index, reject] of permissionRejects.entries()) {
+    const key = openCodeDenialKey("permission", index, reject.callId);
+    if (!denials.has(key)) {
+      denials.add(key);
+      deniedRequests.push(reject.title);
+    }
+  }
+  for (const [index, tool] of tools.entries()) {
+    if (openCodeRuntimeToolOutcome(tool.status) !== "denied") {
+      toolsUsed.add(tool.tool);
+      continue;
+    }
+    const key = openCodeDenialKey("tool", index, tool.callId);
+    if (!denials.has(key)) {
+      denials.add(key);
+      deniedRequests.push(
+        tool.command === undefined
+          ? tool.tool
+          : `${tool.tool}: ${tool.command}`,
+      );
+    }
+  }
   return {
-    toolsUsed:
-      tools.length === 0
-        ? undefined
-        : [...new Set(tools.map((tool) => tool.tool))],
+    toolsUsed: toolsUsed.size === 0 ? undefined : [...toolsUsed],
     deniedRequests:
-      permissionRejects.length === 0
-        ? undefined
-        : permissionRejects.map((reject) => reject.title),
+      deniedRequests.length === 0 ? undefined : deniedRequests,
   };
 }
 
@@ -1753,6 +1778,10 @@ async function withTimeout<T>(
       clearTimeout(timer);
     }
   }
+}
+
+function remainingTimeoutMs(deadline: number | undefined): number | undefined {
+  return deadline === undefined ? undefined : Math.max(0, deadline - Date.now());
 }
 
 function stringField(

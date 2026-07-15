@@ -109,6 +109,15 @@ exclude:
 - chaining after an allowed prefix: `git status && ...`; or
 - write-capable flags: `git log --output=f`.
 
+OpenCode v1.17.20's shell tool uses tree-sitter to generate and evaluate a
+permission pattern for each subcommand, so every subcommand in an `&&` or `;`
+chain is checked against the allowlist separately. This substantially mitigates
+the chaining class at that layer, but it is a version-specific OpenCode
+implementation detail rather than a guarantee provided by Fusion's rules, so
+chaining remains a residual risk. Redirection is not split into a separate
+pattern and can still execute under the leading command's allow decision; it
+remains an open hole class covered by the watchdog and disclosure.
+
 Broad metacharacter deny patterns are not used: they reject legitimate searches
 such as `rg "=>"` or `rg "a|b"` and remain bypassable by deliberate
 construction. See ADR 0039 for the accepted trade-off and sandbox deferral.

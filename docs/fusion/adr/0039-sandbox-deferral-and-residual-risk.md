@@ -17,6 +17,11 @@ Concrete residual hole classes include:
 - write-capable flags on nominally investigative commands, such as
   `git log --output=f`.
 
+OpenCode v1.17.20's shell tool substantially mitigates the chaining class by
+evaluating each `&&`- or `;`-separated subcommand as its own permission pattern.
+This is a version-specific implementation detail, not a Fusion rule guarantee,
+and must not be treated as a boundary on which containment depends.
+
 Adding deny patterns such as `* > *` was considered. It would reject legitimate
 search expressions such as `rg "=>"` and regex alternation such as `a|b`, while
 a deliberately constructed command could still bypass finite pattern checks.

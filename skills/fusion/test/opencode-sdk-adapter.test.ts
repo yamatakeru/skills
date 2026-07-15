@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   OpenCodeSdkAdapter as BaseOpenCodeSdkAdapter,
   buildOpenCodeConfigContent,
@@ -380,9 +380,49 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(
       result.complianceEvidence?.enforcement?.permissionDenialCount,
     ).toBe(1);
+    expect(result.toolUseSummary?.toolsUsed).toBeUndefined();
+    expect(result.toolUseSummary?.deniedRequests).toEqual([
+      `bash: ${command}`,
+    ]);
     expect(result.warnings?.join("\n")).toContain(
       "OpenCode tool bash was denied by permission controls.",
     );
+  });
+
+  test("reports a tool in both summary classes when denial and success are observed", async () => {
+    const deniedCommand = "git commit --allow-empty -m x";
+    const { result } = await runOpenCodeEventFixture((messageId) => [
+      toolErrorEvent({
+        id: "tool-rule-denied",
+        callId: "call-rule-denied",
+        messageId,
+        command: deniedCommand,
+        error: ruleDenialError,
+      }),
+      {
+        type: "message.part.updated",
+        properties: {
+          part: {
+            id: "tool-succeeded",
+            sessionID: "session-1",
+            messageID: messageId,
+            callID: "call-succeeded",
+            type: "tool",
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: { command: "git status" },
+              output: "",
+            },
+          },
+        },
+      },
+    ]);
+
+    expect(result.toolUseSummary?.toolsUsed).toEqual(["bash"]);
+    expect(result.toolUseSummary?.deniedRequests).toEqual([
+      `bash: ${deniedCommand}`,
+    ]);
   });
 
   test("keeps ordinary tool errors classified as failed", async () => {
@@ -1427,6 +1467,52 @@ describe("Fusion OpenCode SDK adapter", () => {
 
     expect(result.status).toBe("timeout");
     expect(result.errors?.join("\n")).toContain("sending the prompt");
+  });
+
+  test("shares one timeout budget across SSE setup and prompt submission", async () => {
+    const timeoutMs = 150;
+    let promptStarted = false;
+    const now = spyOn(Date, "now").mockImplementation(() =>
+      promptStarted ? timeoutMs : 0,
+    );
+    const timers = spyOn(globalThis, "setTimeout");
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor: versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return openSseResponse();
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptStarted = true;
+          return new Promise<Response>(() => {});
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    try {
+      const result = await adapter.runWorker({
+        ...workerRequest(),
+        budget: { timeoutMs },
+      });
+      const timeoutDelays = timers.mock.calls.map((call) => call[1]);
+
+      expect(result.status).toBe("timeout");
+      expect(result.errors?.join("\n")).toContain("sending the prompt");
+      expect(timeoutDelays).toContain(timeoutMs);
+      expect(timeoutDelays).toContain(0);
+    } finally {
+      timers.mockRestore();
+      now.mockRestore();
+    }
   });
 
   test("returns an error result when the opencode binary cannot spawn", async () => {
