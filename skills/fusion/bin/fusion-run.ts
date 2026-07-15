@@ -867,6 +867,36 @@ export function renderMarkdownReport(
     `- Compliance tier: ${result.complianceSummary.tier}`,
     `- Synthesizer option: ${options.synthesizer}`,
   ];
+  const watchdog = result.complianceSummary.workspaceWatchdog;
+  lines.push(`- Workspace watchdog: ${watchdog.verdict} — ${watchdog.note}`);
+  lines.push(`- Watchdog limitations: ${watchdog.limitations.join("; ")}.`);
+  if (watchdog.changedPaths !== undefined) {
+    lines.push(`- Watchdog changed paths: ${watchdog.changedPaths.join(", ")}`);
+  }
+  if (watchdog.refDiffs !== undefined) {
+    lines.push(
+      `- Watchdog ref diffs: ${watchdog.refDiffs
+        .map((diff) =>
+          `${diff.refName} (${diff.before ?? "absent"} -> ${diff.after ?? "absent"})`
+        )
+        .join(", ")}`,
+    );
+  }
+  const enforcementSources = result.workerResults.map((worker) =>
+    `${worker.workerId}=${worker.complianceEvidence?.enforcement?.source ?? "not-recorded"}`
+  );
+  lines.push(`- Enforcement sources: ${enforcementSources.join(", ") || "none"}`);
+  const containments = result.workerResults.map((worker) =>
+    `${worker.workerId}=${worker.complianceEvidence?.containment ?? "not-recorded"}`
+  );
+  if (
+    result.workerResults.some(
+      (worker) =>
+        worker.complianceEvidence?.containment === "allowlist-enforced",
+    )
+  ) {
+    lines.push(`- Containment: ${containments.join(", ")}`);
+  }
   const judgeCompliance = result.complianceSummary.judgeCompliance;
   if (judgeCompliance !== undefined) {
     lines.push(`- ${renderJudgeStatusLine(result)}`);

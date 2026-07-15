@@ -5,6 +5,7 @@ import {
   type CommandExecutor,
   type CommandResult,
 } from "./headless-cli-adapters";
+import { deriveContainment } from "./containment";
 import type {
   WorkerRequest,
   WorkerResult,
@@ -86,7 +87,11 @@ function sdkResultToWorkerResult(
       adapterClaimsIsolatedContext: request.session.mode === "fresh",
       adapterClaimsBlindness: true,
       observedSessionMode: request.session.mode,
-      observedToolPolicy: request.toolsPolicy,
+      enforcement: {
+        source: "harness-declared",
+        permissionDenialCount: permissionDenials.length,
+      },
+      containment: deriveContainment(request.toolsPolicy),
       notes: claudeSdkComplianceNotes(
         request,
         permissionDenials,

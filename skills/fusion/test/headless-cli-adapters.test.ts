@@ -182,7 +182,7 @@ describe("Fusion headless CLI adapters", () => {
     expect(executions[0]?.command).toBe("opencode");
     expect(result.status).toBe("ok");
     expect(result.output).toBe("adapter output");
-    expect(result.complianceEvidence?.observedToolPolicy).toBeUndefined();
+    expect(result.complianceEvidence?.enforcement).toBeUndefined();
     expect(result.warnings?.[0]).toContain("degraded");
   });
 
@@ -250,7 +250,7 @@ describe("Fusion headless CLI adapters", () => {
     expect(result.output).toBe("fusion-smoke-ok");
   });
 
-  test("maps Claude Code CLI output with observed tool policy", async () => {
+  test("does not claim runtime enforcement evidence for Claude Code CLI", async () => {
     const adapter = new ClaudeCodeHeadlessCliAdapter({
       executor: async () => ({
         exitCode: 0,
@@ -264,9 +264,7 @@ describe("Fusion headless CLI adapters", () => {
 
     expect(result.status).toBe("ok");
     expect(result.output).toBe("claude output");
-    expect(result.complianceEvidence?.observedToolPolicy).toEqual(
-      workerRequest().toolsPolicy,
-    );
+    expect(result.complianceEvidence?.enforcement).toBeUndefined();
   });
 
   test("warns when Claude Code cannot map reasoning max tokens or turn caps", async () => {

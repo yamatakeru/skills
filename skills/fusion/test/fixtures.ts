@@ -3,6 +3,7 @@ import {
   buildWorkerRequests,
   createContextManifest,
   defaultPolicies,
+  deriveContainment,
   normalizeHarnessDescriptor,
   renderWorkerPrompt,
   type CommandExecution,
@@ -123,7 +124,8 @@ export function okWorkerResult(
       adapterClaimsIsolatedContext: true,
       adapterClaimsBlindness: request.blindnessPolicy.noPeerOutputs,
       observedSessionMode: sessionMode,
-      observedToolPolicy: request.toolsPolicy,
+      enforcement: { source: "harness-declared", permissionDenialCount: 0 },
+      containment: deriveContainment(request.toolsPolicy),
     },
   };
 }

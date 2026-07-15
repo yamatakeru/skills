@@ -122,6 +122,9 @@ describe("Fusion Claude Code SDK adapter", () => {
 
     expect(result.status).toBe("ok");
     expect(result.warnings?.join("\n")).toContain("permission denial");
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(1);
     expect(result.complianceEvidence?.notes?.join("\n")).toContain(
       "Bash: sed -i: not allowed",
     );

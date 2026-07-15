@@ -53,11 +53,15 @@
             "type": "object"
           },
           "type": "array"
+        },
+        "workspaceWatchdog": {
+          "$ref": "#/definitions/WorkspaceWatchdogEvidence"
         }
       },
       "required": [
         "tier",
-        "workerCompliance"
+        "workerCompliance",
+        "workspaceWatchdog"
       ],
       "type": "object"
     },
@@ -67,6 +71,21 @@
         "full-reused-isolated-session",
         "degraded",
         "non-compliant"
+      ],
+      "type": "string"
+    },
+    "ContainmentLevel": {
+      "enum": [
+        "no-shell",
+        "allowlist-enforced",
+        "sandboxed"
+      ],
+      "type": "string"
+    },
+    "EnforcementSource": {
+      "enum": [
+        "verified-effective",
+        "harness-declared"
       ],
       "type": "string"
     },
@@ -455,9 +474,35 @@
         "worker.invocation.failed",
         "synthesis.started",
         "synthesis.completed",
+        "workspace.watchdog.completed",
         "compliance.evaluated"
       ],
       "type": "string"
+    },
+    "RuntimeToolEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "started",
+            "succeeded",
+            "denied",
+            "failed",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "type": "object"
     },
     "SessionMode": {
       "enum": [
@@ -574,14 +619,38 @@
       },
       "type": "object"
     },
+    "WorkerAbortOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "attempted": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        },
+        "succeeded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attempted"
+      ],
+      "type": "object"
+    },
     "WorkerCompliance": {
       "additionalProperties": false,
       "properties": {
         "blind": {
           "type": "boolean"
         },
+        "containment": {
+          "$ref": "#/definitions/ContainmentLevel"
+        },
         "degradedReason": {
           "type": "string"
+        },
+        "enforcementSource": {
+          "$ref": "#/definitions/EnforcementSource"
         },
         "independentInvocation": {
           "type": "boolean"
@@ -603,9 +672,6 @@
         },
         "tier": {
           "$ref": "#/definitions/ComplianceTier"
-        },
-        "toolPolicyMatchedPanelDefault": {
-          "type": "boolean"
         }
       },
       "required": [
@@ -635,6 +701,12 @@
         "adapterClaimsIsolatedContext": {
           "type": "boolean"
         },
+        "containment": {
+          "$ref": "#/definitions/ContainmentLevel"
+        },
+        "enforcement": {
+          "$ref": "#/definitions/WorkerEnforcementEvidence"
+        },
         "notes": {
           "items": {
             "type": "string"
@@ -643,11 +715,45 @@
         },
         "observedSessionMode": {
           "$ref": "#/definitions/SessionMode"
-        },
-        "observedToolPolicy": {
-          "$ref": "#/definitions/ToolsPolicy"
         }
       },
+      "type": "object"
+    },
+    "WorkerEnforcementEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "abortOutcome": {
+          "$ref": "#/definitions/WorkerAbortOutcome"
+        },
+        "effectiveRules": {
+          "additionalProperties": {},
+          "description": "Effective harness rules observed independently of the request.",
+          "type": "object"
+        },
+        "permissionDenialCount": {
+          "description": "Permission denials demonstrate that enforcement operated as intended.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "source": {
+          "$ref": "#/definitions/EnforcementSource"
+        },
+        "toolEvents": {
+          "items": {
+            "$ref": "#/definitions/RuntimeToolEvent"
+          },
+          "type": "array"
+        },
+        "violationEvidence": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "source"
+      ],
       "type": "object"
     },
     "WorkerResult": {
@@ -711,6 +817,71 @@
         "error",
         "invalid-output",
         "refused"
+      ],
+      "type": "string"
+    },
+    "WorkspaceRefDiff": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "type": "string"
+        },
+        "before": {
+          "type": "string"
+        },
+        "refName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "refName"
+      ],
+      "type": "object"
+    },
+    "WorkspaceWatchdogEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "changedPaths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "note": {
+          "type": "string"
+        },
+        "refDiffs": {
+          "items": {
+            "$ref": "#/definitions/WorkspaceRefDiff"
+          },
+          "type": "array"
+        },
+        "verdict": {
+          "$ref": "#/definitions/WorkspaceWatchdogVerdict"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "verdict",
+        "workspaceRoot",
+        "note",
+        "limitations"
+      ],
+      "type": "object"
+    },
+    "WorkspaceWatchdogVerdict": {
+      "enum": [
+        "clean",
+        "mutated",
+        "not-applicable"
       ],
       "type": "string"
     }

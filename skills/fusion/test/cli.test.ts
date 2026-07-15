@@ -473,6 +473,16 @@ describe("Fusion CLI parsing", () => {
           modelUsed: "fable",
           harnessUsed: { kind: "claude-code", invocation: "headless" },
         },
+        workspaceWatchdog: {
+          verdict: "not-applicable",
+          workspaceRoot: "/tmp",
+          note: "workspace is not a Git work tree",
+          limitations: [
+            "gitignored areas are not detectable",
+            "writes outside the workspace are not detectable",
+            "remote API side effects are not detectable",
+          ],
+        },
       },
     };
 
@@ -484,7 +494,73 @@ describe("Fusion CLI parsing", () => {
     expect(report).toContain(
       "- Judge: invocation ok, output failed validation (fell back to parent-agent) via claude-code (fable)",
     );
+    expect(report).toContain("- Workspace watchdog: not-applicable");
     expect(report).not.toContain("- Judge: ok via");
+  });
+
+  test("renders enforcement, bash containment, and watchdog disclosures", () => {
+    const result: PanelResult = {
+      panelRunId: "runtime-evidence-report",
+      status: "ok",
+      workerResults: [
+        {
+          panelRunId: "runtime-evidence-report",
+          workerId: "worker-1",
+          status: "ok",
+          output: "answer",
+          complianceEvidence: {
+            enforcement: {
+              source: "harness-declared",
+              permissionDenialCount: 1,
+            },
+            containment: "allowlist-enforced",
+          },
+        },
+      ],
+      synthesis: "synthesis",
+      complianceSummary: {
+        tier: "degraded",
+        workerCompliance: [],
+        workspaceWatchdog: {
+          verdict: "mutated",
+          workspaceRoot: "/workspace",
+          changedPaths: ["tracked.txt"],
+          refDiffs: [
+            {
+              refName: "refs/remotes/origin/main",
+              before: "before",
+              after: "after",
+            },
+          ],
+          note: "workspace mutated during the run; attribution unknown — worker or external process",
+          limitations: [
+            "gitignored areas are not detectable",
+            "writes outside the workspace are not detectable",
+            "remote API side effects are not detectable",
+          ],
+        },
+      },
+    };
+
+    const report = renderMarkdownReport(result, {
+      recordingStatus: "not-recorded",
+      synthesizer: "deterministic",
+    });
+
+    expect(report).toContain(
+      "- Enforcement sources: worker-1=harness-declared",
+    );
+    expect(report).toContain(
+      "- Containment: worker-1=allowlist-enforced",
+    );
+    expect(report).toContain(
+      "- Workspace watchdog: mutated — workspace mutated during the run; attribution unknown — worker or external process",
+    );
+    expect(report).toContain("- Watchdog changed paths: tracked.txt");
+    expect(report).toContain("refs/remotes/origin/main (before -> after)");
+    expect(report).toContain(
+      "gitignored areas are not detectable; writes outside the workspace are not detectable; remote API side effects are not detectable",
+    );
   });
 });
 

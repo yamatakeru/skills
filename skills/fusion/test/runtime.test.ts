@@ -28,6 +28,10 @@ describe("Fusion panel runtime", () => {
     expect(result.events?.map((event) => event.type)).toContain(
       "compliance.evaluated",
     );
+    expect(result.events?.map((event) => event.type)).toContain(
+      "workspace.watchdog.completed",
+    );
+    expect(result.complianceSummary.workspaceWatchdog.verdict).toBe("clean");
   });
 
   test("parent-agent strategy keeps synthesis but unsets the final answer", async () => {

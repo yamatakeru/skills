@@ -146,9 +146,10 @@ describe("Fusion Cursor SDK adapter", () => {
       transport: "sdk",
     });
     expect(result.complianceEvidence?.adapterClaimsIsolatedContext).toBe(true);
-    expect(result.complianceEvidence?.observedToolPolicy).toEqual(
-      request.toolsPolicy,
+    expect(result.complianceEvidence?.enforcement?.source).toBe(
+      "harness-declared",
     );
+    expect(result.complianceEvidence?.containment).toBe("allowlist-enforced");
     const notes = result.complianceEvidence?.notes?.join("\n");
     expect(notes).toContain("requested model id: composer-2.5-fast");
     expect(notes).toContain("observed model display name: Composer 2.5 Fast");
@@ -296,6 +297,9 @@ describe("Fusion Cursor SDK adapter", () => {
       "Write permission denied",
     );
     expect(result.warnings?.join("\n")).toContain("denied tool result");
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(3);
     expect(result.complianceEvidence?.notes?.join("\n")).toContain(
       "Cursor tool Shell ended with status permissionDenied",
     );
