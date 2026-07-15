@@ -243,6 +243,28 @@ describe("Fusion judge replay", () => {
     );
   });
 
+  test("loads a crashed run with completed workers and no synthesis", async () => {
+    const runDir = await writeRecordedFixture();
+    await rm(join(runDir, "synthesis.json"));
+    await writeFile(
+      join(runDir, "run-status.json"),
+      `${JSON.stringify({
+        status: "running",
+        startedAt: "2026-07-12T00:00:00.000Z",
+      })}\n`,
+    );
+
+    const loaded = await loadRecordedRun(runDir);
+    const replay = buildReplayInput(loaded, {
+      judgeModel: { model: "gpt-5.5" },
+      judgeHarness: "opencode",
+      toolsMode: "none",
+    });
+
+    expect(loaded.synthesis).toBeUndefined();
+    expect(replay.synthesisInput.workerResults).toHaveLength(2);
+  });
+
   test("replay synthesizer invokes only the judge runner", async () => {
     const recorded = recordedRun();
     const replay = buildReplayInput(recorded, {
