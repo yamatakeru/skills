@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { deriveContainment } from "./containment";
 import type {
   HarnessKind,
   ModelPreference,
@@ -201,7 +202,6 @@ function cliResultToWorkerResult(
   request: WorkerRequest,
   result: CommandResult,
 ): WorkerResult {
-  const isOpenCode = kind === "opencode";
   const parsedOutput = parseTextOutput(result.stdout);
   const output = parsedOutput.ok ? parsedOutput.output.trim() : "";
   const ok = result.exitCode === 0 && output.length > 0 && !result.timedOut;
@@ -220,7 +220,7 @@ function cliResultToWorkerResult(
       adapterClaimsIsolatedContext: request.session.mode === "fresh",
       adapterClaimsBlindness: true,
       observedSessionMode: request.session.mode,
-      observedToolPolicy: isOpenCode ? undefined : request.toolsPolicy,
+      containment: deriveContainment(request.toolsPolicy),
       notes: adapterComplianceNotes(kind, request, warnings),
     },
     warnings: warnings.length === 0 ? undefined : warnings,

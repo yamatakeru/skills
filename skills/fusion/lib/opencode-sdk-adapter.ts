@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import type { AssistantMessage, Permission } from "@opencode-ai/sdk/client";
+import { deriveContainment } from "./containment";
 import {
   executeCommand,
   modelPreferenceToModel,
@@ -78,6 +79,7 @@ interface OpenCodeObservation {
 interface OpenCodeToolObservation {
   tool: string;
   status: string;
+  command?: string;
 }
 
 interface OpenCodePermissionRule {
@@ -430,12 +432,42 @@ function openCodeWorkerResult(input: {
         input.request.session.mode === "fresh" && input.sessionId !== undefined,
       adapterClaimsBlindness: true,
       observedSessionMode: input.request.session.mode,
-      observedToolPolicy: input.request.toolsPolicy,
+      enforcement: {
+        // Change 1 (feature/opencode-containment) observes GET /agent effective
+        // rules; aggregation can attach them and promote this source to
+        // verified-effective without changing the evidence contract.
+        source: "harness-declared",
+        permissionDenialCount: input.permissionRejects.length,
+        toolEvents: input.tools.map((tool) => ({
+          tool: tool.tool,
+          command: tool.command,
+          outcome: openCodeRuntimeToolOutcome(tool.status),
+        })),
+      },
+      containment: deriveContainment(input.request.toolsPolicy),
       notes: openCodeComplianceNotes(input),
     },
     warnings: input.warnings.length === 0 ? undefined : input.warnings,
     errors: input.errors,
   };
+}
+
+function openCodeRuntimeToolOutcome(
+  status: string,
+): "started" | "succeeded" | "denied" | "failed" | "unknown" {
+  if (status === "pending" || status === "running") {
+    return "started";
+  }
+  if (status === "completed") {
+    return "succeeded";
+  }
+  if (status === "denied" || status === "rejected") {
+    return "denied";
+  }
+  if (status === "error" || status === "failed") {
+    return "failed";
+  }
+  return "unknown";
 }
 
 function openCodeComplianceNotes(input: {
@@ -1438,10 +1470,15 @@ function toolObservationsFromParts(parts: unknown[]): OpenCodeToolObservation[] 
         return undefined;
       }
       const state = objectField(record, "state");
-      const status = state === undefined ? undefined : stringField(state, "status");
+      const status =
+        state === undefined ? undefined : stringField(state, "status");
       const tool = stringField(record, "tool");
+      const toolInput =
+        state === undefined ? undefined : objectField(state, "input");
+      const command =
+        toolInput === undefined ? undefined : stringField(toolInput, "command");
       return tool !== undefined && status !== undefined
-        ? { tool, status }
+        ? { tool, status, command }
         : undefined;
     })
     .filter((tool): tool is OpenCodeToolObservation => tool !== undefined);

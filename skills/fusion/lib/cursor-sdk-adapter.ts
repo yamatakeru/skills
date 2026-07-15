@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deriveContainment } from "./containment";
 import { defaultPolicies } from "./defaults";
 import {
   executeCommand,
@@ -580,7 +581,16 @@ function cursorWorkerResult(input: {
         input.request.session.mode === "fresh" && input.sessionId !== undefined,
       adapterClaimsBlindness: true,
       observedSessionMode: input.request.session.mode,
-      observedToolPolicy: input.request.toolsPolicy,
+      enforcement: {
+        source: "harness-declared",
+        permissionDenialCount: input.tools.filter(isDeniedToolObservation).length,
+        toolEvents: input.tools.map((tool) => ({
+          tool: tool.tool,
+          command: tool.tool === "Shell" ? tool.detail : undefined,
+          outcome: cursorRuntimeToolOutcome(tool),
+        })),
+      },
+      containment: deriveContainment(input.request.toolsPolicy),
       notes: cursorSdkComplianceNotes(input),
     },
     warnings: input.warnings.length === 0 ? undefined : input.warnings,
@@ -778,6 +788,24 @@ function isDeniedToolObservation(tool: CursorToolObservation): boolean {
     return true;
   }
   return tool.status === "error" && isHookBlockedToolError(tool.detail);
+}
+
+function cursorRuntimeToolOutcome(
+  tool: CursorToolObservation,
+): "started" | "succeeded" | "denied" | "failed" | "unknown" {
+  if (tool.status === "started") {
+    return "started";
+  }
+  if (tool.status === "success") {
+    return "succeeded";
+  }
+  if (isDeniedToolObservation(tool)) {
+    return "denied";
+  }
+  if (tool.status === "error") {
+    return "failed";
+  }
+  return "unknown";
 }
 
 function isHookBlockedToolError(detail: string | undefined): boolean {

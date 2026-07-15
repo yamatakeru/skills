@@ -9,6 +9,15 @@ export type HarnessKind =
   "opencode" | "cursor" | "claude-code" | "pi" | ExtensibleString;
 export type InvocationMode = "headless" | "subagent";
 export type TransportMode = "cli" | "sdk";
+export type ContainmentLevel =
+  | "no-shell"
+  | "allowlist-enforced"
+  | "sandboxed";
+export type EnforcementSource = "verified-effective" | "harness-declared";
+export type WorkspaceWatchdogVerdict =
+  | "clean"
+  | "mutated"
+  | "not-applicable";
 export type PanelStatus = "ok" | "partial" | "failed";
 export type WorkerStatus =
   "ok" | "timeout" | "error" | "invalid-output" | "refused";
@@ -309,6 +318,7 @@ export type ProvenanceEventType =
   | "worker.invocation.failed"
   | "synthesis.started"
   | "synthesis.completed"
+  | "workspace.watchdog.completed"
   | "compliance.evaluated";
 
 export interface WorkerComplianceEvidence {
@@ -317,8 +327,50 @@ export interface WorkerComplianceEvidence {
   adapterClaimsBlindness?: boolean;
   adapterClaimsCleanSameWorkerLineage?: boolean;
   observedSessionMode?: SessionMode;
-  observedToolPolicy?: ToolsPolicy;
+  enforcement?: WorkerEnforcementEvidence;
+  containment?: ContainmentLevel;
   notes?: string[];
+}
+
+export interface WorkerEnforcementEvidence {
+  source: EnforcementSource;
+  /** Effective harness rules observed independently of the request. */
+  effectiveRules?: Record<string, unknown>;
+  /**
+   * Permission denials demonstrate that enforcement operated as intended.
+   * @minimum 0
+   */
+  permissionDenialCount?: number;
+  abortOutcome?: WorkerAbortOutcome;
+  violationEvidence?: string[];
+  toolEvents?: RuntimeToolEvent[];
+}
+
+export interface WorkerAbortOutcome {
+  attempted: boolean;
+  succeeded?: boolean;
+  error?: string;
+}
+
+export interface RuntimeToolEvent {
+  tool: string;
+  command?: string;
+  outcome?: "started" | "succeeded" | "denied" | "failed" | "unknown";
+}
+
+export interface WorkspaceWatchdogEvidence {
+  verdict: WorkspaceWatchdogVerdict;
+  workspaceRoot: string;
+  changedPaths?: string[];
+  refDiffs?: WorkspaceRefDiff[];
+  note: string;
+  limitations: string[];
+}
+
+export interface WorkspaceRefDiff {
+  refName: string;
+  before?: string;
+  after?: string;
 }
 
 export interface WorkerCompliance {
@@ -330,7 +382,8 @@ export interface WorkerCompliance {
   noPanelConclusions: boolean;
   isolatedContext: boolean;
   sessionMode: SessionMode;
-  toolPolicyMatchedPanelDefault?: boolean;
+  enforcementSource?: EnforcementSource;
+  containment?: ContainmentLevel;
   degradedReason?: string;
 }
 
@@ -341,6 +394,7 @@ export interface ComplianceSummary {
   degradedWorkers?: string[];
   failedWorkers?: string[];
   missingRequiredEvents?: string[];
+  workspaceWatchdog: WorkspaceWatchdogEvidence;
   notes?: string[];
 }
 

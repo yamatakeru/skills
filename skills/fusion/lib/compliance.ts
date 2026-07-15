@@ -1,5 +1,6 @@
-import { stableStringify } from "./manifest";
 import { describeJudgeInvocation } from "./judge-synthesizer";
+import { deriveContainment } from "./containment";
+import { notApplicableWatchdogEvidence } from "./watchdog";
 import type {
   ComplianceSummary,
   ComplianceTier,
@@ -9,11 +10,11 @@ import type {
   ProvenanceEventType,
   SessionMode,
   SynthesisResult,
-  ToolsPolicy,
   WorkerCompliance,
   WorkerComplianceEvidence,
   WorkerRequest,
   WorkerResult,
+  WorkspaceWatchdogEvidence,
 } from "./types";
 
 export function evaluateCompliance(input: {
@@ -22,22 +23,45 @@ export function evaluateCompliance(input: {
   workerResults: WorkerResult[];
   events: ProvenanceEvent[];
   synthesisResult?: SynthesisResult;
+  workspaceWatchdog?: WorkspaceWatchdogEvidence;
 }): ComplianceSummary {
+  const workspaceWatchdog =
+    input.workspaceWatchdog ??
+    notApplicableWatchdogEvidence(
+      input.panelRequest.workerEnvironment?.workspaceRoot ?? process.cwd(),
+    );
   const missingRequiredEvents = findMissingRequiredEvents(input);
   const failedWorkers = input.workerResults
     .filter((result) => result.status !== "ok")
     .map((result) => result.workerId);
+  const corroboratingWorkerIds = new Set(
+    workspaceWatchdog.verdict === "mutated"
+      ? input.workerResults
+          .filter((result) =>
+            hasCorroboratingMutationEvent(result, workspaceWatchdog),
+          )
+          .map((result) => result.workerId)
+      : [],
+  );
   const workerCompliance = input.workerRequests.map((workerRequest) => {
     const result = input.workerResults.find(
       (candidate) => candidate.workerId === workerRequest.workerId,
     );
+    const compliance = evaluateWorkerCompliance(
+      workerRequest,
+      result,
+      missingRequiredEvents,
+    );
+    if (corroboratingWorkerIds.has(workerRequest.workerId)) {
+      compliance.tier = "non-compliant";
+      compliance.degradedReason = appendReason(
+        compliance.degradedReason,
+        "successful worker shell event corroborates the observed workspace mutation",
+      );
+    }
     return {
       workerId: workerRequest.workerId,
-      compliance: evaluateWorkerCompliance(
-        workerRequest,
-        result,
-        missingRequiredEvents,
-      ),
+      compliance,
     };
   });
   const degradedWorkers = workerCompliance
@@ -57,6 +81,7 @@ export function evaluateCompliance(input: {
       "full-reused-isolated-session",
     ),
     hasTooFewWorkers,
+    watchdogMutated: workspaceWatchdog.verdict === "mutated",
   });
   const notes: string[] = [];
 
@@ -73,6 +98,14 @@ export function evaluateCompliance(input: {
       "Missing synthesis.started is warning-only when synthesis.completed records inputs.",
     );
   }
+  if (workspaceWatchdog.verdict === "mutated") {
+    notes.push(workspaceWatchdog.note);
+    if (corroboratingWorkerIds.size > 0) {
+      notes.push(
+        `Workspace mutation was corroborated by successful shell events from: ${[...corroboratingWorkerIds].join(", ")}.`,
+      );
+    }
+  }
 
   return {
     tier,
@@ -82,6 +115,7 @@ export function evaluateCompliance(input: {
     failedWorkers: failedWorkers.length === 0 ? undefined : failedWorkers,
     missingRequiredEvents:
       missingRequiredEvents.length === 0 ? undefined : missingRequiredEvents,
+    workspaceWatchdog,
     notes: notes.length === 0 ? undefined : notes,
   };
 }
@@ -124,10 +158,10 @@ function evaluateWorkerCompliance(
     evidence?.adapterClaimsIndependentInvocation === true;
   const isolatedContext = evidence?.adapterClaimsIsolatedContext === true;
   const blind = evidence?.adapterClaimsBlindness === true;
-  const toolPolicyMatchedPanelDefault = toolsPolicyEquals(
-    evidence?.observedToolPolicy,
-    workerRequest.toolsPolicy,
-  );
+  const enforcementSource = evidence?.enforcement?.source;
+  const containment =
+    evidence?.containment ?? deriveContainment(workerRequest.toolsPolicy);
+  const violationEvidence = evidence?.enforcement?.violationEvidence ?? [];
   const workerMissingRequiredEvents = missingRequiredEvents.some((event) =>
     event.endsWith(`:${workerRequest.workerId}`),
   );
@@ -142,8 +176,8 @@ function evaluateWorkerCompliance(
     workerMissingRequiredEvents
       ? "required worker lifecycle events missing"
       : undefined,
-    !toolPolicyMatchedPanelDefault
-      ? "observed tool policy does not match request"
+    enforcementSource === undefined
+      ? "runtime enforcement source not recorded"
       : undefined,
     resumeSessionDegradedReason(workerRequest, evidence),
     recursiveDelegationDegradedReason(workerRequest),
@@ -151,9 +185,11 @@ function evaluateWorkerCompliance(
 
   return {
     tier:
-      degradedReasons.length === 0
-        ? sessionComplianceTier(sessionMode)
-        : "degraded",
+      violationEvidence.length > 0
+        ? "non-compliant"
+        : degradedReasons.length === 0
+          ? sessionComplianceTier(sessionMode)
+          : "degraded",
     independentInvocation,
     blind,
     noPeerOutputs: blind && workerRequest.blindnessPolicy.noPeerOutputs,
@@ -162,9 +198,14 @@ function evaluateWorkerCompliance(
       blind && workerRequest.blindnessPolicy.noPanelConclusions,
     isolatedContext,
     sessionMode,
-    toolPolicyMatchedPanelDefault,
+    enforcementSource,
+    containment,
     degradedReason:
-      degradedReasons.length === 0 ? undefined : degradedReasons.join("; "),
+      violationEvidence.length > 0
+        ? `runtime violation evidence: ${violationEvidence.join("; ")}`
+        : degradedReasons.length === 0
+          ? undefined
+          : degradedReasons.join("; "),
   };
 }
 
@@ -179,6 +220,7 @@ function determineComplianceTier(input: {
   hasDegradedWorker: boolean;
   hasReusedIsolatedSession: boolean;
   hasTooFewWorkers: boolean;
+  watchdogMutated: boolean;
 }): ComplianceTier {
   if (input.hasNonCompliantWorker) {
     return "non-compliant";
@@ -187,7 +229,8 @@ function determineComplianceTier(input: {
     input.hasMissingRequiredEvents ||
     input.hasFailedWorkers ||
     input.hasDegradedWorker ||
-    input.hasTooFewWorkers
+    input.hasTooFewWorkers ||
+    input.watchdogMutated
   ) {
     return "degraded";
   }
@@ -289,12 +332,46 @@ function recursiveDelegationDegradedReason(
   return undefined;
 }
 
-function toolsPolicyEquals(
-  left: ToolsPolicy | undefined,
-  right: ToolsPolicy | undefined,
+function hasCorroboratingMutationEvent(
+  result: WorkerResult,
+  watchdog: WorkspaceWatchdogEvidence,
 ): boolean {
-  if (left === undefined || right === undefined) {
-    return left === right;
+  return (result.complianceEvidence?.enforcement?.toolEvents ?? []).some(
+    (event) => {
+      if (
+        event.outcome !== "succeeded" ||
+        !["bash", "shell"].includes(event.tool.toLowerCase()) ||
+        event.command === undefined
+      ) {
+        return false;
+      }
+      return commandCanExplainMutation(event.command, watchdog);
+    },
+  );
+}
+
+function commandCanExplainMutation(
+  command: string,
+  watchdog: WorkspaceWatchdogEvidence,
+): boolean {
+  const mutatesRefs = /\bgit\s+(?:commit|branch|tag|push|update-ref|reset|merge|rebase|cherry-pick|checkout|switch)\b/u;
+  if ((watchdog.refDiffs?.length ?? 0) > 0 && mutatesRefs.test(command)) {
+    return true;
   }
-  return stableStringify(left) === stableStringify(right);
+  if ((watchdog.changedPaths?.length ?? 0) === 0) {
+    return false;
+  }
+  return (
+    mutatesRefs.test(command) ||
+    /\b(?:rm|mv|cp|touch|mkdir|rmdir|truncate|tee|install)\b/u.test(command) ||
+    /\bsed\b.*(?:\s-i\b|--in-place)/u.test(command) ||
+    /(?:^|[^\d])>{1,2}(?:[^=]|$)/u.test(command)
+  );
+}
+
+function appendReason(
+  existing: string | undefined,
+  reason: string,
+): string {
+  return existing === undefined ? reason : `${existing}; ${reason}`;
 }

@@ -2,6 +2,21 @@
   "$ref": "#/definitions/WorkerResult",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "ContainmentLevel": {
+      "enum": [
+        "no-shell",
+        "allowlist-enforced",
+        "sandboxed"
+      ],
+      "type": "string"
+    },
+    "EnforcementSource": {
+      "enum": [
+        "verified-effective",
+        "harness-declared"
+      ],
+      "type": "string"
+    },
     "HarnessDescriptor": {
       "additionalProperties": false,
       "properties": {
@@ -47,6 +62,31 @@
       ],
       "type": "string"
     },
+    "RuntimeToolEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "started",
+            "succeeded",
+            "denied",
+            "failed",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "type": "object"
+    },
     "SessionMode": {
       "enum": [
         "fresh",
@@ -79,64 +119,6 @@
       },
       "type": "object"
     },
-    "ToolsPolicy": {
-      "additionalProperties": false,
-      "properties": {
-        "allow": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "ask": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "deny": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "headlessAskBehavior": {
-          "enum": [
-            "deny",
-            "error",
-            "prompt-if-policy-allows"
-          ],
-          "type": "string"
-        },
-        "mode": {
-          "enum": [
-            "none",
-            "read-only",
-            "limited",
-            "full"
-          ],
-          "type": "string"
-        },
-        "parity": {
-          "enum": [
-            "same-by-default",
-            "strict-same-required",
-            "harness-default"
-          ],
-          "type": "string"
-        },
-        "readOnlyBashCommands": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "mode"
-      ],
-      "type": "object"
-    },
     "TransportMode": {
       "enum": [
         "cli",
@@ -162,6 +144,24 @@
       },
       "type": "object"
     },
+    "WorkerAbortOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "attempted": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        },
+        "succeeded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attempted"
+      ],
+      "type": "object"
+    },
     "WorkerComplianceEvidence": {
       "additionalProperties": false,
       "properties": {
@@ -177,6 +177,12 @@
         "adapterClaimsIsolatedContext": {
           "type": "boolean"
         },
+        "containment": {
+          "$ref": "#/definitions/ContainmentLevel"
+        },
+        "enforcement": {
+          "$ref": "#/definitions/WorkerEnforcementEvidence"
+        },
         "notes": {
           "items": {
             "type": "string"
@@ -185,11 +191,45 @@
         },
         "observedSessionMode": {
           "$ref": "#/definitions/SessionMode"
-        },
-        "observedToolPolicy": {
-          "$ref": "#/definitions/ToolsPolicy"
         }
       },
+      "type": "object"
+    },
+    "WorkerEnforcementEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "abortOutcome": {
+          "$ref": "#/definitions/WorkerAbortOutcome"
+        },
+        "effectiveRules": {
+          "additionalProperties": {},
+          "description": "Effective harness rules observed independently of the request.",
+          "type": "object"
+        },
+        "permissionDenialCount": {
+          "description": "Permission denials demonstrate that enforcement operated as intended.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "source": {
+          "$ref": "#/definitions/EnforcementSource"
+        },
+        "toolEvents": {
+          "items": {
+            "$ref": "#/definitions/RuntimeToolEvent"
+          },
+          "type": "array"
+        },
+        "violationEvidence": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "source"
+      ],
       "type": "object"
     },
     "WorkerResult": {

@@ -276,6 +276,9 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.toolUseSummary?.deniedRequests).toEqual([
       "Read /private/path",
     ]);
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(1);
   });
 
   test("builds permission config from tools policy and read roots", () => {
