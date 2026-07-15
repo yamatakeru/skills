@@ -3,12 +3,35 @@ import {
   OpenCodeSdkAdapter,
   buildOpenCodeConfigContent,
   type OpenCodeServerFactory,
+  type OpenCodeServerFactoryInput,
 } from "../lib/protocol";
-import { workerRequest } from "./fixtures";
+import { withFusionPanelDepth, workerRequest } from "./fixtures";
 
 const encoder = new TextEncoder();
 
 describe("Fusion OpenCode SDK adapter", () => {
+  for (const [label, parentDepth, expectedDepth] of [
+    ["defaults an absent panel depth to 0", undefined, "1"],
+    ["increments an inherited panel depth", "1", "2"],
+  ] as const) {
+    test(`${label} for the spawned serve process`, async () => {
+      await withFusionPanelDepth(parentDepth, async () => {
+        let factoryInput: OpenCodeServerFactoryInput | undefined;
+        const adapter = new OpenCodeSdkAdapter({
+          serverFactory: async (input) => {
+            factoryInput = input;
+            throw new Error("stop after environment capture");
+          },
+          versionExecutor,
+        });
+
+        await adapter.runWorker(workerRequest());
+
+        expect(factoryInput?.env.FUSION_PANEL_DEPTH).toBe(expectedDepth);
+      });
+    });
+  }
+
   test("maps SDK response evidence to a worker result", async () => {
     let promptMessageId: string | undefined;
     const adapter = new OpenCodeSdkAdapter({

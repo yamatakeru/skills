@@ -20,10 +20,32 @@ import {
   CursorSdkAdapter,
   OpenCodeHeadlessCliAdapter,
   OpenCodeSdkAdapter,
+  recursiveDelegationDenialMessage,
   type PanelResult,
 } from "../lib/protocol";
 
 describe("Fusion CLI parsing", () => {
+  for (const [label, binPath] of [
+    ["panel", fusionRunPath()],
+    ["judge replay", fusionJudgeReplayPath()],
+  ] as const) {
+    test(`${label} CLI denies recursive invocation before help`, () => {
+      const result = runFusionBin(binPath, ["--help"], "1");
+
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe(`${recursiveDelegationDenialMessage}\n`);
+    });
+
+    test(`${label} CLI proceeds past the recursion guard without panel depth`, () => {
+      const result = runFusionBin(binPath, ["--help"], undefined);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Usage:");
+      expect(result.stderr).toBe("");
+    });
+  }
+
   test("parses dry-run", () => {
     const options = parseArgs(["--dry-run", "Preflight this."]);
 
@@ -504,6 +526,34 @@ function runFusionCli(
   };
 }
 
+function runFusionBin(
+  binPath: string,
+  args: string[],
+  panelDepth: string | undefined,
+): { status: number | null; stdout: string; stderr: string } {
+  const env = { ...process.env };
+  if (panelDepth === undefined) {
+    delete env.FUSION_PANEL_DEPTH;
+  } else {
+    env.FUSION_PANEL_DEPTH = panelDepth;
+  }
+  const result = spawnSync(process.execPath, [binPath, ...args], {
+    cwd: "/tmp",
+    encoding: "utf8",
+    env,
+    timeout: 30_000,
+  });
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
 function fusionRunPath(): string {
   return join(import.meta.dir, "..", "bin", "fusion-run.ts");
+}
+
+function fusionJudgeReplayPath(): string {
+  return join(import.meta.dir, "..", "bin", "fusion-judge-replay.ts");
 }

@@ -195,3 +195,24 @@ export function judgeAnalysisJson(
     ...overrides,
   });
 }
+
+export async function withFusionPanelDepth<T>(
+  depth: string | undefined,
+  action: () => Promise<T>,
+): Promise<T> {
+  const original = process.env.FUSION_PANEL_DEPTH;
+  if (depth === undefined) {
+    delete process.env.FUSION_PANEL_DEPTH;
+  } else {
+    process.env.FUSION_PANEL_DEPTH = depth;
+  }
+  try {
+    return await action();
+  } finally {
+    if (original === undefined) {
+      delete process.env.FUSION_PANEL_DEPTH;
+    } else {
+      process.env.FUSION_PANEL_DEPTH = original;
+    }
+  }
+}

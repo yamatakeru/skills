@@ -4,9 +4,35 @@ import {
   buildClaudeCodeSdkArgs,
   type CommandExecution,
 } from "../lib/protocol";
-import { workerRequest } from "./fixtures";
+import { withFusionPanelDepth, workerRequest } from "./fixtures";
 
 describe("Fusion Claude Code SDK adapter", () => {
+  for (const [label, parentDepth, expectedDepth] of [
+    ["defaults an absent panel depth to 0", undefined, "1"],
+    ["increments an inherited panel depth", "1", "2"],
+  ] as const) {
+    test(`${label} for spawned workers`, async () => {
+      await withFusionPanelDepth(parentDepth, async () => {
+        let execution: CommandExecution | undefined;
+        const adapter = new ClaudeCodeSdkAdapter({
+          executor: async (input) => {
+            execution = input;
+            return {
+              exitCode: 0,
+              stdout: streamJson([{ type: "result", result: "ok" }]),
+              stderr: "",
+              durationMs: 1,
+            };
+          },
+        });
+
+        await adapter.runWorker(workerRequest());
+
+        expect(execution?.env?.FUSION_PANEL_DEPTH).toBe(expectedDepth);
+      });
+    });
+  }
+
   test("adds read roots with --add-dir", () => {
     const request = {
       ...workerRequest(),

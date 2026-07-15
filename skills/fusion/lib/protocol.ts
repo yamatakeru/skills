@@ -17,3 +17,4 @@ export * from "./opencode-sdk-adapter";
 export * from "./claude-code-sdk-adapter";
 export * from "./cursor-sdk-adapter";
 export * from "./panel-composition";
+export * from "./panel-depth";

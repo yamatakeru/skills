@@ -8,6 +8,7 @@ import type {
   WorkerResult,
   WorkerRunner,
 } from "./types";
+import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
 
 export interface CommandExecution {
   command: string;
@@ -50,6 +51,7 @@ export class OpenCodeHeadlessCliAdapter implements WorkerRunner {
       cwd:
         request.environment?.workingDirectory ??
         request.environment?.workspaceRoot,
+      env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
       timeoutMs: request.budget?.timeoutMs,
     });
     return cliResultToWorkerResult("opencode", request, result);
@@ -72,6 +74,7 @@ export class ClaudeCodeHeadlessCliAdapter implements WorkerRunner {
       cwd:
         request.environment?.workingDirectory ??
         request.environment?.workspaceRoot,
+      env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
       timeoutMs: request.budget?.timeoutMs,
     });
     return cliResultToWorkerResult("claude-code", request, result);

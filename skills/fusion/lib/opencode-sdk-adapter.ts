@@ -15,6 +15,7 @@ import type {
   WorkerResult,
   WorkerRunner,
 } from "./types";
+import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
 
 type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 type PermissionDecision = "ask" | "allow" | "deny";
@@ -38,6 +39,7 @@ export interface OpenCodeServerFactoryInput {
   command: string;
   configContent: OpenCodeConfigContent;
   cwd?: string;
+  env: Record<string, string>;
   fetch: Fetch;
 }
 
@@ -197,6 +199,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         cwd:
           request.environment?.workingDirectory ??
           request.environment?.workspaceRoot,
+        env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
         fetch: this.fetch,
       });
       promise.catch(() => {
@@ -1086,6 +1089,7 @@ async function spawnOpenCodeServerOnce(
     cwd: input.cwd,
     env: {
       ...process.env,
+      ...input.env,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(input.configContent),
     },
     stdio: ["ignore", "pipe", "pipe"],

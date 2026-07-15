@@ -9,6 +9,7 @@ import {
   type CommandExecutor,
   type CommandResult,
 } from "./headless-cli-adapters";
+import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
 import type {
   WorkerRequest,
   WorkerResult,
@@ -280,6 +281,7 @@ function cursorRunEnv(
   materialization: CursorRunMaterialization,
 ): Record<string, string> {
   return {
+    [fusionPanelDepthEnv]: nextFusionPanelDepth(),
     CURSOR_CONFIG_DIR: materialization.configDir,
     FUSION_CURSOR_SHELL_ALLOWLIST: JSON.stringify(
       materialization.shellAllowlist,
