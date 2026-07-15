@@ -81,8 +81,11 @@ recursion guard. Adapters increment the numeric `FUSION_PANEL_DEPTH` environment
 variable in worker spawn environments, and either entrypoint refuses to start
 when the inherited depth is at least one. This is defense in depth: the default
 `bash` allowlist already excludes `bun`, so permission enforcement normally
-blocks nested Fusion first. The guard becomes the independent boundary if that
+blocks nested Fusion first. The guard remains a secondary layer if that
 allowlist is later loosened or a worker is deliberately run with full tools.
+As an environment-variable guard, this layer is best-effort rather than an
+independent tamper-proof boundary. Strict enforcement would require an OS-level
+or parent/child capability boundary.
 
 ## Consequences
 

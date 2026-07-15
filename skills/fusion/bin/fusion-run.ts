@@ -104,13 +104,14 @@ async function main(): Promise<number> {
       return 0;
     }
 
+    const runtime = createFusionRuntime(options.transport);
     const recorder: RunRecorder = options.record
       ? new FileRunRecorder({
           workspaceRoot: process.cwd(),
           panelRunId: request.panelRunId,
+          onSignalCleanup: runtime.dispose,
         })
       : new NoopRunRecorder();
-    const runtime = createFusionRuntime(options.transport);
     const result = await runPanelWithRuntime(request, prepared, runtime, recorder);
     if (prepared.warnings.length > 0) {
       result.warnings = [...prepared.warnings, ...(result.warnings ?? [])];
@@ -635,16 +636,20 @@ function runtimeFromRunners(
   if (cursor !== undefined) {
     registry.register("cursor", cursor);
   }
+  let disposePromise: Promise<void> | undefined;
   return {
     transport,
     registry,
     runners: { opencode, claudeCode, cursor },
     async dispose() {
-      await disposeRunner(opencode);
-      await disposeRunner(claudeCode);
-      if (cursor !== undefined) {
-        await disposeRunner(cursor);
-      }
+      disposePromise ??= (async () => {
+        await disposeRunner(opencode);
+        await disposeRunner(claudeCode);
+        if (cursor !== undefined) {
+          await disposeRunner(cursor);
+        }
+      })();
+      await disposePromise;
     },
   };
 }

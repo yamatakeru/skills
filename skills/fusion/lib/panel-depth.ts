@@ -3,6 +3,9 @@ export const fusionPanelDepthEnv = "FUSION_PANEL_DEPTH";
 export const recursiveDelegationDenialMessage =
   "FUSION_RECURSIVE_DELEGATION_DENIED: nested panel/judge invocation from a worker context is denied by the worker contract (recursive delegation denial); see ADR 0037 and issue #10.";
 
+export const invalidFusionPanelDepthMessage =
+  "FUSION_PANEL_DEPTH_INVALID: FUSION_PANEL_DEPTH must be a non-negative integer string.";
+
 export function nextFusionPanelDepth(
   currentDepth: string | undefined = process.env[fusionPanelDepthEnv],
 ): string {
@@ -19,6 +22,24 @@ export function assertTopLevelFusionInvocation(
 }
 
 function parseFusionPanelDepth(value: string | undefined): number {
-  const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isNaN(parsed) ? 0 : parsed;
+  if (value === undefined || value === "") {
+    return 0;
+  }
+  if (!/^\d+$/u.test(value)) {
+    throw invalidFusionPanelDepth(value);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw invalidFusionPanelDepth(value);
+  }
+  return parsed;
+}
+
+function invalidFusionPanelDepth(value: string): Error {
+  return new Error(
+    `${invalidFusionPanelDepthMessage} ${JSON.stringify({
+      code: "FUSION_PANEL_DEPTH_INVALID",
+      value,
+    })}`,
+  );
 }

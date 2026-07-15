@@ -166,6 +166,8 @@ interface AgentResponse {
   }>;
 }
 
+// This intentionally reimplements the adapter's openCodeEffectiveDecision and
+// openCodeGlobMatches as an independent oracle; do not share the implementation.
 function effectiveDecision(
   rules: AgentResponse["permission"],
   permission: string,

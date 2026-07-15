@@ -29,6 +29,8 @@ export interface FileRunRecorderOptions {
   rootDirectory?: string;
   allowUnignoredDirectory?: boolean;
   redactSecrets?: boolean;
+  onSignalCleanup?: () => Promise<void>;
+  signalCleanupTimeoutMs?: number;
 }
 
 export class FileRunRecorder implements RunRecorder {
@@ -38,7 +40,7 @@ export class FileRunRecorder implements RunRecorder {
   private nextTemporaryFileId = 0;
   private readonly signalHandlers = new Map<
     "SIGINT" | "SIGTERM",
-    () => void
+    () => Promise<void>
   >();
   private readonly runDirectory: string;
   private readonly redactSecrets: boolean;
@@ -226,16 +228,39 @@ export class FileRunRecorder implements RunRecorder {
       ["SIGTERM", 143],
     ] as const;
     for (const [signal, exitCode] of signals) {
-      const handler = (): void => {
+      const handler = async (): Promise<void> => {
+        this.deregisterSignalHandlers();
         try {
           this.writeRunStatusSync("aborted");
         } catch {
           // Signal handling is best-effort; preserve the expected signal exit.
         }
+        if (this.options.onSignalCleanup !== undefined) {
+          await this.runSignalCleanup(this.options.onSignalCleanup);
+        }
         process.exit(exitCode);
       };
       this.signalHandlers.set(signal, handler);
       process.on(signal, handler);
+    }
+  }
+
+  private async runSignalCleanup(cleanup: () => Promise<void>): Promise<void> {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.resolve().then(cleanup).catch(() => undefined),
+        new Promise<void>((resolve) => {
+          timeout = setTimeout(
+            resolve,
+            this.options.signalCleanupTimeoutMs ?? 5_000,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
     }
   }
 

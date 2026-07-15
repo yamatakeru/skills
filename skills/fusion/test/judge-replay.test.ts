@@ -246,6 +246,8 @@ describe("Fusion judge replay", () => {
   test("loads a crashed run with completed workers and no synthesis", async () => {
     const runDir = await writeRecordedFixture();
     await rm(join(runDir, "synthesis.json"));
+    // A crashed run leaves its running marker behind. This setup proves that
+    // the marker does not block replay loading because loadRecordedRun ignores status.
     await writeFile(
       join(runDir, "run-status.json"),
       `${JSON.stringify({

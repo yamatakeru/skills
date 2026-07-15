@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,6 +37,87 @@ async function withTempWorkspace(
 describe("Fusion run recorders", () => {
   test("no-op recorder does not record", () => {
     expect(new NoopRunRecorder().status).toBe("not-recorded");
+  });
+
+  test("signal handling writes the marker, cleans up, then exits", async () => {
+    await withTempWorkspace(
+      { prefix: "fusion-recorder-signal-", gitignore: ".fusion-runs/\n" },
+      async (workspaceRoot) => {
+        const order: string[] = [];
+        const existingHandlers = new Set(process.listeners("SIGTERM"));
+        const exit = spyOn(process, "exit").mockImplementation((code) => {
+          order.push(`exit:${code}`);
+          return undefined as never;
+        });
+        try {
+          const recorder = new FileRunRecorder({
+            workspaceRoot,
+            panelRunId: "signal-run",
+            async onSignalCleanup() {
+              const marker = JSON.parse(
+                await readFile(
+                  join(
+                    workspaceRoot,
+                    ".fusion-runs",
+                    "signal-run",
+                    "run-status.json",
+                  ),
+                  "utf8",
+                ),
+              ) as { status: string };
+              order.push(`marker:${marker.status}`);
+              order.push("cleanup");
+            },
+          });
+          await recorder.recordRequest(panelRequest());
+          const handler = process
+            .listeners("SIGTERM")
+            .find((candidate) => !existingHandlers.has(candidate));
+
+          await handler?.("SIGTERM");
+
+          expect(order).toEqual([
+            "marker:aborted",
+            "cleanup",
+            "exit:143",
+          ]);
+        } finally {
+          exit.mockRestore();
+        }
+      },
+    );
+  });
+
+  test("signal cleanup timeout still exits", async () => {
+    await withTempWorkspace(
+      { prefix: "fusion-recorder-timeout-", gitignore: ".fusion-runs/\n" },
+      async (workspaceRoot) => {
+        const exitCodes: Array<string | number | null | undefined> = [];
+        const existingHandlers = new Set(process.listeners("SIGTERM"));
+        const exit = spyOn(process, "exit").mockImplementation((code) => {
+          exitCodes.push(code);
+          return undefined as never;
+        });
+        try {
+          const recorder = new FileRunRecorder({
+            workspaceRoot,
+            panelRunId: "signal-timeout-run",
+            onSignalCleanup: () => new Promise<void>(() => undefined),
+            signalCleanupTimeoutMs: 10,
+          });
+          await recorder.recordRequest(panelRequest());
+          const handler = process
+            .listeners("SIGTERM")
+            .find((candidate) => !existingHandlers.has(candidate));
+
+          await handler?.("SIGTERM");
+
+          expect(exitCodes).toEqual([143]);
+        } finally {
+          exit.mockRestore();
+        }
+      },
+    );
   });
 
   test("file recorder writes split artifacts with redaction", async () => {

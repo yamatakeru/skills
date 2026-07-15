@@ -213,6 +213,10 @@ describe("Fusion headless CLI adapters", () => {
     expect(result.status).toBe("ok");
     expect(result.output).toBe("adapter output");
     expect(result.complianceEvidence?.enforcement).toBeUndefined();
+    expect(result.complianceEvidence?.containment).toBeUndefined();
+    expect(result.complianceEvidence?.notes?.join("\n")).toContain(
+      "does not enforce or prove",
+    );
     expect(result.warnings?.[0]).toContain("degraded");
   });
 

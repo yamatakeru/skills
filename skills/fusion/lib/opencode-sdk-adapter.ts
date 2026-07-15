@@ -143,17 +143,22 @@ function openCodeAgentName(
     : workerAgentName;
 }
 
-function canonicalToolsPolicy(toolsPolicy: ToolsPolicy | undefined): string {
-  return JSON.stringify(
-    toolsPolicy === undefined
-      ? null
-      : {
-          mode: toolsPolicy.mode,
-          allow: toolsPolicy.allow,
-          deny: toolsPolicy.deny,
-          readOnlyBashCommands: toolsPolicy.readOnlyBashCommands,
-        },
-  );
+function canonicalOpenCodePolicyFingerprint(
+  toolsPolicy: ToolsPolicy | undefined,
+  environment: WorkerEnvironment | undefined,
+): string {
+  return JSON.stringify({
+    toolsPolicy:
+      toolsPolicy === undefined
+        ? null
+        : {
+            mode: toolsPolicy.mode,
+            allow: toolsPolicy.allow,
+            deny: toolsPolicy.deny,
+            readOnlyBashCommands: toolsPolicy.readOnlyBashCommands,
+          },
+    readRoots: environment?.readRoots ?? null,
+  });
 }
 
 export class OpenCodeSdkAdapter implements WorkerRunner {
@@ -171,7 +176,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     baseUrl: string;
     rulesByAgent: Map<string, OpenCodePermissionRule[]>;
   };
-  private serverToolsPolicyFingerprint?: string;
+  private serverPolicyFingerprint?: string;
   private versionPromise?: Promise<string | undefined>;
 
   constructor(options: OpenCodeSdkAdapterOptions = {}) {
@@ -259,54 +264,56 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
   }
 
   private async ensureServer(request: WorkerRequest): Promise<OpenCodeServerHandle> {
-    if (this.injectedBaseUrl !== undefined) {
-      return {
-        baseUrl: this.injectedBaseUrl,
-        dispose() {},
-      };
-    }
+    const requestPolicyFingerprint = canonicalOpenCodePolicyFingerprint(
+      request.toolsPolicy,
+      request.environment,
+    );
     if (this.serverPromise === undefined) {
-      this.serverToolsPolicyFingerprint = canonicalToolsPolicy(
-        request.toolsPolicy,
-      );
-      const promise = this.serverFactory({
-        command: this.command,
-        configContent: buildOpenCodeConfigContent({
-          toolsPolicy: request.toolsPolicy,
-          environment: request.environment,
-          agentName: this.agentName,
-        }),
-        cwd:
-          request.environment?.workingDirectory ??
-          request.environment?.workspaceRoot,
-        env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
-        fetch: this.fetch,
-      });
+      this.serverPolicyFingerprint = requestPolicyFingerprint;
+      const promise =
+        this.injectedBaseUrl === undefined
+          ? this.serverFactory({
+              command: this.command,
+              configContent: buildOpenCodeConfigContent({
+                toolsPolicy: request.toolsPolicy,
+                environment: request.environment,
+                agentName: this.agentName,
+              }),
+              cwd:
+                request.environment?.workingDirectory ??
+                request.environment?.workspaceRoot,
+              env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
+              fetch: this.fetch,
+            })
+          : Promise.resolve({
+              baseUrl: this.injectedBaseUrl,
+              dispose() {},
+            });
       promise.catch(() => {
         if (this.serverPromise === promise) {
           this.serverPromise = undefined;
           this.serverVerificationPromise = undefined;
           this.serverEffectiveRules = undefined;
-          this.serverToolsPolicyFingerprint = undefined;
+          this.serverPolicyFingerprint = undefined;
         }
       });
       this.serverPromise = promise;
     } else if (
       request.toolsPolicy?.mode !== "none" &&
-      this.serverToolsPolicyFingerprint !==
-        canonicalToolsPolicy(request.toolsPolicy)
+      this.serverPolicyFingerprint !== requestPolicyFingerprint
     ) {
       throw new OpenCodeSharedServerPolicyError(
         `OpenCode shared-server tools policy mismatch: ${JSON.stringify({
           code: "OPENCODE_SHARED_SERVER_POLICY_MISMATCH",
           configuredPolicy: JSON.parse(
-            this.serverToolsPolicyFingerprint ?? "null",
+            this.serverPolicyFingerprint ?? "null",
           ),
-          requestPolicy: JSON.parse(canonicalToolsPolicy(request.toolsPolicy)),
+          requestPolicy: JSON.parse(requestPolicyFingerprint),
         })}`,
       );
     }
     const server = await this.serverPromise;
+    // Fingerprint equality preserves expected environment rules; judge rules are invariant.
     this.serverVerificationPromise ??= verifyOpenCodeEffectiveRules({
       fetch: this.fetch,
       baseUrl: server.baseUrl,

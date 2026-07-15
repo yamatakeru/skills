@@ -599,10 +599,40 @@ interface WorkerComplianceEvidence {
   adapterClaimsBlindness?: boolean;
   adapterClaimsCleanSameWorkerLineage?: boolean;
   observedSessionMode?: SessionMode;
-  enforcedToolPolicy?: ToolsPolicy;
-  enforcementSource?: EnforcementSource;
-  policyViolationEvidence?: string[];
+  enforcement?: WorkerEnforcementEvidence;
+  containment?: ContainmentLevel;
   notes?: string[];
+}
+
+interface WorkerEnforcementEvidenceBase {
+  permissionDenialCount?: number;
+  abortOutcome?: WorkerAbortOutcome;
+  violationEvidence?: string[];
+  toolEvents?: RuntimeToolEvent[];
+}
+
+type WorkerEnforcementEvidence = WorkerEnforcementEvidenceBase &
+  (
+    | {
+        source: "verified-effective";
+        effectiveRules: Record<string, unknown>;
+      }
+    | {
+        source: "harness-declared";
+        effectiveRules?: Record<string, unknown>;
+      }
+  );
+
+interface WorkerAbortOutcome {
+  attempted: boolean;
+  succeeded?: boolean;
+  error?: string;
+}
+
+interface RuntimeToolEvent {
+  tool: string;
+  command?: string;
+  outcome?: "started" | "succeeded" | "denied" | "failed" | "unknown";
 }
 
 interface WorkerCompliance {
@@ -619,20 +649,46 @@ interface WorkerCompliance {
   degradedReason?: string;
 }
 
-interface WorkspaceWatchdogEvidence {
-  status: "clean" | "mutated" | "not-applicable";
-  corroboratedWorkerMutation?: boolean;
+interface WorkspaceWatchdogEvidenceBase {
+  workspaceRoot: string;
+  note: string;
   limitations: string[];
+}
+
+type WorkspaceWatchdogEvidence = WorkspaceWatchdogEvidenceBase &
+  (
+    | { verdict: "clean"; changedPaths?: never; refDiffs?: never }
+    | { verdict: "not-applicable"; changedPaths?: never; refDiffs?: never }
+    | {
+        verdict: "mutated";
+        changedPaths?: string[];
+        refDiffs?: WorkspaceRefDiff[];
+      }
+  );
+
+interface WorkspaceRefDiff {
+  refName: string;
+  before?: string;
+  after?: string;
 }
 
 interface ComplianceSummary {
   tier: ComplianceTier;
   workerCompliance: Array<{ workerId: string; compliance: WorkerCompliance }>;
-  containment?: ContainmentLevel;
-  workspaceWatchdog?: WorkspaceWatchdogEvidence;
+  judgeCompliance?: JudgeCompliance;
   degradedWorkers?: string[];
   failedWorkers?: string[];
   missingRequiredEvents?: string[];
+  workspaceWatchdog: WorkspaceWatchdogEvidence;
+  notes?: string[];
+}
+
+interface JudgeCompliance {
+  workerId: string;
+  status?: WorkerResult["status"];
+  modelUsed?: string;
+  harnessUsed?: HarnessDescriptor;
+  toolsPolicy?: ToolsPolicy;
   notes?: string[];
 }
 

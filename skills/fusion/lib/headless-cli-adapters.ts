@@ -220,7 +220,10 @@ function cliResultToWorkerResult(
       adapterClaimsIsolatedContext: request.session.mode === "fresh",
       adapterClaimsBlindness: true,
       observedSessionMode: request.session.mode,
-      containment: deriveContainment(request.toolsPolicy),
+      containment:
+        kind === "opencode"
+          ? undefined
+          : deriveContainment(request.toolsPolicy),
       notes: adapterComplianceNotes(kind, request, warnings),
     },
     warnings: warnings.length === 0 ? undefined : warnings,
@@ -296,7 +299,7 @@ function adapterComplianceNotes(
 function adapterBaseComplianceNotes(kind: HarnessKind): string[] {
   if (kind === "opencode") {
     return [
-      "OpenCode CLI adapter cannot yet prove exact tool policy enforcement.",
+      "OpenCode CLI adapter does not enforce or prove exact tool policy containment.",
     ];
   }
 

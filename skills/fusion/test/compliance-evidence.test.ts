@@ -142,6 +142,60 @@ describe("runtime compliance evidence", () => {
     );
   });
 
+  test("does not corroborate a changed path from an unrelated redirect", async () => {
+    const request = panelRequest();
+    const workerRequests = buildWorkerRequests(request);
+    const baseline = await runPanel(request, {
+      runner: okRunner(),
+      synthesizer: new DeterministicSynthesizer(),
+      workerRequests,
+    });
+    baseline.workerResults[0]!.complianceEvidence!.enforcement!.toolEvents = [
+      {
+        tool: "bash",
+        command: "echo hi > /tmp/unrelated.txt",
+        outcome: "succeeded",
+      },
+    ];
+
+    const summary = evaluateCompliance({
+      panelRequest: request,
+      workerRequests,
+      workerResults: baseline.workerResults,
+      events: baseline.events ?? [],
+      workspaceWatchdog: mutatedWatchdog,
+    });
+
+    expect(summary.tier).toBe("degraded");
+  });
+
+  test("corroborates a redirect that names the changed path basename", async () => {
+    const request = panelRequest();
+    const workerRequests = buildWorkerRequests(request);
+    const baseline = await runPanel(request, {
+      runner: okRunner(),
+      synthesizer: new DeterministicSynthesizer(),
+      workerRequests,
+    });
+    baseline.workerResults[0]!.complianceEvidence!.enforcement!.toolEvents = [
+      {
+        tool: "bash",
+        command: "echo hi > /tmp/tracked.txt",
+        outcome: "succeeded",
+      },
+    ];
+
+    const summary = evaluateCompliance({
+      panelRequest: request,
+      workerRequests,
+      workerResults: baseline.workerResults,
+      events: baseline.events ?? [],
+      workspaceWatchdog: mutatedWatchdog,
+    });
+
+    expect(summary.tier).toBe("non-compliant");
+  });
+
   test("does not grant full compliance when enforcement is missing", async () => {
     const result = await runPanel(panelRequest(), {
       runner: {

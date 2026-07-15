@@ -372,10 +372,7 @@ function commandCanExplainMutation(
     return command.includes(path) ||
       (basename !== undefined && command.includes(basename));
   });
-  return (
-    plausiblyMutatesPaths &&
-    (mentionsChangedPath || redirect)
-  );
+  return plausiblyMutatesPaths && mentionsChangedPath;
 }
 
 function appendReason(
