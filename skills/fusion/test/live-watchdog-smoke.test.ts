@@ -77,8 +77,12 @@ liveTest(
         synthesizer: new DeterministicSynthesizer(),
         workerRequests,
       });
+      const workerResult = result.workerResults[0];
+
+      expect(workerResult?.errors ?? []).toEqual([]);
+      expect(workerResult?.status).not.toBe("error");
       const enforcement =
-        result.workerResults[0]?.complianceEvidence?.enforcement;
+        workerResult?.complianceEvidence?.enforcement;
 
       expect(enforcement?.permissionDenialCount).toBeGreaterThan(0);
       expect(enforcement?.toolEvents).toContainEqual(

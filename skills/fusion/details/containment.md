@@ -9,6 +9,12 @@ prompt field replaced the adapter's injected permission map, a completed worker
 session continued after its event stream closed, and request-echo evidence still
 allowed the panel to report full compliance.
 
+Issue [yamatakeru/skills#11](https://github.com/yamatakeru/skills/issues/11)
+confirmed that deprecated agent-level `tools` also corrupts effective rule
+ordering during OpenCode normalization. For the OpenCode SDK transport,
+`permission` is therefore the sole source of both authority and tool
+availability. Neither prompts nor agent definitions may also supply `tools`.
+
 ## Threat Model
 
 Fusion distinguishes two threats:
@@ -49,6 +55,13 @@ in gitignored areas, or remote API side effects.
    tracked-worktree changes and ref movements, including remote-tracking ref
    updates. Findings are unattributed unless worker tool evidence corroborates
    them, and the report discloses detection gaps.
+
+   OpenCode rule pre-denials do not emit permission events; they surface as tool
+   errors instead. Fusion attributes those denials by matching the error prefixes
+   used by OpenCode v1.17.20's `PermissionV1` denial, rejection, and correction
+   errors. If OpenCode changes those messages, Fusion conservatively records the
+   tool outcome as `failed`, underclaiming rather than overclaiming denial
+   evidence.
 7. **Compliance and containment disclosure.** Compliance tier is derived from
    runtime evidence. Enforcement source and containment level are reported
    separately so protocol compliance never implies sandboxing.
@@ -56,6 +69,21 @@ in gitignored areas, or remote API side effects.
    incrementally. `run-status.json` starts at `running` and resolves to
    `complete`, `failed`, or `aborted` on handled terminal paths; an abrupt crash
    remains self-describing as `running`.
+
+## OpenCode Version Boundary
+
+The minimum supported OpenCode version for SDK containment is v1.17.20, the
+version against which permission-driven tool availability was verified.
+OpenCode's `resolveTools` filters the model-visible tool set through
+`Permission.disabled`; a tool whose last matching rule is `"*": "deny"` is
+therefore unavailable without a separate agent `tools` map.
+
+This version floor is an evidence-backed compatibility boundary and remains a
+stopgap, not a claim that every older release behaves identically. If support
+for an older OpenCode without this permission-driven filter becomes necessary,
+it must use a separately designed, version-specific configuration path. Fusion
+must not reintroduce `tools` and `permission` on the same agent, because their
+normalization order can turn the intended allows into effective denials.
 
 ## Containment Levels
 

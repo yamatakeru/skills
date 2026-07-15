@@ -10,6 +10,10 @@ import {
 import { withFusionPanelDepth, workerRequest } from "./fixtures";
 
 const encoder = new TextEncoder();
+const ruleDenialError =
+  "The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules [...]";
+const rejectedPermissionError =
+  "The user rejected permission to use this specific tool call.";
 
 describe("Fusion OpenCode SDK adapter", () => {
   for (const [label, parentDepth, expectedDepth] of [
@@ -282,6 +286,146 @@ describe("Fusion OpenCode SDK adapter", () => {
     ).toBe(1);
   });
 
+  test("attributes rule pre-denials from tool errors", async () => {
+    const command = "git commit --allow-empty -m x";
+    const { result } = await runOpenCodeEventFixture((messageId) => [
+      toolErrorEvent({
+        id: "tool-rule-denied",
+        callId: "call-rule-denied",
+        messageId,
+        command,
+        error: ruleDenialError,
+      }),
+    ]);
+
+    expect(result.complianceEvidence?.enforcement?.toolEvents).toEqual([
+      { tool: "bash", command, outcome: "denied" },
+    ]);
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(1);
+    expect(result.warnings?.join("\n")).toContain(
+      "OpenCode tool bash was denied by permission controls.",
+    );
+  });
+
+  test("keeps ordinary tool errors classified as failed", async () => {
+    const command = "missing-command";
+    const { result } = await runOpenCodeEventFixture((messageId) => [
+      toolErrorEvent({
+        id: "tool-failed",
+        callId: "call-failed",
+        messageId,
+        command,
+        error: "command not found",
+      }),
+    ]);
+
+    expect(result.complianceEvidence?.enforcement?.toolEvents).toEqual([
+      { tool: "bash", command, outcome: "failed" },
+    ]);
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(0);
+  });
+
+  test("combines permission asks and tool denials without double-counting a call", async () => {
+    const { result, permissionReplies } = await runOpenCodeEventFixture(
+      (messageId) => [
+        {
+          type: "permission.updated",
+          properties: {
+            id: "permission-interactive",
+            sessionID: "session-1",
+            messageID: messageId,
+            callID: "call-interactive",
+            type: "bash",
+            title: "Run guarded command",
+            metadata: {},
+            time: { created: Date.now() },
+          },
+        },
+        toolErrorEvent({
+          id: "tool-interactive",
+          callId: "call-interactive",
+          messageId,
+          command: "guarded-command",
+          error: rejectedPermissionError,
+        }),
+        toolErrorEvent({
+          id: "tool-rule-denied",
+          callId: "call-rule-denied",
+          messageId,
+          command: "git commit --allow-empty -m x",
+          error: ruleDenialError,
+        }),
+      ],
+    );
+
+    expect(permissionReplies).toEqual([{ response: "reject" }]);
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(2);
+    expect(
+      result.complianceEvidence?.enforcement?.toolEvents?.map(
+        (event) => event.outcome,
+      ),
+    ).toEqual(["denied", "denied"]);
+  });
+
+  test("attributes permission-denial errors in synchronous prompt responses", async () => {
+    const command = "git commit --allow-empty -m x";
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return openSseResponse();
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          return new Response(null, { status: 404 });
+        }
+        if (url.pathname === "/session/session-1/message") {
+          return Response.json({
+            info: assistantMessage("assistant-sync"),
+            parts: [
+              {
+                id: "tool-sync-rule-denied",
+                sessionID: "session-1",
+                messageID: "assistant-sync",
+                callID: "call-sync-rule-denied",
+                type: "tool",
+                tool: "bash",
+                state: {
+                  status: "error",
+                  input: { command },
+                  error: ruleDenialError,
+                },
+              },
+            ],
+          });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.complianceEvidence?.enforcement?.toolEvents).toEqual([
+      { tool: "bash", command, outcome: "denied" },
+    ]);
+    expect(
+      result.complianceEvidence?.enforcement?.permissionDenialCount,
+    ).toBe(1);
+  });
+
   test("builds permission config from tools policy and read roots", () => {
     const config = buildOpenCodeConfigContent({
       toolsPolicy: {
@@ -306,9 +450,7 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(agent.permission.grep).toBe("allow");
     expect(agent.permission.glob).toBe("allow");
     expect(agent.permission.list).toBe("deny");
-    expect(agent.tools.read).toBe(true);
-    expect(agent.tools.grep).toBe(true);
-    expect(agent.tools.write).toBe(false);
+    expect(agent).not.toHaveProperty("tools");
     expect(agent.permission.edit).toBe("deny");
     expect(bash["*"]).toBe("deny");
     expect(bash["git status *"]).toBe("allow");
@@ -319,7 +461,7 @@ describe("Fusion OpenCode SDK adapter", () => {
       "fusion-worker",
       "fusion-judge",
     ]);
-    expect(Object.values(judge.tools).every((allowed) => !allowed)).toBe(true);
+    expect(judge).not.toHaveProperty("tools");
     expect(Object.keys(judge.permission)[0]).toBe("*");
     expect(judge.permission["*"]).toBe("deny");
     for (const permission of [
@@ -1203,6 +1345,95 @@ function completedAnswerSse(messageId: string, text: string): string {
       },
     }),
   ].join("");
+}
+
+async function runOpenCodeEventFixture(
+  events: (messageId: string) => unknown[],
+) {
+  let promptMessageId: string | undefined;
+  const permissionReplies: unknown[] = [];
+  const adapter = new OpenCodeSdkAdapter({
+    baseUrl: "http://opencode.test",
+    versionExecutor,
+    fetch: async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/session" && init?.method === "POST") {
+        return Response.json({ id: "session-1" });
+      }
+      if (url.pathname === "/event") {
+        return sseResponse(async () => {
+          const messageId = await waitForValue(() => promptMessageId);
+          return [
+            ...events(assistantMessageId(messageId)),
+            {
+              type: "message.part.updated",
+              properties: {
+                part: {
+                  id: "part-fixture-answer",
+                  sessionID: "session-1",
+                  messageID: assistantMessageId(messageId),
+                  type: "text",
+                  text: "Fixture answer",
+                },
+              },
+            },
+            {
+              type: "message.updated",
+              properties: {
+                info: assistantMessage(assistantMessageId(messageId)),
+              },
+            },
+          ]
+            .map(sse)
+            .join("");
+        });
+      }
+      if (url.pathname === "/session/session-1/prompt_async") {
+        promptMessageId = JSON.parse(String(init?.body)).messageID;
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname.startsWith("/session/session-1/permissions/")) {
+        permissionReplies.push(JSON.parse(String(init?.body)));
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname === "/session/session-1/abort") {
+        return Response.json(true);
+      }
+      throw new Error(`unexpected request: ${url.pathname}`);
+    },
+  });
+
+  return {
+    result: await adapter.runWorker(workerRequest()),
+    permissionReplies,
+  };
+}
+
+function toolErrorEvent(input: {
+  id: string;
+  callId: string;
+  messageId: string;
+  command: string;
+  error: string;
+}) {
+  return {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: input.id,
+        sessionID: "session-1",
+        messageID: input.messageId,
+        callID: input.callId,
+        type: "tool",
+        tool: "bash",
+        state: {
+          status: "error",
+          input: { command: input.command },
+          error: input.error,
+        },
+      },
+    },
+  };
 }
 
 function effectivePermissionRules(permission: OpenCodePermissionConfig) {

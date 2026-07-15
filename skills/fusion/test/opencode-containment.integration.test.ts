@@ -86,6 +86,22 @@ describe("Fusion OpenCode containment integration", () => {
           pattern: "*",
           action: "allow",
         });
+        for (const permission of [
+          "read",
+          "grep",
+          "glob",
+          "webfetch",
+          "websearch",
+        ]) {
+          expect(effectiveDecision(rules, permission, "*")).toBe("allow");
+        }
+        for (const command of ["git status", "git status --short"]) {
+          expect(effectiveDecision(rules, "bash", command)).toBe("allow");
+        }
+        for (const command of ["git commit -m x", "pip install x"]) {
+          expect(effectiveDecision(rules, "bash", command)).toBe("deny");
+        }
+        expect(effectiveDecision(rules, "mcp_some_tool", "*")).toBe("deny");
         const judge = agents.find(
           (candidate) => candidate.name === "fusion-judge",
         );

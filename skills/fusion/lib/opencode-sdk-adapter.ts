@@ -59,7 +59,6 @@ export interface OpenCodeConfigContent {
 export interface OpenCodeAgentConfig {
   description: string;
   mode: "primary";
-  tools: Record<string, boolean>;
   permission: OpenCodePermissionConfig;
 }
 
@@ -73,7 +72,7 @@ interface OpenCodeObservation {
   modelUsed?: string;
   usage?: WorkerResult["usage"];
   tools: OpenCodeToolObservation[];
-  permissionRejects: string[];
+  permissionRejects: OpenCodePermissionRejectObservation[];
   warnings: string[];
 }
 
@@ -81,6 +80,12 @@ interface OpenCodeToolObservation {
   tool: string;
   status: string;
   command?: string;
+  callId?: string;
+}
+
+interface OpenCodePermissionRejectObservation {
+  title: string;
+  callId?: string;
 }
 
 interface OpenCodePermissionRule {
@@ -104,6 +109,12 @@ interface SseMessage {
 
 const defaultAgentName = "fusion-worker";
 const judgeAgentName = "fusion-judge";
+// OpenCode v1.17.20 PermissionV1.DeniedError, RejectedError, and
+// CorrectedError messages from packages/core/src/v1/permission.ts.
+const openCodePermissionDenialErrorPrefixes = [
+  "The user has specified a rule which prevents you from using this specific tool call",
+  "The user rejected permission to use this specific tool call",
+] as const;
 const sessionAbortTimeoutMs = 5_000;
 const knownOpenCodeTools = [
   "read",
@@ -490,13 +501,16 @@ function openCodeWorkerResult(input: {
   warnings: string[];
   version?: string;
   tools: OpenCodeToolObservation[];
-  permissionRejects: string[];
+  permissionRejects: OpenCodePermissionRejectObservation[];
   effectiveRules?: OpenCodePermissionRule[];
   abortOutcome: WorkerAbortOutcome;
   errors?: string[];
 }): WorkerResult {
   const enforcement = {
-    permissionDenialCount: input.permissionRejects.length,
+    permissionDenialCount: openCodePermissionDenialCount(
+      input.tools,
+      input.permissionRejects,
+    ),
     abortOutcome: input.abortOutcome,
     toolEvents: input.tools.map((tool) => ({
       tool: tool.tool,
@@ -560,12 +574,35 @@ function openCodeRuntimeToolOutcome(
   return "unknown";
 }
 
+function openCodePermissionDenialCount(
+  tools: OpenCodeToolObservation[],
+  permissionRejects: OpenCodePermissionRejectObservation[],
+): number {
+  const denials = new Set<string>();
+  for (const [index, reject] of permissionRejects.entries()) {
+    denials.add(
+      reject.callId === undefined
+        ? `permission:${index}`
+        : `call:${reject.callId}`,
+    );
+  }
+  for (const [index, tool] of tools.entries()) {
+    if (openCodeRuntimeToolOutcome(tool.status) !== "denied") {
+      continue;
+    }
+    denials.add(
+      tool.callId === undefined ? `tool:${index}` : `call:${tool.callId}`,
+    );
+  }
+  return denials.size;
+}
+
 function openCodeComplianceNotes(input: {
   request: WorkerRequest;
   sessionId?: string;
   version?: string;
   tools: OpenCodeToolObservation[];
-  permissionRejects: string[];
+  permissionRejects: OpenCodePermissionRejectObservation[];
   warnings: string[];
 }): string[] {
   const notes = [
@@ -582,7 +619,9 @@ function openCodeComplianceNotes(input: {
     notes.push(`OpenCode tool ${tool.tool} ended with status ${tool.status}.`);
   }
   for (const reject of input.permissionRejects) {
-    notes.push(`OpenCode unexpected permission ask auto-rejected: ${reject}.`);
+    notes.push(
+      `OpenCode unexpected permission ask auto-rejected: ${reject.title}.`,
+    );
   }
   notes.push(...input.warnings);
   return notes;
@@ -590,7 +629,7 @@ function openCodeComplianceNotes(input: {
 
 function toolUseSummary(
   tools: OpenCodeToolObservation[],
-  permissionRejects: string[],
+  permissionRejects: OpenCodePermissionRejectObservation[],
 ): WorkerResult["toolUseSummary"] {
   if (tools.length === 0 && permissionRejects.length === 0) {
     return undefined;
@@ -601,7 +640,9 @@ function toolUseSummary(
         ? undefined
         : [...new Set(tools.map((tool) => tool.tool))],
     deniedRequests:
-      permissionRejects.length === 0 ? undefined : permissionRejects,
+      permissionRejects.length === 0
+        ? undefined
+        : permissionRejects.map((reject) => reject.title),
   };
 }
 
@@ -626,7 +667,6 @@ export function buildOpenCodeConfigContent(input: {
       [agentName]: {
         description: "Fusion read-only worker",
         mode: "primary",
-        tools: openCodeToolsForPolicy(input.toolsPolicy),
         permission: buildOpenCodePermissionMap(
           input.toolsPolicy,
           input.environment,
@@ -635,7 +675,6 @@ export function buildOpenCodeConfigContent(input: {
       [judgeAgentName]: {
         description: "Fusion no-tools judge",
         mode: "primary",
-        tools: openCodeToolsForPolicy({ mode: "none" }),
         permission: buildOpenCodePermissionMap({ mode: "none" }, undefined),
       },
     },
@@ -883,19 +922,6 @@ function openCodeAgentInfos(value: unknown): OpenCodeAgentInfo[] {
   });
 }
 
-export function openCodeToolsForPolicy(
-  toolsPolicy: ToolsPolicy | undefined,
-): Record<string, boolean> {
-  const allowedTools = allowedOpenCodeTools(toolsPolicy);
-  const deniedTools = deniedOpenCodeTools(toolsPolicy);
-  return Object.fromEntries(
-    knownOpenCodeTools.map((tool) => [
-      tool,
-      allowedTools.has(tool) && !deniedTools.has(tool),
-    ]),
-  );
-}
-
 function allowedOpenCodeTools(
   toolsPolicy: ToolsPolicy | undefined,
 ): Set<string> {
@@ -921,12 +947,6 @@ function allowedOpenCodeTools(
     case undefined:
       return new Set(["read", "grep", "glob", "list", "webfetch", "websearch", "bash"]);
   }
-}
-
-function deniedOpenCodeTools(
-  toolsPolicy: ToolsPolicy | undefined,
-): Set<string> {
-  return new Set((toolsPolicy?.deny ?? []).flatMap(openCodeToolIds));
 }
 
 function openCodeToolIds(tool: string): string[] {
@@ -1216,12 +1236,21 @@ function applyMessagePart(
     }
   }
   if (partType === "tool") {
-    const status = stringField(objectField(part, "state") ?? {}, "status");
-    const tool = stringField(part, "tool");
-    if (status !== undefined && status !== "pending" && status !== "running") {
-      observation.tools.push({ tool: tool ?? "unknown", status });
-      if (status === "error" && tool !== undefined) {
-        observation.warnings.push(`OpenCode tool ${tool} ended with error.`);
+    const tool = toolObservationFromPart(part);
+    if (
+      tool !== undefined &&
+      tool.status !== "pending" &&
+      tool.status !== "running"
+    ) {
+      observation.tools.push(tool);
+      if (tool.status === "denied") {
+        observation.warnings.push(
+          `OpenCode tool ${tool.tool} was denied by permission controls.`,
+        );
+      } else if (tool.status === "error") {
+        observation.warnings.push(
+          `OpenCode tool ${tool.tool} ended with error.`,
+        );
       }
     }
   }
@@ -1292,7 +1321,10 @@ async function rejectPermissionAsk(
     return;
   }
   const sessionId = permission.sessionID || input.sessionId;
-  observation.permissionRejects.push(permission.title || permission.type);
+  observation.permissionRejects.push({
+    title: permission.title || permission.type,
+    callId: permission.callID,
+  });
   observation.warnings.push(
     `OpenCode emitted an unexpected permission ask and Fusion rejected it: ${permission.title || permission.type}.`,
   );
@@ -1647,22 +1679,45 @@ function toolObservationsFromParts(parts: unknown[]): OpenCodeToolObservation[] 
   return parts
     .map((part): OpenCodeToolObservation | undefined => {
       const record = objectValue(part);
-      if (record?.type !== "tool") {
-        return undefined;
-      }
-      const state = objectField(record, "state");
-      const status =
-        state === undefined ? undefined : stringField(state, "status");
-      const tool = stringField(record, "tool");
-      const toolInput =
-        state === undefined ? undefined : objectField(state, "input");
-      const command =
-        toolInput === undefined ? undefined : stringField(toolInput, "command");
-      return tool !== undefined && status !== undefined
-        ? { tool, status, command }
-        : undefined;
+      return record === undefined ? undefined : toolObservationFromPart(record);
     })
     .filter((tool): tool is OpenCodeToolObservation => tool !== undefined);
+}
+
+function toolObservationFromPart(
+  part: Record<string, unknown>,
+): OpenCodeToolObservation | undefined {
+  if (part.type !== "tool") {
+    return undefined;
+  }
+  const state = objectField(part, "state");
+  const status = state === undefined ? undefined : stringField(state, "status");
+  const error = state === undefined ? undefined : stringField(state, "error");
+  const tool = stringField(part, "tool");
+  const toolInput = state === undefined ? undefined : objectField(state, "input");
+  const command =
+    toolInput === undefined ? undefined : stringField(toolInput, "command");
+  if (tool === undefined || status === undefined) {
+    return undefined;
+  }
+  return {
+    tool,
+    status:
+      status === "error" && isOpenCodePermissionDenialError(error)
+        ? "denied"
+        : status,
+    command,
+    callId: stringField(part, "callID"),
+  };
+}
+
+function isOpenCodePermissionDenialError(error: string | undefined): boolean {
+  return (
+    error !== undefined &&
+    openCodePermissionDenialErrorPrefixes.some((prefix) =>
+      error.startsWith(prefix),
+    )
+  );
 }
 
 function versionFromOutput(output: string): string | undefined {

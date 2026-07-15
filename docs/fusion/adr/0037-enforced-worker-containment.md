@@ -18,6 +18,18 @@ cannot enforce tool policy is therefore obsolete for the SDK transport: the
 adapter can enforce it, but this conflicting prompt field defeated that
 enforcement.
 
+[Issue #11](https://github.com/yamatakeru/skills/issues/11) exposed the same
+class of conflict at the agent level. OpenCode v1.17.20 normalizes the
+deprecated agent `tools` boolean map into a permission object first, then
+applies `Object.assign(permission, agent.permission)`. JavaScript updates an
+existing property's value without moving its insertion position, while a new
+property is appended. Because Fusion's agent permission map adds the top-level
+`"*": "deny"` missing from the `tools`-derived object, normalization appended
+that catch-all after the explicit read, search, web, and `bash` rules. OpenCode
+evaluates permissions with `findLast`, so the final catch-all denied every
+otherwise allowed worker tool. The live-smoke failure was therefore a real
+effective-policy mismatch, not a verifier false positive.
+
 The incident also showed that ending the local event stream did not stop the
 remote session. The worker produced a final answer, continued running until the
 shared server was killed, and performed the mutations that the overwritten
@@ -25,13 +37,22 @@ permission map should have denied.
 
 ## Decision
 
-The OpenCode SDK adapter removes the deprecated prompt-body `tools` field. Its
-agent permission map is deny-by-default: a catch-all `"*": "deny"` rule is
-inserted first, followed by explicit allows for `read`, `grep`, `glob`, and
-`list`, the declared web tools and read roots, and the command-level read-only
-`bash` allowlist. The nested `bash` map also denies `"*"` before its explicit
-command allows. Unknown MCP, plugin, task, and dynamically named tools therefore
-fall through to deny instead of inheriting a harness default.
+The OpenCode SDK adapter prohibits the deprecated `tools` field in both prompt
+bodies and agent definitions. The agent `permission` map is the sole source of
+tool authority and availability. It is deny-by-default: a catch-all
+`"*": "deny"` rule is inserted first, followed by explicit allows for `read`,
+`grep`, `glob`, and `list`, the declared web tools and read roots, and the
+command-level read-only `bash` allowlist. The nested `bash` map also denies
+`"*"` before its explicit command allows. Unknown MCP, plugin, task, and
+dynamically named tools therefore fall through to deny instead of inheriting a
+harness default.
+
+This supersedes ADR 0029's implementation finding that the SDK transport should
+combine an agent tools map with a permission map. Current OpenCode derives the
+model-visible tool set from permissions, so the agent tools map is unnecessary
+and, because normalization changes effective rule order, unsafe. Supporting a
+runtime that lacks permission-driven availability requires a separate
+version-specific configuration path, not both fields on one agent.
 
 After the server starts, the adapter reads the agent's effective rules and
 asserts the minimum containment invariants: the top-level catch-all deny, the
