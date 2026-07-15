@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   OpenCodeSdkAdapter,
   buildOpenCodeConfigContent,
+  buildOpenCodePermissionMap,
   type OpenCodeServerFactory,
 } from "../lib/protocol";
 import { workerRequest } from "./fixtures";
@@ -271,6 +272,12 @@ describe("Fusion OpenCode SDK adapter", () => {
       string
     >;
 
+    expect(Object.keys(agent.permission)[0]).toBe("*");
+    expect(agent.permission["*"]).toBe("deny");
+    expect(agent.permission.read).toBe("allow");
+    expect(agent.permission.grep).toBe("allow");
+    expect(agent.permission.glob).toBe("allow");
+    expect(agent.permission.list).toBe("allow");
     expect(agent.tools.read).toBe(true);
     expect(agent.tools.grep).toBe(true);
     expect(agent.tools.write).toBe(false);
@@ -281,6 +288,31 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(externalDirectory["*"]).toBe("deny");
     expect(externalDirectory["/tmp/context/**"]).toBe("allow");
     expect(config.experimental.continue_loop_on_deny).toBe(true);
+  });
+
+  test("keeps bash permission semantics behind the top-level catch-all", () => {
+    const readOnly = buildOpenCodePermissionMap(
+      {
+        mode: "read-only",
+        readOnlyBashCommands: ["git status", "rg"],
+      },
+      undefined,
+    );
+    const none = buildOpenCodePermissionMap({ mode: "none" }, undefined);
+    const full = buildOpenCodePermissionMap({ mode: "full" }, undefined);
+
+    expect(Object.keys(readOnly)[0]).toBe("*");
+    expect(readOnly.bash).toEqual({
+      "*": "deny",
+      "git status": "allow",
+      "git status *": "allow",
+      rg: "allow",
+      "rg *": "allow",
+    });
+    expect(none.bash).toEqual({ "*": "deny" });
+    expect(none.webfetch).toBe("deny");
+    expect(none.websearch).toBe("deny");
+    expect(full.bash).toEqual({ "*": "allow" });
   });
 
   test("warns when a model preference cannot be split for OpenCode", async () => {
@@ -335,6 +367,7 @@ describe("Fusion OpenCode SDK adapter", () => {
     });
 
     expect(result.status).toBe("ok");
+    expect(promptBody).not.toHaveProperty("tools");
     expect(promptBody?.model).toBeUndefined();
     expect(result.warnings?.join("\n")).toContain("gpt-5.5");
     expect(result.warnings?.join("\n")).toContain("provider/model");
@@ -576,6 +609,198 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.output).toBe("Idle-terminated answer");
   });
 
+  test("aborts a completed session before disconnecting SSE", async () => {
+    let promptMessageId: string | undefined;
+    const terminalOrder: string[] = [];
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          init?.signal?.addEventListener("abort", () => {
+            terminalOrder.push("disconnect");
+          });
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "Collected answer");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          terminalOrder.push("abort");
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("Collected answer");
+    expect(terminalOrder).toEqual(["abort", "disconnect"]);
+  });
+
+  test("aborts the session when prompt submission fails", async () => {
+    let abortCalls = 0;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return openSseResponse();
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          return new Response("boom", { status: 500 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          abortCalls += 1;
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("error");
+    expect(abortCalls).toBe(1);
+  });
+
+  test("aborts the session on timeout", async () => {
+    let abortCalls = 0;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return openSseResponse();
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          abortCalls += 1;
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      budget: { timeoutMs: 25 },
+    });
+
+    expect(result.status).toBe("timeout");
+    expect(abortCalls).toBe(1);
+  });
+
+  test("records an abort warning without failing a completed worker", async () => {
+    let promptMessageId: string | undefined;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "Still successful");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return new Response("abort unavailable", { status: 500 });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toBe("Still successful");
+    expect(result.warnings?.join("\n")).toContain(
+      "session may linger until server shutdown",
+    );
+    expect(result.complianceEvidence?.notes?.join("\n")).toContain(
+      "session may linger until server shutdown",
+    );
+  });
+
+  test("fails every worker before session creation when effective rules mismatch", async () => {
+    let serverStarts = 0;
+    let agentRequests = 0;
+    let sessionRequests = 0;
+    const serverFactory: OpenCodeServerFactory = async () => {
+      serverStarts += 1;
+      return { baseUrl: "http://opencode.test", dispose() {} };
+    };
+    const adapter = new OpenCodeSdkAdapter({
+      serverFactory,
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          agentRequests += 1;
+          return Response.json([
+            {
+              name: "fusion-worker",
+              permission: [
+                { permission: "*", pattern: "*", action: "deny" },
+                { permission: "bash", pattern: "*", action: "allow" },
+              ],
+            },
+          ]);
+        }
+        if (url.pathname === "/session" && init?.method === "POST") {
+          sessionRequests += 1;
+          return Response.json({ id: "should-not-exist" });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const [first, second] = await Promise.all([
+      adapter.runWorker(workerRequest()),
+      adapter.runWorker({ ...workerRequest(), workerId: "worker-2" }),
+    ]);
+    await adapter.dispose();
+
+    expect(first.status).toBe("error");
+    expect(second.status).toBe("error");
+    expect(first.errors?.join("\n")).toContain(
+      "OPENCODE_EFFECTIVE_RULES_MISMATCH",
+    );
+    expect(first.errors?.join("\n")).toContain('"expected"');
+    expect(first.errors?.join("\n")).toContain('"observed"');
+    expect(serverStarts).toBe(1);
+    expect(agentRequests).toBe(1);
+    expect(sessionRequests).toBe(0);
+  });
+
   test("disposes the run-scoped server after worker failure", async () => {
     let disposed = false;
     const serverFactory: OpenCodeServerFactory = async () => ({
@@ -679,6 +904,38 @@ function sseResponse(render: () => Promise<string>): Response {
     }),
     { headers: { "Content-Type": "text/event-stream" } },
   );
+}
+
+function openSseResponse(): Response {
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start() {},
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+}
+
+function completedAnswerSse(messageId: string, text: string): string {
+  return [
+    sse({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "part-1",
+          sessionID: "session-1",
+          messageID: assistantMessageId(messageId),
+          type: "text",
+          text,
+        },
+      },
+    }),
+    sse({
+      type: "message.updated",
+      properties: {
+        info: assistantMessage(assistantMessageId(messageId)),
+      },
+    }),
+  ].join("");
 }
 
 async function versionExecutor() {
