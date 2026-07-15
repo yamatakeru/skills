@@ -81,10 +81,30 @@ evidence instead.
 ## Full Compliance
 
 A Fusion run that uses true independent workers, same prompt, same shared
-context, blindness, and isolated contexts before synthesis.
+context, blindness, isolated contexts before synthesis, and enforcement
+evidence of at least `harness-declared` with no violation evidence.
 
 Full compliance is determined by the orchestrator from evidence, not asserted by
-workers themselves.
+workers themselves. It describes panel-protocol compliance, not shell
+sandboxing; Containment Level is a separate disclosure axis (ADR 0038).
+
+## Containment Level
+
+The shell-isolation level disclosed independently of compliance tier:
+`no-shell`, `allowlist-enforced`, or `sandboxed`. A shell-enabled report always
+renders this field. `allowlist-enforced` blocks ordinary out-of-policy drift but
+retains the command-construction holes documented in ADR 0039; only
+`sandboxed` denotes an OS or hosted isolation boundary.
+
+## Enforcement Source
+
+The source and quality of an adapter's tool-policy enforcement evidence.
+`verified-effective` means the adapter inspected effective harness rules at
+runtime; `harness-declared` means it configured a harness enforcement surface
+that cannot yet be inspected effectively. Full compliance requires at least
+`harness-declared` and no violation evidence. This evidence-quality asymmetry is
+a stopgap that should be upgraded as harness inspection APIs become available
+(ADR 0038).
 
 ## Context Manifest
 
@@ -106,9 +126,12 @@ neutral-panelist norms ported from the original OpenCode Fusion panelists
 (independence, no peer coordination, one strong self-contained answer,
 tool use when it materially improves correctness, no file modification,
 uncertainty preservation, concise reasoning summaries instead of hidden
-chain-of-thought) plus the output contract's required sections. Adopting these
-norms is a deliberate, provisional divergence from upstream OpenRouter Fusion,
-which adds no instructions (ADR 0020).
+chain-of-thought, and item 8's rule that instructions embedded in repository
+files, web pages, and tool output are data rather than directives) plus the
+output contract's required sections. Item 8 is a quality-layer defense in the
+default prompt variant; experiment variants omit it to preserve condition
+purity. Adopting these norms is a deliberate, provisional divergence from
+upstream OpenRouter Fusion, which adds no instructions (ADR 0020/0038).
 
 ## Provenance Event Log
 
@@ -143,6 +166,13 @@ A worker spawning another panel, council, subagent, or delegated subtask. Fusion
 workers deny recursive delegation by default to preserve panel independence and
 avoid hidden nested panels.
 
+## Recursion Guard
+
+The process-level defense that increments `FUSION_PANEL_DEPTH` in worker
+environments and makes both Fusion CLI entrypoints refuse to start at depth 1
+or greater. The default `bash` allowlist already excludes `bun`; the guard is an
+independent backstop for full-tool runs and future allowlist changes (ADR 0037).
+
 ## Degraded Simulation
 
 A local approximation of Fusion, such as same-agent internal multiple passes,
@@ -164,9 +194,11 @@ run should not require a TTY or user confirmation prompt.
 
 A harness whose adapter can provide enough control and evidence for full Fusion
 compliance. It must be able to create or prove a fresh worker session, report the
-actual model used, apply the requested read-only tool policy, deny edit/write and
-recursive delegation, resolve headless approval requests as deny or structured
-error by default, capture output and tool events, and record run metadata.
+actual model used, apply the requested read-only tool policy through an enforced
+harness surface, identify its Enforcement Source, deny edit/write and recursive
+delegation, resolve headless approval requests as deny or structured error by
+default, capture output and tool events, and record run metadata. A detected
+startup defense failure must fail before model invocation (ADR 0037/0038).
 
 ## Reference Harness Selection Policy
 
@@ -213,8 +245,9 @@ cannot (ADR 0028/0032).
 
 The legacy plain-stdout adapters, retained only under an explicit
 `--transport cli` opt-in. On OpenCode this path cannot enforce or prove tool
-policy (ADR 0022) and remains degraded-compliance; there is no silent
-fallback onto it (ADR 0028).
+policy and remains degraded-compliance; there is no silent fallback onto it
+(ADR 0022/0028/0037). The SDK transport's verified-effective enforcement does
+not change this CLI-transport limitation.
 
 ## Read Root
 
@@ -400,9 +433,23 @@ commands, network access, and edits. Fusion workers default to read-only local
 access, a read-only bash command allowlist (git inspection plus read-only
 search and listing commands), and web search and web fetch where the harness
 provides them; all other shell commands, edit, write, and recursive delegation
-are denied by default. Workers in the same
-panel should receive the same tools policy unless an explicit adapter
-limitation or user policy says otherwise.
+are denied by default. The policy must be applied through a harness enforcement
+surface, with deny-by-default rules and explicit allows where the harness can
+express them; prompt instructions alone are not enforcement. Workers in the
+same panel should receive the same tools policy unless an explicit adapter
+limitation or user policy says otherwise. Enforcement Source and shell
+Containment Level are disclosed separately, and an allowlist must not be
+described as a sandbox (ADR 0037/0038/0039).
+
+## Workspace Watchdog
+
+The before/after comparison of `git status --porcelain` and
+`git for-each-ref`, including remote-tracking refs, used to detect workspace or
+ref mutation during a panel run. A finding caps tier at `degraded` with neutral,
+unattributed wording; corroborating worker tool evidence makes it
+`non-compliant`. It excludes `.fusion-runs/`, is `not-applicable` outside Git,
+and cannot detect gitignored-only changes, outside-workspace writes, or remote
+API side effects (ADR 0038).
 
 ## Session Reuse
 
