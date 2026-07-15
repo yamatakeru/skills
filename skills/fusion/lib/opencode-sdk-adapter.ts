@@ -11,6 +11,7 @@ import {
 } from "./headless-cli-adapters";
 import type {
   ToolsPolicy,
+  WorkerAbortOutcome,
   WorkerEnvironment,
   WorkerRequest,
   WorkerResult,
@@ -128,7 +129,11 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
   private readonly agentName: string;
   private readonly injectedBaseUrl?: string;
   private serverPromise?: Promise<OpenCodeServerHandle>;
-  private serverVerificationPromise?: Promise<void>;
+  private serverVerificationPromise?: Promise<OpenCodePermissionRule[]>;
+  private serverEffectiveRules?: {
+    baseUrl: string;
+    rules: OpenCodePermissionRule[];
+  };
   private versionPromise?: Promise<string | undefined>;
 
   constructor(options: OpenCodeSdkAdapterOptions = {}) {
@@ -143,10 +148,16 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
   async runWorker(request: WorkerRequest): Promise<WorkerResult> {
     const startedAt = Date.now();
     let sessionId: string | undefined;
+    let effectiveRules: OpenCodePermissionRule[] | undefined;
+    const abortOutcome: WorkerAbortOutcome = { attempted: false };
     const warnings: string[] = [];
 
     try {
       const server = await this.ensureServer(request);
+      effectiveRules =
+        this.serverEffectiveRules?.baseUrl === server.baseUrl
+          ? this.serverEffectiveRules.rules
+          : undefined;
       const version = await this.opencodeVersion();
       const session = await this.createSession(server.baseUrl, request);
       sessionId = session.id;
@@ -155,6 +166,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         request,
         session.id,
         warnings,
+        abortOutcome,
       );
       warnings.push(...observation.warnings);
       return openCodeWorkerResult({
@@ -171,6 +183,8 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         version,
         tools: observation.tools,
         permissionRejects: observation.permissionRejects,
+        effectiveRules,
+        abortOutcome,
         errors:
           observation.output.trim().length === 0
             ? ["opencode SDK worker returned no final assistant text."]
@@ -192,6 +206,8 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         version: await this.opencodeVersion().catch(() => undefined),
         tools: [],
         permissionRejects: [],
+        effectiveRules,
+        abortOutcome,
         errors: [message],
       });
     }
@@ -227,6 +243,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         if (this.serverPromise === promise) {
           this.serverPromise = undefined;
           this.serverVerificationPromise = undefined;
+          this.serverEffectiveRules = undefined;
         }
       });
       this.serverPromise = promise;
@@ -239,7 +256,8 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
       toolsPolicy: request.toolsPolicy,
       environment: request.environment,
     });
-    await this.serverVerificationPromise;
+    const rules = await this.serverVerificationPromise;
+    this.serverEffectiveRules = { baseUrl: server.baseUrl, rules };
     return server;
   }
 
@@ -279,6 +297,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     request: WorkerRequest,
     sessionId: string,
     warnings: string[],
+    abortOutcome: WorkerAbortOutcome,
   ): Promise<OpenCodeObservation> {
     const messageId = `msg_${randomUUID().replace(/-/gu, "")}`;
     const controller = new AbortController();
@@ -320,7 +339,13 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         "opencode SDK worker timed out waiting for SSE completion.",
       );
     } finally {
-      await this.abortSession(baseUrl, request, sessionId, warnings);
+      await this.abortSession(
+        baseUrl,
+        request,
+        sessionId,
+        warnings,
+        abortOutcome,
+      );
       controller.abort();
       observer.observation.catch(() => undefined);
     }
@@ -331,8 +356,10 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     request: WorkerRequest,
     sessionId: string,
     warnings: string[],
+    abortOutcome: WorkerAbortOutcome,
   ): Promise<void> {
     const controller = new AbortController();
+    abortOutcome.attempted = true;
     try {
       await withTimeout(
         requestJson<boolean>(
@@ -345,9 +372,13 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         sessionAbortTimeoutMs,
         "opencode SDK session abort timed out.",
       );
+      abortOutcome.succeeded = true;
     } catch (error) {
+      const errorSnippet = snippet(String(error));
+      abortOutcome.succeeded = false;
+      abortOutcome.error = errorSnippet;
       warnings.push(
-        `OpenCode session abort failed; session may linger until server shutdown: ${snippet(String(error))}`,
+        `OpenCode session abort failed; session may linger until server shutdown: ${errorSnippet}`,
       );
     } finally {
       controller.abort();
@@ -408,6 +439,8 @@ function openCodeWorkerResult(input: {
   version?: string;
   tools: OpenCodeToolObservation[];
   permissionRejects: string[];
+  effectiveRules?: OpenCodePermissionRule[];
+  abortOutcome: WorkerAbortOutcome;
   errors?: string[];
 }): WorkerResult {
   return {
@@ -433,11 +466,16 @@ function openCodeWorkerResult(input: {
       adapterClaimsBlindness: true,
       observedSessionMode: input.request.session.mode,
       enforcement: {
-        // Change 1 (feature/opencode-containment) observes GET /agent effective
-        // rules; aggregation can attach them and promote this source to
-        // verified-effective without changing the evidence contract.
-        source: "harness-declared",
+        source:
+          input.effectiveRules === undefined
+            ? "harness-declared"
+            : "verified-effective",
+        effectiveRules:
+          input.effectiveRules === undefined
+            ? undefined
+            : { rules: input.effectiveRules },
         permissionDenialCount: input.permissionRejects.length,
+        abortOutcome: input.abortOutcome,
         toolEvents: input.tools.map((tool) => ({
           tool: tool.tool,
           command: tool.command,
@@ -583,7 +621,7 @@ async function verifyOpenCodeEffectiveRules(input: {
   agentName: string;
   toolsPolicy: ToolsPolicy | undefined;
   environment: WorkerEnvironment | undefined;
-}): Promise<void> {
+}): Promise<OpenCodePermissionRule[]> {
   const value = await requestJson<unknown>(
     input.fetch,
     input.baseUrl,
@@ -594,6 +632,7 @@ async function verifyOpenCodeEffectiveRules(input: {
   const agents = openCodeAgentInfos(value);
   const agent = agents.find((candidate) => candidate.name === input.agentName);
   const expected = expectedOpenCodePermissionRules(input.toolsPolicy);
+  const relevantPermissions = new Set(expected.map((rule) => rule.permission));
   const missing =
     agent === undefined
       ? expected
@@ -607,10 +646,11 @@ async function verifyOpenCodeEffectiveRules(input: {
             ),
         );
   if (agent !== undefined && missing.length === 0) {
-    return;
+    return agent.permission.filter((rule) =>
+      relevantPermissions.has(rule.permission),
+    );
   }
 
-  const relevantPermissions = new Set(expected.map((rule) => rule.permission));
   throw new OpenCodeEffectiveRulesError(
     `OpenCode effective permission verification failed: ${JSON.stringify({
       code: "OPENCODE_EFFECTIVE_RULES_MISMATCH",

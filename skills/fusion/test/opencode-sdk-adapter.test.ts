@@ -3,6 +3,7 @@ import {
   OpenCodeSdkAdapter,
   buildOpenCodeConfigContent,
   buildOpenCodePermissionMap,
+  type OpenCodePermissionConfig,
   type OpenCodeServerFactory,
   type OpenCodeServerFactoryInput,
 } from "../lib/protocol";
@@ -672,6 +673,10 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.status).toBe("ok");
     expect(result.output).toBe("Collected answer");
     expect(terminalOrder).toEqual(["abort", "disconnect"]);
+    expect(result.complianceEvidence?.enforcement?.abortOutcome).toEqual({
+      attempted: true,
+      succeeded: true,
+    });
   });
 
   test("aborts the session when prompt submission fails", async () => {
@@ -774,6 +779,76 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.complianceEvidence?.notes?.join("\n")).toContain(
       "session may linger until server shutdown",
     );
+    expect(result.complianceEvidence?.enforcement?.abortOutcome).toEqual({
+      attempted: true,
+      succeeded: false,
+      error: expect.stringContaining("abort unavailable"),
+    });
+  });
+
+  test("attaches verified effective rules to worker evidence", async () => {
+    let promptMessageId: string | undefined;
+    let observedRules: ReturnType<typeof effectivePermissionRules> = [];
+    let agentRequests = 0;
+    const serverFactory: OpenCodeServerFactory = async ({ configContent }) => {
+      observedRules = effectivePermissionRules(
+        configContent.agent["fusion-worker"].permission,
+      );
+      return { baseUrl: "http://opencode.test", dispose() {} };
+    };
+    const adapter = new OpenCodeSdkAdapter({
+      serverFactory,
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          agentRequests += 1;
+          return Response.json([
+            { name: "fusion-worker", permission: observedRules },
+          ]);
+        }
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "Verified answer");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+    await adapter.dispose();
+    const relevantPermissions = new Set([
+      "*",
+      "bash",
+      "read",
+      "grep",
+      "glob",
+      "webfetch",
+      "websearch",
+    ]);
+
+    expect(result.status).toBe("ok");
+    expect(result.complianceEvidence?.enforcement?.source).toBe(
+      "verified-effective",
+    );
+    expect(result.complianceEvidence?.enforcement?.effectiveRules).toEqual({
+      rules: observedRules.filter((rule) =>
+        relevantPermissions.has(rule.permission),
+      ),
+    });
+    expect(agentRequests).toBe(1);
   });
 
   test("fails every worker before session creation when effective rules mismatch", async () => {
@@ -822,6 +897,9 @@ describe("Fusion OpenCode SDK adapter", () => {
     );
     expect(first.errors?.join("\n")).toContain('"expected"');
     expect(first.errors?.join("\n")).toContain('"observed"');
+    expect(first.complianceEvidence?.enforcement?.abortOutcome).toEqual({
+      attempted: false,
+    });
     expect(serverStarts).toBe(1);
     expect(agentRequests).toBe(1);
     expect(sessionRequests).toBe(0);
@@ -962,6 +1040,18 @@ function completedAnswerSse(messageId: string, text: string): string {
       },
     }),
   ].join("");
+}
+
+function effectivePermissionRules(permission: OpenCodePermissionConfig) {
+  return Object.entries(permission).flatMap(([permissionId, decision]) =>
+    typeof decision === "string"
+      ? [{ permission: permissionId, pattern: "*", action: decision }]
+      : Object.entries(decision).map(([pattern, action]) => ({
+          permission: permissionId,
+          pattern,
+          action,
+        })),
+  );
 }
 
 async function versionExecutor() {
