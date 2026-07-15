@@ -89,15 +89,19 @@ export async function compareWorkspace(
   const changedPaths = changedMapKeys(before.paths, after.paths);
   const refDiffs = diffRefs(before.refs, after.refs);
   const mutated = changedPaths.length > 0 || refDiffs.length > 0;
-  return watchdogEvidence({
-    verdict: mutated ? "mutated" : "clean",
-    workspaceRoot: before.workspaceRoot,
-    changedPaths: mutated && changedPaths.length > 0 ? changedPaths : undefined,
-    refDiffs: mutated && refDiffs.length > 0 ? refDiffs : undefined,
-    note: mutated
-      ? "workspace mutated during the run; attribution unknown — worker or external process"
-      : "no workspace mutation was observed during the run",
-  });
+  return mutated
+    ? watchdogEvidence({
+        verdict: "mutated",
+        workspaceRoot: before.workspaceRoot,
+        changedPaths: changedPaths.length > 0 ? changedPaths : undefined,
+        refDiffs: refDiffs.length > 0 ? refDiffs : undefined,
+        note: "workspace mutated during the run; attribution unknown — worker or external process",
+      })
+    : watchdogEvidence({
+        verdict: "clean",
+        workspaceRoot: before.workspaceRoot,
+        note: "no workspace mutation was observed during the run",
+      });
 }
 
 export function notApplicableWatchdogEvidence(
@@ -111,7 +115,28 @@ export function notApplicableWatchdogEvidence(
 }
 
 function watchdogEvidence(
-  input: Omit<WorkspaceWatchdogEvidence, "limitations">,
+  input:
+    | {
+        verdict: "clean";
+        workspaceRoot: string;
+        note: string;
+        changedPaths?: never;
+        refDiffs?: never;
+      }
+    | {
+        verdict: "not-applicable";
+        workspaceRoot: string;
+        note: string;
+        changedPaths?: never;
+        refDiffs?: never;
+      }
+    | {
+        verdict: "mutated";
+        workspaceRoot: string;
+        note: string;
+        changedPaths?: string[];
+        refDiffs?: WorkspaceRefDiff[];
+      },
 ): WorkspaceWatchdogEvidence {
   return {
     ...input,

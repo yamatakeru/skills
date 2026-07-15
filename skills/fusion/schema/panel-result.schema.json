@@ -720,41 +720,85 @@
       "type": "object"
     },
     "WorkerEnforcementEvidence": {
-      "additionalProperties": false,
-      "properties": {
-        "abortOutcome": {
-          "$ref": "#/definitions/WorkerAbortOutcome"
-        },
-        "effectiveRules": {
-          "additionalProperties": {},
-          "description": "Effective harness rules observed independently of the request.",
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "abortOutcome": {
+              "$ref": "#/definitions/WorkerAbortOutcome"
+            },
+            "effectiveRules": {
+              "additionalProperties": {},
+              "description": "Effective harness rules observed independently of the request.",
+              "type": "object"
+            },
+            "permissionDenialCount": {
+              "description": "Permission denials demonstrate that enforcement operated as intended.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "const": "verified-effective",
+              "type": "string"
+            },
+            "toolEvents": {
+              "items": {
+                "$ref": "#/definitions/RuntimeToolEvent"
+              },
+              "type": "array"
+            },
+            "violationEvidence": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "effectiveRules",
+            "source"
+          ],
           "type": "object"
         },
-        "permissionDenialCount": {
-          "description": "Permission denials demonstrate that enforcement operated as intended.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "source": {
-          "$ref": "#/definitions/EnforcementSource"
-        },
-        "toolEvents": {
-          "items": {
-            "$ref": "#/definitions/RuntimeToolEvent"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "abortOutcome": {
+              "$ref": "#/definitions/WorkerAbortOutcome"
+            },
+            "effectiveRules": {
+              "additionalProperties": {},
+              "description": "Effective harness rules observed independently of the request.",
+              "type": "object"
+            },
+            "permissionDenialCount": {
+              "description": "Permission denials demonstrate that enforcement operated as intended.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "const": "harness-declared",
+              "type": "string"
+            },
+            "toolEvents": {
+              "items": {
+                "$ref": "#/definitions/RuntimeToolEvent"
+              },
+              "type": "array"
+            },
+            "violationEvidence": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
           },
-          "type": "array"
-        },
-        "violationEvidence": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+          "required": [
+            "source"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "source"
-      ],
-      "type": "object"
+      ]
     },
     "WorkerResult": {
       "additionalProperties": false,
@@ -839,51 +883,104 @@
       "type": "object"
     },
     "WorkspaceWatchdogEvidence": {
-      "additionalProperties": false,
-      "properties": {
-        "changedPaths": {
-          "items": {
-            "type": "string"
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "limitations": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "note": {
+              "type": "string"
+            },
+            "verdict": {
+              "const": "clean",
+              "type": "string"
+            },
+            "workspaceRoot": {
+              "type": "string"
+            }
           },
-          "type": "array"
+          "required": [
+            "limitations",
+            "note",
+            "verdict",
+            "workspaceRoot"
+          ],
+          "type": "object"
         },
-        "limitations": {
-          "items": {
-            "type": "string"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "limitations": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "note": {
+              "type": "string"
+            },
+            "verdict": {
+              "const": "not-applicable",
+              "type": "string"
+            },
+            "workspaceRoot": {
+              "type": "string"
+            }
           },
-          "type": "array"
+          "required": [
+            "limitations",
+            "note",
+            "verdict",
+            "workspaceRoot"
+          ],
+          "type": "object"
         },
-        "note": {
-          "type": "string"
-        },
-        "refDiffs": {
-          "items": {
-            "$ref": "#/definitions/WorkspaceRefDiff"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "changedPaths": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "limitations": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "note": {
+              "type": "string"
+            },
+            "refDiffs": {
+              "items": {
+                "$ref": "#/definitions/WorkspaceRefDiff"
+              },
+              "type": "array"
+            },
+            "verdict": {
+              "const": "mutated",
+              "type": "string"
+            },
+            "workspaceRoot": {
+              "type": "string"
+            }
           },
-          "type": "array"
-        },
-        "verdict": {
-          "$ref": "#/definitions/WorkspaceWatchdogVerdict"
-        },
-        "workspaceRoot": {
-          "type": "string"
+          "required": [
+            "limitations",
+            "note",
+            "verdict",
+            "workspaceRoot"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "verdict",
-        "workspaceRoot",
-        "note",
-        "limitations"
-      ],
-      "type": "object"
-    },
-    "WorkspaceWatchdogVerdict": {
-      "enum": [
-        "clean",
-        "mutated",
-        "not-applicable"
-      ],
-      "type": "string"
+      ]
     }
   }
 }

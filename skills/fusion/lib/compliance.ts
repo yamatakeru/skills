@@ -361,11 +361,20 @@ function commandCanExplainMutation(
   if ((watchdog.changedPaths?.length ?? 0) === 0) {
     return false;
   }
-  return (
+  const redirect = /(?:^|[^>=])(?:\d*>{1,2}|&>)(?![=])/u.test(command);
+  const plausiblyMutatesPaths =
     mutatesRefs.test(command) ||
     /\b(?:rm|mv|cp|touch|mkdir|rmdir|truncate|tee|install)\b/u.test(command) ||
     /\bsed\b.*(?:\s-i\b|--in-place)/u.test(command) ||
-    /(?:^|[^\d])>{1,2}(?:[^=]|$)/u.test(command)
+    redirect;
+  const mentionsChangedPath = (watchdog.changedPaths ?? []).some((path) => {
+    const basename = path.replaceAll("\\", "/").split("/").at(-1);
+    return command.includes(path) ||
+      (basename !== undefined && command.includes(basename));
+  });
+  return (
+    plausiblyMutatesPaths &&
+    (mentionsChangedPath || redirect)
   );
 }
 

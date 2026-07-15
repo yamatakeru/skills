@@ -332,19 +332,31 @@ export interface WorkerComplianceEvidence {
   notes?: string[];
 }
 
-export interface WorkerEnforcementEvidence {
-  source: EnforcementSource;
-  /** Effective harness rules observed independently of the request. */
-  effectiveRules?: Record<string, unknown>;
+interface WorkerEnforcementEvidenceBase {
   /**
    * Permission denials demonstrate that enforcement operated as intended.
    * @minimum 0
+   * @asType integer
    */
   permissionDenialCount?: number;
   abortOutcome?: WorkerAbortOutcome;
   violationEvidence?: string[];
   toolEvents?: RuntimeToolEvent[];
 }
+
+export type WorkerEnforcementEvidence = WorkerEnforcementEvidenceBase &
+  (
+    | {
+      source: "verified-effective";
+      /** Effective harness rules observed independently of the request. */
+      effectiveRules: Record<string, unknown>;
+    }
+    | {
+      source: "harness-declared";
+      /** Effective harness rules observed independently of the request. */
+      effectiveRules?: Record<string, unknown>;
+    }
+  );
 
 export interface WorkerAbortOutcome {
   attempted: boolean;
@@ -358,14 +370,30 @@ export interface RuntimeToolEvent {
   outcome?: "started" | "succeeded" | "denied" | "failed" | "unknown";
 }
 
-export interface WorkspaceWatchdogEvidence {
-  verdict: WorkspaceWatchdogVerdict;
+interface WorkspaceWatchdogEvidenceBase {
   workspaceRoot: string;
-  changedPaths?: string[];
-  refDiffs?: WorkspaceRefDiff[];
   note: string;
   limitations: string[];
 }
+
+export type WorkspaceWatchdogEvidence = WorkspaceWatchdogEvidenceBase &
+  (
+    | {
+      verdict: "clean";
+      changedPaths?: never;
+      refDiffs?: never;
+    }
+    | {
+      verdict: "not-applicable";
+      changedPaths?: never;
+      refDiffs?: never;
+    }
+    | {
+      verdict: "mutated";
+      changedPaths?: string[];
+      refDiffs?: WorkspaceRefDiff[];
+    }
+  );
 
 export interface WorkspaceRefDiff {
   refName: string;

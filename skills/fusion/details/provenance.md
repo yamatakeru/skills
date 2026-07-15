@@ -24,7 +24,7 @@ panel decision without persisting secrets or unnecessary private data.
 
 ## Suggested Location
 
-Use `.fusion-runs/<timestamp>/` when the environment permits file writes.
+Use `.fusion-runs/<panelRunId>/` when the environment permits file writes.
 Otherwise, mention that recording was requested but unavailable.
 
 ## Crash Marker and Judge Replay

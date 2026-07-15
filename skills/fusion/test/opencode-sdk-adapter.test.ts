@@ -293,6 +293,7 @@ describe("Fusion OpenCode SDK adapter", () => {
       environment: { readRoots: ["/tmp/context"] },
     });
     const agent = config.agent["fusion-worker"];
+    const judge = config.agent["fusion-judge"];
     const bash = agent.permission.bash as Record<string, string>;
     const externalDirectory = agent.permission.external_directory as Record<
       string,
@@ -304,7 +305,7 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(agent.permission.read).toBe("allow");
     expect(agent.permission.grep).toBe("allow");
     expect(agent.permission.glob).toBe("allow");
-    expect(agent.permission.list).toBe("allow");
+    expect(agent.permission.list).toBe("deny");
     expect(agent.tools.read).toBe(true);
     expect(agent.tools.grep).toBe(true);
     expect(agent.tools.write).toBe(false);
@@ -314,6 +315,28 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(bash["rg *"]).toBe("allow");
     expect(externalDirectory["*"]).toBe("deny");
     expect(externalDirectory["/tmp/context/**"]).toBe("allow");
+    expect(Object.keys(config.agent)).toEqual([
+      "fusion-worker",
+      "fusion-judge",
+    ]);
+    expect(Object.values(judge.tools).every((allowed) => !allowed)).toBe(true);
+    expect(Object.keys(judge.permission)[0]).toBe("*");
+    expect(judge.permission["*"]).toBe("deny");
+    for (const permission of [
+      "read",
+      "grep",
+      "glob",
+      "list",
+      "edit",
+      "write",
+      "webfetch",
+      "websearch",
+      "skill",
+    ]) {
+      expect(judge.permission[permission]).toBe("deny");
+    }
+    expect(judge.permission.bash).toEqual({ "*": "deny" });
+    expect(judge.permission.external_directory).toEqual({ "*": "deny" });
     expect(config.experimental.continue_loop_on_deny).toBe(true);
   });
 
@@ -337,9 +360,53 @@ describe("Fusion OpenCode SDK adapter", () => {
       "rg *": "allow",
     });
     expect(none.bash).toEqual({ "*": "deny" });
+    expect(none.read).toBe("deny");
+    expect(none.grep).toBe("deny");
+    expect(none.glob).toBe("deny");
+    expect(none.list).toBe("deny");
     expect(none.webfetch).toBe("deny");
     expect(none.websearch).toBe("deny");
     expect(full.bash).toEqual({ "*": "allow" });
+  });
+
+  test("routes no-tools requests to the fusion judge agent", async () => {
+    let promptMessageId: string | undefined;
+    let selectedAgent: string | undefined;
+    const adapter = new OpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/session" && init?.method === "POST") {
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "Judge answer");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          const body = JSON.parse(String(init?.body));
+          selectedAgent = body.agent;
+          promptMessageId = body.messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      workerId: "judge",
+      toolsPolicy: { mode: "none" },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(selectedAgent).toBe("fusion-judge");
   });
 
   test("warns when a model preference cannot be split for OpenCode", async () => {
@@ -789,10 +856,14 @@ describe("Fusion OpenCode SDK adapter", () => {
   test("attaches verified effective rules to worker evidence", async () => {
     let promptMessageId: string | undefined;
     let observedRules: ReturnType<typeof effectivePermissionRules> = [];
+    let observedJudgeRules: ReturnType<typeof effectivePermissionRules> = [];
     let agentRequests = 0;
     const serverFactory: OpenCodeServerFactory = async ({ configContent }) => {
       observedRules = effectivePermissionRules(
         configContent.agent["fusion-worker"].permission,
+      );
+      observedJudgeRules = effectivePermissionRules(
+        configContent.agent["fusion-judge"].permission,
       );
       return { baseUrl: "http://opencode.test", dispose() {} };
     };
@@ -805,6 +876,7 @@ describe("Fusion OpenCode SDK adapter", () => {
           agentRequests += 1;
           return Response.json([
             { name: "fusion-worker", permission: observedRules },
+            { name: "fusion-judge", permission: observedJudgeRules },
           ]);
         }
         if (url.pathname === "/session" && init?.method === "POST") {
@@ -829,24 +901,12 @@ describe("Fusion OpenCode SDK adapter", () => {
 
     const result = await adapter.runWorker(workerRequest());
     await adapter.dispose();
-    const relevantPermissions = new Set([
-      "*",
-      "bash",
-      "read",
-      "grep",
-      "glob",
-      "webfetch",
-      "websearch",
-    ]);
-
     expect(result.status).toBe("ok");
     expect(result.complianceEvidence?.enforcement?.source).toBe(
       "verified-effective",
     );
     expect(result.complianceEvidence?.enforcement?.effectiveRules).toEqual({
-      rules: observedRules.filter((rule) =>
-        relevantPermissions.has(rule.permission),
-      ),
+      rules: observedRules,
     });
     expect(agentRequests).toBe(1);
   });
@@ -903,6 +963,109 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(serverStarts).toBe(1);
     expect(agentRequests).toBe(1);
     expect(sessionRequests).toBe(0);
+  });
+
+  test("rejects effective rules whose order makes git commit allowed", async () => {
+    let observedWorkerRules: ReturnType<typeof effectivePermissionRules> = [];
+    let observedJudgeRules: ReturnType<typeof effectivePermissionRules> = [];
+    const adapter = new OpenCodeSdkAdapter({
+      serverFactory: async ({ configContent }) => {
+        observedWorkerRules = [
+          ...effectivePermissionRules(
+            configContent.agent["fusion-worker"].permission,
+          ),
+          { permission: "bash", pattern: "*", action: "allow" },
+        ];
+        observedJudgeRules = effectivePermissionRules(
+          configContent.agent["fusion-judge"].permission,
+        );
+        return { baseUrl: "http://opencode.test", dispose() {} };
+      },
+      versionExecutor,
+      fetch: async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          return Response.json([
+            { name: "fusion-worker", permission: observedWorkerRules },
+            { name: "fusion-judge", permission: observedJudgeRules },
+          ]);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker(workerRequest());
+
+    expect(result.status).toBe("error");
+    expect(result.errors?.join("\n")).toContain(
+      "OPENCODE_EFFECTIVE_RULES_MISMATCH",
+    );
+    expect(result.errors?.join("\n")).toContain('"pattern":"git commit -m x"');
+    expect(result.errors?.join("\n")).toContain(
+      '"expected":"deny","observed":"allow"',
+    );
+  });
+
+  test("rejects a divergent non-judge policy on the shared server", async () => {
+    let promptMessageId: string | undefined;
+    let observedWorkerRules: ReturnType<typeof effectivePermissionRules> = [];
+    let observedJudgeRules: ReturnType<typeof effectivePermissionRules> = [];
+    let sessionRequests = 0;
+    const adapter = new OpenCodeSdkAdapter({
+      serverFactory: async ({ configContent }) => {
+        observedWorkerRules = effectivePermissionRules(
+          configContent.agent["fusion-worker"].permission,
+        );
+        observedJudgeRules = effectivePermissionRules(
+          configContent.agent["fusion-judge"].permission,
+        );
+        return { baseUrl: "http://opencode.test", dispose() {} };
+      },
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          return Response.json([
+            { name: "fusion-worker", permission: observedWorkerRules },
+            { name: "fusion-judge", permission: observedJudgeRules },
+          ]);
+        }
+        if (url.pathname === "/session" && init?.method === "POST") {
+          sessionRequests += 1;
+          return Response.json({ id: "session-1" });
+        }
+        if (url.pathname === "/event") {
+          return sseResponse(async () => {
+            const messageId = await waitForValue(() => promptMessageId);
+            return completedAnswerSse(messageId, "First worker answer");
+          });
+        }
+        if (url.pathname === "/session/session-1/prompt_async") {
+          promptMessageId = JSON.parse(String(init?.body)).messageID;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === "/session/session-1/abort") {
+          return Response.json(true);
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const first = await adapter.runWorker(workerRequest());
+    const second = await adapter.runWorker({
+      ...workerRequest(),
+      workerId: "worker-2",
+      toolsPolicy: { mode: "limited", allow: ["Read"] },
+    });
+
+    expect(first.status).toBe("ok");
+    expect(second.status).toBe("error");
+    expect(second.errors?.join("\n")).toContain(
+      "OPENCODE_SHARED_SERVER_POLICY_MISMATCH",
+    );
+    expect(second.errors?.join("\n")).toContain('"configuredPolicy"');
+    expect(second.errors?.join("\n")).toContain('"requestPolicy"');
+    expect(sessionRequests).toBe(1);
   });
 
   test("disposes the run-scoped server after worker failure", async () => {

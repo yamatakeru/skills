@@ -81,6 +81,15 @@ liveTest(
         result.workerResults[0]?.complianceEvidence?.enforcement;
 
       expect(enforcement?.permissionDenialCount).toBeGreaterThan(0);
+      expect(enforcement?.toolEvents).toContainEqual(
+        expect.objectContaining({
+          tool: "bash",
+          command: expect.stringContaining(
+            "git commit --allow-empty -m fusion-watchdog-canary",
+          ),
+          outcome: "denied",
+        }),
+      );
       expect(result.complianceSummary.workspaceWatchdog.verdict).toBe("clean");
       // Change 1 (feature/opencode-containment) adds the session abort call and
       // populates this outcome; this gated smoke becomes fully green after

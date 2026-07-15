@@ -517,6 +517,7 @@ describe("Fusion CLI parsing", () => {
       "- Judge: invocation ok, output failed validation (fell back to parent-agent) via claude-code (fable)",
     );
     expect(report).toContain("- Workspace watchdog: not-applicable");
+    expect(report).toContain("- Containment: none");
     expect(report).not.toContain("- Judge: ok via");
   });
 
@@ -537,6 +538,12 @@ describe("Fusion CLI parsing", () => {
             },
             containment: "allowlist-enforced",
           },
+        },
+        {
+          panelRunId: "runtime-evidence-report",
+          workerId: "worker-2",
+          status: "ok",
+          output: "answer",
         },
       ],
       synthesis: "synthesis",
@@ -573,7 +580,7 @@ describe("Fusion CLI parsing", () => {
       "- Enforcement sources: worker-1=harness-declared",
     );
     expect(report).toContain(
-      "- Containment: worker-1=allowlist-enforced",
+      "- Containment: worker-1=allowlist-enforced, worker-2=not-recorded",
     );
     expect(report).toContain(
       "- Workspace watchdog: mutated — workspace mutated during the run; attribution unknown — worker or external process",
@@ -590,9 +597,12 @@ function runFusionCli(
   args: string[],
   cwd: string = "/tmp",
 ): { status: number | null; stdout: string; stderr: string } {
+  const env = { ...process.env };
+  delete env.FUSION_PANEL_DEPTH;
   const result = spawnSync(process.execPath, [fusionRunPath(), ...args], {
     cwd,
     encoding: "utf8",
+    env,
     timeout: 30_000,
   });
   return {

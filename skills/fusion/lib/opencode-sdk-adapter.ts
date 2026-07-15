@@ -95,6 +95,7 @@ interface OpenCodeAgentInfo {
 }
 
 class OpenCodeEffectiveRulesError extends Error {}
+class OpenCodeSharedServerPolicyError extends Error {}
 
 interface SseMessage {
   event?: string;
@@ -102,6 +103,7 @@ interface SseMessage {
 }
 
 const defaultAgentName = "fusion-worker";
+const judgeAgentName = "fusion-judge";
 const sessionAbortTimeoutMs = 5_000;
 const knownOpenCodeTools = [
   "read",
@@ -121,6 +123,28 @@ const knownOpenCodeTools = [
   "doom_loop",
 ];
 
+function openCodeAgentName(
+  request: WorkerRequest,
+  workerAgentName: string,
+): string {
+  return request.toolsPolicy?.mode === "none"
+    ? judgeAgentName
+    : workerAgentName;
+}
+
+function canonicalToolsPolicy(toolsPolicy: ToolsPolicy | undefined): string {
+  return JSON.stringify(
+    toolsPolicy === undefined
+      ? null
+      : {
+          mode: toolsPolicy.mode,
+          allow: toolsPolicy.allow,
+          deny: toolsPolicy.deny,
+          readOnlyBashCommands: toolsPolicy.readOnlyBashCommands,
+        },
+  );
+}
+
 export class OpenCodeSdkAdapter implements WorkerRunner {
   private readonly command: string;
   private readonly fetch: Fetch;
@@ -129,11 +153,14 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
   private readonly agentName: string;
   private readonly injectedBaseUrl?: string;
   private serverPromise?: Promise<OpenCodeServerHandle>;
-  private serverVerificationPromise?: Promise<OpenCodePermissionRule[]>;
+  private serverVerificationPromise?: Promise<
+    Map<string, OpenCodePermissionRule[]>
+  >;
   private serverEffectiveRules?: {
     baseUrl: string;
-    rules: OpenCodePermissionRule[];
+    rulesByAgent: Map<string, OpenCodePermissionRule[]>;
   };
+  private serverToolsPolicyFingerprint?: string;
   private versionPromise?: Promise<string | undefined>;
 
   constructor(options: OpenCodeSdkAdapterOptions = {}) {
@@ -154,9 +181,10 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
 
     try {
       const server = await this.ensureServer(request);
+      const selectedAgentName = openCodeAgentName(request, this.agentName);
       effectiveRules =
         this.serverEffectiveRules?.baseUrl === server.baseUrl
-          ? this.serverEffectiveRules.rules
+          ? this.serverEffectiveRules.rulesByAgent.get(selectedAgentName)
           : undefined;
       const version = await this.opencodeVersion();
       const session = await this.createSession(server.baseUrl, request);
@@ -193,7 +221,8 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     } catch (error) {
       const message =
         error instanceof WorkerTimeoutError ||
-        error instanceof OpenCodeEffectiveRulesError
+        error instanceof OpenCodeEffectiveRulesError ||
+        error instanceof OpenCodeSharedServerPolicyError
           ? error.message
           : snippet(String(error));
       return openCodeWorkerResult({
@@ -226,6 +255,9 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
       };
     }
     if (this.serverPromise === undefined) {
+      this.serverToolsPolicyFingerprint = canonicalToolsPolicy(
+        request.toolsPolicy,
+      );
       const promise = this.serverFactory({
         command: this.command,
         configContent: buildOpenCodeConfigContent({
@@ -244,9 +276,24 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
           this.serverPromise = undefined;
           this.serverVerificationPromise = undefined;
           this.serverEffectiveRules = undefined;
+          this.serverToolsPolicyFingerprint = undefined;
         }
       });
       this.serverPromise = promise;
+    } else if (
+      request.toolsPolicy?.mode !== "none" &&
+      this.serverToolsPolicyFingerprint !==
+        canonicalToolsPolicy(request.toolsPolicy)
+    ) {
+      throw new OpenCodeSharedServerPolicyError(
+        `OpenCode shared-server tools policy mismatch: ${JSON.stringify({
+          code: "OPENCODE_SHARED_SERVER_POLICY_MISMATCH",
+          configuredPolicy: JSON.parse(
+            this.serverToolsPolicyFingerprint ?? "null",
+          ),
+          requestPolicy: JSON.parse(canonicalToolsPolicy(request.toolsPolicy)),
+        })}`,
+      );
     }
     const server = await this.serverPromise;
     this.serverVerificationPromise ??= verifyOpenCodeEffectiveRules({
@@ -256,8 +303,8 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
       toolsPolicy: request.toolsPolicy,
       environment: request.environment,
     });
-    const rules = await this.serverVerificationPromise;
-    this.serverEffectiveRules = { baseUrl: server.baseUrl, rules };
+    const rulesByAgent = await this.serverVerificationPromise;
+    this.serverEffectiveRules = { baseUrl: server.baseUrl, rulesByAgent };
     return server;
   }
 
@@ -393,7 +440,12 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     warnings: string[],
     signal?: AbortSignal,
   ): Promise<OpenCodeObservation | undefined> {
-    const body = openCodePromptBody(request, messageId, this.agentName, warnings);
+    const body = openCodePromptBody(
+      request,
+      messageId,
+      openCodeAgentName(request, this.agentName),
+      warnings,
+    );
     try {
       await requestJson<void>(
         this.fetch,
@@ -443,6 +495,15 @@ function openCodeWorkerResult(input: {
   abortOutcome: WorkerAbortOutcome;
   errors?: string[];
 }): WorkerResult {
+  const enforcement = {
+    permissionDenialCount: input.permissionRejects.length,
+    abortOutcome: input.abortOutcome,
+    toolEvents: input.tools.map((tool) => ({
+      tool: tool.tool,
+      command: tool.command,
+      outcome: openCodeRuntimeToolOutcome(tool.status),
+    })),
+  };
   return {
     panelRunId: input.request.panelRunId,
     workerId: input.request.workerId,
@@ -465,23 +526,14 @@ function openCodeWorkerResult(input: {
         input.request.session.mode === "fresh" && input.sessionId !== undefined,
       adapterClaimsBlindness: true,
       observedSessionMode: input.request.session.mode,
-      enforcement: {
-        source:
-          input.effectiveRules === undefined
-            ? "harness-declared"
-            : "verified-effective",
-        effectiveRules:
-          input.effectiveRules === undefined
-            ? undefined
-            : { rules: input.effectiveRules },
-        permissionDenialCount: input.permissionRejects.length,
-        abortOutcome: input.abortOutcome,
-        toolEvents: input.tools.map((tool) => ({
-          tool: tool.tool,
-          command: tool.command,
-          outcome: openCodeRuntimeToolOutcome(tool.status),
-        })),
-      },
+      enforcement:
+        input.effectiveRules === undefined
+          ? { source: "harness-declared", ...enforcement }
+          : {
+              source: "verified-effective",
+              effectiveRules: { rules: input.effectiveRules },
+              ...enforcement,
+            },
       containment: deriveContainment(input.request.toolsPolicy),
       notes: openCodeComplianceNotes(input),
     },
@@ -580,6 +632,12 @@ export function buildOpenCodeConfigContent(input: {
           input.environment,
         ),
       },
+      [judgeAgentName]: {
+        description: "Fusion no-tools judge",
+        mode: "primary",
+        tools: openCodeToolsForPolicy({ mode: "none" }),
+        permission: buildOpenCodePermissionMap({ mode: "none" }, undefined),
+      },
     },
     experimental: {
       continue_loop_on_deny: true,
@@ -596,10 +654,10 @@ export function buildOpenCodePermissionMap(
     // OpenCode permission evaluation is last-match-wins, so specific rules
     // must retain insertion order after this deny-by-default rule.
     "*": "deny",
-    read: "allow",
-    grep: "allow",
-    glob: "allow",
-    list: "allow",
+    read: allowedTools.has("read") ? "allow" : "deny",
+    grep: allowedTools.has("grep") ? "allow" : "deny",
+    glob: allowedTools.has("glob") ? "allow" : "deny",
+    list: allowedTools.has("list") ? "allow" : "deny",
     edit: allowedTools.has("edit") ? "allow" : "deny",
     write: "deny",
     patch: "deny",
@@ -621,7 +679,7 @@ async function verifyOpenCodeEffectiveRules(input: {
   agentName: string;
   toolsPolicy: ToolsPolicy | undefined;
   environment: WorkerEnvironment | undefined;
-}): Promise<OpenCodePermissionRule[]> {
+}): Promise<Map<string, OpenCodePermissionRule[]>> {
   const value = await requestJson<unknown>(
     input.fetch,
     input.baseUrl,
@@ -630,41 +688,78 @@ async function verifyOpenCodeEffectiveRules(input: {
     input.environment,
   );
   const agents = openCodeAgentInfos(value);
-  const agent = agents.find((candidate) => candidate.name === input.agentName);
-  const expected = expectedOpenCodePermissionRules(input.toolsPolicy);
-  const relevantPermissions = new Set(expected.map((rule) => rule.permission));
-  const missing =
-    agent === undefined
-      ? expected
-      : expected.filter(
-          (rule) =>
-            !agent.permission.some(
-              (observed) =>
-                observed.permission === rule.permission &&
-                observed.pattern === rule.pattern &&
-                observed.action === rule.action,
-            ),
-        );
-  if (agent !== undefined && missing.length === 0) {
-    return agent.permission.filter((rule) =>
-      relevantPermissions.has(rule.permission),
+  const policies = new Map<string, ToolsPolicy | undefined>([
+    [input.agentName, input.toolsPolicy],
+    [judgeAgentName, { mode: "none" }],
+  ]);
+  const expected = [...policies].map(([agentName, toolsPolicy]) => ({
+    agent: agentName,
+    decisions: openCodeProbeDecisions(
+      expectedOpenCodePermissionRules(toolsPolicy),
+      toolsPolicy,
+    ),
+  }));
+  const observed = [...policies].map(([agentName, toolsPolicy]) => {
+    const agent = agents.find((candidate) => candidate.name === agentName);
+    return agent === undefined
+      ? { agent: agentName, availableAgents: agents.map(({ name }) => name) }
+      : {
+          agent: agentName,
+          decisions: openCodeProbeDecisions(agent.permission, toolsPolicy),
+        };
+  });
+  const mismatches = expected.flatMap((expectedAgent) => {
+    const observedAgent = observed.find(
+      (candidate) => candidate.agent === expectedAgent.agent,
+    );
+    if (observedAgent?.decisions === undefined) {
+      return expectedAgent.decisions.map((expectedDecision) => ({
+        agent: expectedAgent.agent,
+        probe: {
+          permission: expectedDecision.permission,
+          pattern: expectedDecision.pattern,
+        },
+        expected: expectedDecision.action,
+        observed: undefined,
+      }));
+    }
+    const observedDecisions = observedAgent.decisions;
+    return expectedAgent.decisions.flatMap((expectedDecision) => {
+      const observedDecision = observedDecisions.find(
+        (candidate) =>
+          candidate.permission === expectedDecision.permission &&
+          candidate.pattern === expectedDecision.pattern,
+      );
+      return observedDecision?.action === expectedDecision.action
+        ? []
+        : [
+            {
+              agent: expectedAgent.agent,
+              probe: {
+                permission: expectedDecision.permission,
+                pattern: expectedDecision.pattern,
+              },
+              expected: expectedDecision.action,
+              observed: observedDecision?.action,
+            },
+          ];
+    });
+  });
+  if (mismatches.length === 0) {
+    return new Map(
+      [...policies.keys()].map((agentName) => [
+        agentName,
+        agents.find((candidate) => candidate.name === agentName)!.permission,
+      ]),
     );
   }
 
   throw new OpenCodeEffectiveRulesError(
     `OpenCode effective permission verification failed: ${JSON.stringify({
       code: "OPENCODE_EFFECTIVE_RULES_MISMATCH",
-      agent: input.agentName,
       expected,
-      observed:
-        agent === undefined
-          ? { availableAgents: agents.map((candidate) => candidate.name) }
-          : {
-              rules: agent.permission.filter((rule) =>
-                relevantPermissions.has(rule.permission),
-              ),
-            },
-      missing,
+      observed,
+      mismatches,
     })}`,
   );
 }
@@ -673,30 +768,76 @@ function expectedOpenCodePermissionRules(
   toolsPolicy: ToolsPolicy | undefined,
 ): OpenCodePermissionRule[] {
   const permission = buildOpenCodePermissionMap(toolsPolicy, undefined);
-  const expected: OpenCodePermissionRule[] = [
-    { permission: "*", pattern: "*", action: "deny" },
-    { permission: "bash", pattern: "*", action: "deny" },
-    { permission: "read", pattern: "*", action: "allow" },
-    { permission: "grep", pattern: "*", action: "allow" },
-    { permission: "glob", pattern: "*", action: "allow" },
-    {
-      permission: "webfetch",
-      pattern: "*",
-      action: permission.webfetch as PermissionDecision,
-    },
-    {
-      permission: "websearch",
-      pattern: "*",
-      action: permission.websearch as PermissionDecision,
-    },
+  return Object.entries(permission).flatMap(([permissionId, decision]) =>
+    typeof decision === "string"
+      ? [{ permission: permissionId, pattern: "*", action: decision }]
+      : Object.entries(decision).map(([pattern, action]) => ({
+          permission: permissionId,
+          pattern,
+          action,
+        })),
+  );
+}
+
+function openCodeProbeDecisions(
+  rules: OpenCodePermissionRule[],
+  toolsPolicy: ToolsPolicy | undefined,
+): Array<OpenCodePermissionRule> {
+  const bashCommands = [
+    "git status",
+    "git status --short",
+    "git commit -m x",
+    "pip install x",
+    "bun run x",
+    ...(toolsPolicy?.readOnlyBashCommands ?? []).flatMap((command) => [
+      command,
+      `${command} x`,
+    ]),
   ];
-  for (const command of toolsPolicy?.readOnlyBashCommands ?? []) {
-    expected.push(
-      { permission: "bash", pattern: command, action: "allow" },
-      { permission: "bash", pattern: `${command} *`, action: "allow" },
-    );
+  const probes = [
+    ...[...new Set(bashCommands)].map((pattern) => ({
+      permission: "bash",
+      pattern,
+    })),
+    ...[
+      "edit",
+      "write",
+      "read",
+      "grep",
+      "glob",
+      "webfetch",
+      "websearch",
+      "skill",
+      "mcp_some_tool",
+    ].map((permission) => ({ permission, pattern: "*" })),
+  ];
+  return probes.map((probe) => ({
+    ...probe,
+    action: openCodeEffectiveDecision(rules, probe.permission, probe.pattern),
+  }));
+}
+
+function openCodeEffectiveDecision(
+  rules: OpenCodePermissionRule[],
+  permission: string,
+  pattern: string,
+): PermissionDecision {
+  return rules.findLast(
+    (rule) =>
+      openCodeGlobMatches(rule.permission, permission) &&
+      openCodeGlobMatches(rule.pattern, pattern),
+  )?.action ?? "ask";
+}
+
+function openCodeGlobMatches(glob: string, value: string): boolean {
+  if (glob.endsWith(" *") && value === glob.slice(0, -2)) {
+    return true;
   }
-  return expected;
+  const pattern = glob
+    .split("*")
+    .map((part) => part.replace(/[\\^$+?.()|[\]{}]/gu, "\\$&"))
+    .join(".*");
+  return new RegExp(`^${pattern}$`, "u").test(value);
 }
 
 function openCodeAgentInfos(value: unknown): OpenCodeAgentInfo[] {

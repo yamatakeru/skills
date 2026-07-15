@@ -2,7 +2,10 @@ import type { ContainmentLevel, ToolsPolicy } from "./types";
 
 export function deriveContainment(
   toolsPolicy: ToolsPolicy | undefined,
-): ContainmentLevel {
+): ContainmentLevel | undefined {
+  if (toolsPolicy?.mode === "full") {
+    return undefined;
+  }
   if (toolsPolicy?.mode === "none") {
     return "no-shell";
   }

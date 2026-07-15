@@ -47,7 +47,10 @@ configuration and dilute the tier signal.
 
 A workspace watchdog snapshots `git status --porcelain` and `git for-each-ref`
 before and after the run, including remote-tracking refs so a push that updates
-them can be detected. `.fusion-runs/` is excluded. A detected mutation caps the
+them can be detected. A `git push` to a configured, named remote updates the
+local remote-tracking ref and is therefore detected; a push to a raw URL does
+not update a named remote-tracking ref and is not reflected by this check.
+`.fusion-runs/` is excluded. A detected mutation caps the
 panel tier at `degraded` and is disclosed prominently in neutral, unattributed
 language because worker activity cannot be distinguished from concurrent user,
 IDE, or other-process edits. Only corroborating worker-side tool evidence makes

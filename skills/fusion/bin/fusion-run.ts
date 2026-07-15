@@ -891,14 +891,7 @@ export function renderMarkdownReport(
   const containments = result.workerResults.map((worker) =>
     `${worker.workerId}=${worker.complianceEvidence?.containment ?? "not-recorded"}`
   );
-  if (
-    result.workerResults.some(
-      (worker) =>
-        worker.complianceEvidence?.containment === "allowlist-enforced",
-    )
-  ) {
-    lines.push(`- Containment: ${containments.join(", ")}`);
-  }
+  lines.push(`- Containment: ${containments.join(", ") || "none"}`);
   const judgeCompliance = result.complianceSummary.judgeCompliance;
   if (judgeCompliance !== undefined) {
     lines.push(`- ${renderJudgeStatusLine(result)}`);

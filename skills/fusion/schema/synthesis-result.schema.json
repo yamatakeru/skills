@@ -87,13 +87,6 @@
       ],
       "type": "object"
     },
-    "EnforcementSource": {
-      "enum": [
-        "verified-effective",
-        "harness-declared"
-      ],
-      "type": "string"
-    },
     "HarnessDescriptor": {
       "additionalProperties": false,
       "properties": {
@@ -807,41 +800,85 @@
       "type": "object"
     },
     "WorkerEnforcementEvidence": {
-      "additionalProperties": false,
-      "properties": {
-        "abortOutcome": {
-          "$ref": "#/definitions/WorkerAbortOutcome"
-        },
-        "effectiveRules": {
-          "additionalProperties": {},
-          "description": "Effective harness rules observed independently of the request.",
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "abortOutcome": {
+              "$ref": "#/definitions/WorkerAbortOutcome"
+            },
+            "effectiveRules": {
+              "additionalProperties": {},
+              "description": "Effective harness rules observed independently of the request.",
+              "type": "object"
+            },
+            "permissionDenialCount": {
+              "description": "Permission denials demonstrate that enforcement operated as intended.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "const": "verified-effective",
+              "type": "string"
+            },
+            "toolEvents": {
+              "items": {
+                "$ref": "#/definitions/RuntimeToolEvent"
+              },
+              "type": "array"
+            },
+            "violationEvidence": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "effectiveRules",
+            "source"
+          ],
           "type": "object"
         },
-        "permissionDenialCount": {
-          "description": "Permission denials demonstrate that enforcement operated as intended.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "source": {
-          "$ref": "#/definitions/EnforcementSource"
-        },
-        "toolEvents": {
-          "items": {
-            "$ref": "#/definitions/RuntimeToolEvent"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "abortOutcome": {
+              "$ref": "#/definitions/WorkerAbortOutcome"
+            },
+            "effectiveRules": {
+              "additionalProperties": {},
+              "description": "Effective harness rules observed independently of the request.",
+              "type": "object"
+            },
+            "permissionDenialCount": {
+              "description": "Permission denials demonstrate that enforcement operated as intended.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "const": "harness-declared",
+              "type": "string"
+            },
+            "toolEvents": {
+              "items": {
+                "$ref": "#/definitions/RuntimeToolEvent"
+              },
+              "type": "array"
+            },
+            "violationEvidence": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
           },
-          "type": "array"
-        },
-        "violationEvidence": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+          "required": [
+            "source"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "source"
-      ],
-      "type": "object"
+      ]
     },
     "WorkerEnvironment": {
       "additionalProperties": false,

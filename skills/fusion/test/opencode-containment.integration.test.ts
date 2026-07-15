@@ -86,6 +86,28 @@ describe("Fusion OpenCode containment integration", () => {
           pattern: "*",
           action: "allow",
         });
+        const judge = agents.find(
+          (candidate) => candidate.name === "fusion-judge",
+        );
+        expect(judge).toBeDefined();
+        for (const permission of [
+          "read",
+          "grep",
+          "glob",
+          "webfetch",
+          "websearch",
+        ]) {
+          expect(
+            effectiveDecision(judge?.permission ?? [], permission, "*"),
+          ).toBe("deny");
+        }
+        expect(
+          effectiveDecision(
+            judge?.permission ?? [],
+            "bash",
+            "git status",
+          ),
+        ).toBe("deny");
 
         // noReply applies prompt fields and persists the user message before
         // returning, but exits before OpenCode enters the model loop.
@@ -126,6 +148,29 @@ interface AgentResponse {
     pattern: string;
     action: "ask" | "allow" | "deny";
   }>;
+}
+
+function effectiveDecision(
+  rules: AgentResponse["permission"],
+  permission: string,
+  pattern: string,
+): "ask" | "allow" | "deny" | undefined {
+  return rules.findLast(
+    (rule) =>
+      globMatches(rule.permission, permission) &&
+      globMatches(rule.pattern, pattern),
+  )?.action;
+}
+
+function globMatches(glob: string, value: string): boolean {
+  if (glob.endsWith(" *") && value === glob.slice(0, -2)) {
+    return true;
+  }
+  const pattern = glob
+    .split("*")
+    .map((part) => part.replace(/[\\^$+?.()|[\]{}]/gu, "\\$&"))
+    .join(".*");
+  return new RegExp(`^${pattern}$`, "u").test(value);
 }
 
 async function availablePort(): Promise<number> {
@@ -191,12 +236,19 @@ async function stopChild(child: ChildProcess): Promise<void> {
     return;
   }
   child.kill("SIGTERM");
-  await Promise.race([
-    new Promise<void>((resolve) => child.once("exit", () => resolve())),
+  const exited = new Promise<void>((resolve) =>
+    child.once("exit", () => resolve())
+  );
+  const terminated = await Promise.race([
+    exited.then(() => true),
     Bun.sleep(1_000).then(() => {
       if (child.exitCode === null) {
         child.kill("SIGKILL");
       }
+      return false;
     }),
   ]);
+  if (!terminated) {
+    await exited;
+  }
 }

@@ -112,6 +112,36 @@ describe("runtime compliance evidence", () => {
     );
   });
 
+  test("keeps unrelated successful mutation commands degraded", async () => {
+    const request = panelRequest();
+    const workerRequests = buildWorkerRequests(request);
+    const baseline = await runPanel(request, {
+      runner: okRunner(),
+      synthesizer: new DeterministicSynthesizer(),
+      workerRequests,
+    });
+    baseline.workerResults[0]!.complianceEvidence!.enforcement!.toolEvents = [
+      {
+        tool: "bash",
+        command: "rm /tmp/other",
+        outcome: "succeeded",
+      },
+    ];
+
+    const summary = evaluateCompliance({
+      panelRequest: request,
+      workerRequests,
+      workerResults: baseline.workerResults,
+      events: baseline.events ?? [],
+      workspaceWatchdog: mutatedWatchdog,
+    });
+
+    expect(summary.tier).toBe("degraded");
+    expect(summary.workerCompliance[0]?.compliance.tier).not.toBe(
+      "non-compliant",
+    );
+  });
+
   test("does not grant full compliance when enforcement is missing", async () => {
     const result = await runPanel(panelRequest(), {
       runner: {
@@ -166,5 +196,9 @@ describe("containment derivation", () => {
     expect(
       deriveContainment({ mode: "read-only", allow: ["Read", "Bash"] }),
     ).toBe("allowlist-enforced");
+  });
+
+  test("makes no containment claim for full tool mode", () => {
+    expect(deriveContainment({ mode: "full" })).toBeUndefined();
   });
 });
