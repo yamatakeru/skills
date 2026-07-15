@@ -6,7 +6,7 @@ import {
   OpenCodeHeadlessCliAdapter,
   type CommandExecution,
 } from "../lib/protocol";
-import { workerRequest } from "./fixtures";
+import { withFusionPanelDepth, workerRequest } from "./fixtures";
 
 function claudeToolFlagValues(args: string[]): string[] {
   return args
@@ -20,6 +20,36 @@ function claudeToolFlagValues(args: string[]): string[] {
 }
 
 describe("Fusion headless CLI adapters", () => {
+  for (const [label, parentDepth, expectedDepth] of [
+    ["defaults an absent panel depth to 0", undefined, "1"],
+    ["increments an inherited panel depth", "1", "2"],
+  ] as const) {
+    test(`${label} for spawned CLI workers`, async () => {
+      await withFusionPanelDepth(parentDepth, async () => {
+        const executions: CommandExecution[] = [];
+        const executor = async (execution: CommandExecution) => {
+          executions.push(execution);
+          return {
+            exitCode: 0,
+            stdout: '{"message":"ok","result":"ok"}\n',
+            stderr: "",
+            durationMs: 1,
+          };
+        };
+        const openCode = new OpenCodeHeadlessCliAdapter({ executor });
+        const claudeCode = new ClaudeCodeHeadlessCliAdapter({ executor });
+
+        await openCode.runWorker(workerRequest());
+        await claudeCode.runWorker(workerRequest());
+
+        expect(executions).toHaveLength(2);
+        for (const execution of executions) {
+          expect(execution.env?.FUSION_PANEL_DEPTH).toBe(expectedDepth);
+        }
+      });
+    });
+  }
+
   test("builds OpenCode headless run arguments", () => {
     const request = workerRequest();
     const args = buildOpenCodeArgs(request);

@@ -6,6 +6,7 @@ import {
   CursorSdkAdapter,
   HarnessBackedJudgeSynthesizer,
   OpenCodeSdkAdapter,
+  assertTopLevelFusionInvocation,
   errorMessage,
   resolveModelEntry,
   type HarnessKind,
@@ -47,6 +48,7 @@ export interface JudgeReplayReport {
 async function main(): Promise<number> {
   let runtime: ReplayRuntime | undefined;
   try {
+    assertTopLevelFusionInvocation();
     assertBunRuntime();
     const options = parseJudgeReplayArgs(Bun.argv.slice(2));
     const cwd = process.cwd();

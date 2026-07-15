@@ -9,9 +9,37 @@ import {
   cursorHookScriptContent,
   type CommandExecution,
 } from "../lib/protocol";
-import { workerRequest } from "./fixtures";
+import { withFusionPanelDepth, workerRequest } from "./fixtures";
 
 describe("Fusion Cursor SDK adapter", () => {
+  for (const [label, parentDepth, expectedDepth] of [
+    ["defaults an absent panel depth to 0", undefined, "1"],
+    ["increments an inherited panel depth", "1", "2"],
+  ] as const) {
+    test(`${label} for spawned workers`, async () => {
+      await withFusionPanelDepth(parentDepth, async () => {
+        let execution: CommandExecution | undefined;
+        const adapter = new CursorSdkAdapter({
+          executor: async (input) => {
+            execution = input;
+            return {
+              exitCode: 0,
+              stdout: streamJson([
+                { type: "result", is_error: false, result: "ok" },
+              ]),
+              stderr: "",
+              durationMs: 1,
+            };
+          },
+        });
+
+        await adapter.runWorker(workerRequest());
+
+        expect(execution?.env?.FUSION_PANEL_DEPTH).toBe(expectedDepth);
+      });
+    });
+  }
+
   test("spawns cursor-agent with config injection and parses stream evidence", async () => {
     const executions: CommandExecution[] = [];
     const request = {

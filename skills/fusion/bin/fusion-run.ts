@@ -25,6 +25,7 @@ import {
   runPanel,
   isImplementedJudgeHarness,
   isNonJudgeSynthesizerStrategy,
+  assertTopLevelFusionInvocation,
   type DryRunReport,
   type HarnessKind,
   type PanelResult,
@@ -82,6 +83,7 @@ export class HelpRequested extends Error {}
 
 async function main(): Promise<number> {
   try {
+    assertTopLevelFusionInvocation();
     assertBunRuntime();
     const options = parseArgs(Bun.argv.slice(2));
     const prepared = await preparePanelRequest(options, { cwd: process.cwd() });

@@ -5,6 +5,7 @@ import {
   type CommandExecutor,
   type CommandResult,
 } from "./headless-cli-adapters";
+import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
 import type {
   WorkerRequest,
   WorkerResult,
@@ -47,6 +48,7 @@ export class ClaudeCodeSdkAdapter implements WorkerRunner {
       cwd:
         request.environment?.workingDirectory ??
         request.environment?.workspaceRoot,
+      env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
       timeoutMs: request.budget?.timeoutMs,
     });
     return sdkResultToWorkerResult(request, commandResult);
