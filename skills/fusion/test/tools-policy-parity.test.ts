@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  assertNoStrictToolPolicyGap,
   buildClaudeCodeArgs,
   buildCursorConfigContent,
   buildOpenCodePermissionMap,
   cursorHookDeniesAllTools,
   cursorHookDeniedToolNames,
   cursorShellAllowlist,
+  toolPolicyWarnings,
   type ToolsPolicy,
 } from "../lib/protocol";
 import { workerRequest } from "./fixtures";
@@ -101,18 +103,23 @@ describe("cross-adapter ToolsPolicy parity", () => {
     },
   );
 
-  test("unknown and hook-only Cursor names remain disclosed without strict false positives", () => {
-    for (const parity of ["same-by-default", "strict-same-required"] as const) {
-      const policy: ToolsPolicy = {
-        mode: "full",
-        deny: ["WebFetch", "FutureTool"],
-        parity,
-      };
-      expect(() => buildCursorConfigContent("worker", policy)).not.toThrow();
-      for (const effective of Object.values(effectiveCapabilities(policy))) {
-        expect(effective.webfetch).toBe(false);
-      }
+  test("hook-only and unknown names are disclosed non-strictly and unknown names fail strict parity", () => {
+    const policy: ToolsPolicy = {
+      mode: "full",
+      deny: ["WebFetch", "FutureTool"],
+      parity: "same-by-default",
+    };
+    expect(() => buildCursorConfigContent("worker", policy)).not.toThrow();
+    expect(toolPolicyWarnings(policy).join("\n")).toContain("unknown tool names");
+    for (const effective of Object.values(effectiveCapabilities(policy))) {
+      expect(effective.webfetch).toBe(false);
     }
+    expect(() =>
+      assertNoStrictToolPolicyGap(
+        { ...policy, parity: "strict-same-required" },
+        "cross-adapter",
+      ),
+    ).toThrow("TOOLS_POLICY_STRICT_PARITY_GAP");
   });
 
   test("judge no-tools policy has no strict parity gap", () => {

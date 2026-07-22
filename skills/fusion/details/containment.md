@@ -106,6 +106,8 @@ the command allowlist, and discloses that any requested read-only commands were
 discarded. Unknown or adapter-unmappable names are never silently ignored:
 they are warned and recorded in compliance evidence, while strict parity fails
 only if the capability is still effective after mode and profile floors.
+Unknown names use this strict check uniformly across adapters, without treating
+OpenCode's catch-all denial as a verifiability exception.
 
 Cursor adds only verified config grammar (`Shell(**)`, `Read(**)`, and
 `Write(**)`) to its immutable profile floor. It does not map `Grep`, `Glob`, or

@@ -47,7 +47,17 @@ describe("ToolsPolicy deny-wins helpers", () => {
     expect(toolPolicyWarnings(policy).join("\n")).toContain("unknown tool names");
   });
 
-  test("strict parity fails only for an effective unsupported pattern gap", () => {
+  test("strict parity rejects effective unknown and command-pattern gaps", () => {
+    expect(() =>
+      assertNoStrictToolPolicyGap(
+        {
+          mode: "full",
+          deny: ["FutureTool"],
+          parity: "strict-same-required",
+        },
+        "test",
+      ),
+    ).toThrow("TOOLS_POLICY_STRICT_PARITY_GAP");
     expect(() =>
       assertNoStrictToolPolicyGap(
         {
@@ -58,6 +68,9 @@ describe("ToolsPolicy deny-wins helpers", () => {
         "test",
       ),
     ).toThrow("TOOLS_POLICY_STRICT_PARITY_GAP");
+  });
+
+  test("strict parity ignores gaps disabled by mode or a harness floor", () => {
     expect(() =>
       assertNoStrictToolPolicyGap(
         {
@@ -68,17 +81,25 @@ describe("ToolsPolicy deny-wins helpers", () => {
         "test",
       ),
     ).not.toThrow();
-    expect(() =>
-      assertNoStrictToolPolicyGap(
-        {
-          mode: "full",
-          deny: ["Bash(rm *)"],
-          parity: "strict-same-required",
-        },
-        "test",
-        (tool) => tool === "bash",
-      ),
-    ).not.toThrow();
+    for (const [deny, floor] of [
+      ["FutureTool", "futuretool"],
+      ["Bash(rm *)", "bash"],
+    ] as const) {
+      expect(() =>
+        assertNoStrictToolPolicyGap(
+          {
+            mode: "full",
+            deny: [deny],
+            parity: "strict-same-required",
+          },
+          "test",
+          (tool) => tool === floor,
+        ),
+      ).not.toThrow();
+    }
+  });
+
+  test("strict parity accepts a pattern when the whole tool is denied", () => {
     expect(() =>
       assertNoStrictToolPolicyGap(
         {
@@ -90,4 +111,19 @@ describe("ToolsPolicy deny-wins helpers", () => {
       ),
     ).not.toThrow();
   });
+
+  test.each(["same-by-default", undefined] as const)(
+    "non-strict parity %p warns without throwing",
+    (parity) => {
+      const policy = {
+        mode: "full" as const,
+        deny: ["FutureTool", "Bash(rm *)"],
+        ...(parity === undefined ? {} : { parity }),
+      };
+      expect(() => assertNoStrictToolPolicyGap(policy, "test")).not.toThrow();
+      const warnings = toolPolicyWarnings(policy).join("\n");
+      expect(warnings).toContain("command-pattern deny entries");
+      expect(warnings).toContain("unknown tool names");
+    },
+  );
 });

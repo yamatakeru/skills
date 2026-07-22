@@ -105,14 +105,21 @@ export function assertNoStrictToolPolicyGap(
   if (policy?.parity !== "strict-same-required") {
     return;
   }
-  const gaps = unsupportedCommandPatternDenies(policy).filter((deny) => {
-    const tool = normalizeToolName(deny.slice(0, deny.search(/[()]/u)));
-    return (
-      !isToolDenied(policy, tool) &&
-      !isDeniedByHarnessFloor(tool) &&
-      isBaseToolEnabled(policy, tool)
-    );
-  });
+  const unknownGaps = unknownDeniedToolNames(policy).filter(
+    (name) =>
+      !isDeniedByHarnessFloor(name) && isBaseToolEnabled(policy, name),
+  );
+  const commandPatternGaps = unsupportedCommandPatternDenies(policy).filter(
+    (deny) => {
+      const tool = normalizeToolName(deny.slice(0, deny.search(/[()]/u)));
+      return (
+        !isToolDenied(policy, tool) &&
+        !isDeniedByHarnessFloor(tool) &&
+        isBaseToolEnabled(policy, tool)
+      );
+    },
+  );
+  const gaps = [...unknownGaps, ...commandPatternGaps];
   if (gaps.length > 0) {
     throw new ToolsPolicyParityError(harness, gaps);
   }
@@ -125,7 +132,7 @@ export class ToolsPolicyParityError extends Error {
         code: "TOOLS_POLICY_STRICT_PARITY_GAP",
         harness,
         deny,
-        limitation: "command-pattern deny is unsupported",
+        limitation: "deny entry cannot be verifiably enforced",
       })}`,
     );
     this.name = "ToolsPolicyParityError";

@@ -400,7 +400,7 @@ describe("Fusion Cursor SDK adapter", () => {
     ).toEqual(["*"]);
   });
 
-  test("discloses hook-only and unknown deny names without a strict false positive", async () => {
+  test("discloses hook-only and unknown deny names under non-strict parity", async () => {
     let deniedNames: string[] = [];
     const adapter = new CursorSdkAdapter({
       executor: async (execution) => {
@@ -422,7 +422,7 @@ describe("Fusion Cursor SDK adapter", () => {
       toolsPolicy: {
         mode: "full",
         deny: ["WebFetch", "FutureTool"],
-        parity: "strict-same-required",
+        parity: "same-by-default",
       },
     });
 

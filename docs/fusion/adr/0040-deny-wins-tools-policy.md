@@ -60,6 +60,9 @@ only when the requested capability would otherwise remain effective. A
 capability already denied by `mode: "none"`, an immutable adapter floor, or
 another enforcement layer has no effective gap and does not fail. This gap
 criterion keeps the judge no-tools policy valid.
+Unknown names are treated uniformly as unverifiable gaps across all adapters
+when the base policy enables them and no harness floor denies them; OpenCode's
+catch-all denial is not an adapter-specific exception to strict parity.
 
 Command-pattern deny entries such as `Bash(rm *)` remain unsupported. They are
 disclosed, are not interpreted as tool-name denials, and cause strict parity to
