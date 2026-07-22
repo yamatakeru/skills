@@ -15,13 +15,16 @@ const integrationPort =
 
 describe("Fusion OpenCode containment integration", () => {
   test.skipIf(opencode === null || integrationPort === null)(
-    "injects the expected effective agent rules without calling a model",
+    "injects deny-wins effective agent rules without calling a model",
     async () => {
       const workspace = await mkdtemp(join(tmpdir(), "fusion-opencode-rules-"));
       const port = integrationPort as number;
       const baseUrl = `http://127.0.0.1:${port}`;
       const config = buildOpenCodeConfigContent({
-        toolsPolicy: defaultPolicies.tools,
+        toolsPolicy: {
+          ...defaultPolicies.tools,
+          deny: [...(defaultPolicies.tools.deny ?? []), "Bash", "WebFetch"],
+        },
         environment: { workspaceRoot: workspace },
       });
       const child = spawn(
@@ -57,18 +60,6 @@ describe("Fusion OpenCode containment integration", () => {
           pattern: "*",
           action: "deny",
         });
-        for (const command of defaultPolicies.tools.readOnlyBashCommands ?? []) {
-          expect(rules).toContainEqual({
-            permission: "bash",
-            pattern: command,
-            action: "allow",
-          });
-          expect(rules).toContainEqual({
-            permission: "bash",
-            pattern: `${command} *`,
-            action: "allow",
-          });
-        }
         for (const permission of ["read", "grep", "glob"] as const) {
           expect(rules).toContainEqual({
             permission,
@@ -79,7 +70,7 @@ describe("Fusion OpenCode containment integration", () => {
         expect(rules).toContainEqual({
           permission: "webfetch",
           pattern: "*",
-          action: "allow",
+          action: "deny",
         });
         expect(rules).toContainEqual({
           permission: "websearch",
@@ -90,14 +81,14 @@ describe("Fusion OpenCode containment integration", () => {
           "read",
           "grep",
           "glob",
-          "webfetch",
           "websearch",
         ]) {
           expect(effectiveDecision(rules, permission, "*")).toBe("allow");
         }
         for (const command of ["git status", "git status --short"]) {
-          expect(effectiveDecision(rules, "bash", command)).toBe("allow");
+          expect(effectiveDecision(rules, "bash", command)).toBe("deny");
         }
+        expect(effectiveDecision(rules, "webfetch", "*")).toBe("deny");
         for (const command of [
           "git commit -m x",
           "pip install x",

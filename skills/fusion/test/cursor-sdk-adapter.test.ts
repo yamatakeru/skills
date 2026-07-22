@@ -6,6 +6,7 @@ import {
   CursorSdkAdapter,
   buildCursorConfigContent,
   buildCursorSdkArgs,
+  cursorShellAllowlist,
   cursorHookScriptContent,
   type CommandExecution,
 } from "../lib/protocol";
@@ -95,6 +96,10 @@ describe("Fusion Cursor SDK adapter", () => {
         expect(
           JSON.parse(String(execution.env?.FUSION_CURSOR_SHELL_ALLOWLIST)),
         ).toEqual(request.toolsPolicy?.readOnlyBashCommands);
+        expect(
+          JSON.parse(String(execution.env?.FUSION_CURSOR_DENIED_TOOL_NAMES)),
+        ).toEqual(["write", "edit", "task"]);
+        expect(execution.env?.FUSION_CURSOR_DENY_ALL_TOOLS).toBe("0");
         return {
           exitCode: 0,
           stdout: streamJson([
@@ -351,6 +356,112 @@ describe("Fusion Cursor SDK adapter", () => {
     ]);
   });
 
+  test("unions policy deny mappings with immutable profile floors", () => {
+    expect(
+      buildCursorConfigContent("worker", {
+        mode: "full",
+        deny: ["Bash", "Read", "MultiEdit", "shell"],
+      }).permissions.deny,
+    ).toEqual([
+      "Write(**)",
+      "Delete(**)",
+      "Mcp(*)",
+      "Shell(**)",
+      "Read(**)",
+    ]);
+    expect(
+      buildCursorConfigContent("judge", { mode: "full", deny: [] })
+        .permissions.deny,
+    ).toEqual([
+      "Shell(**)",
+      "Write(**)",
+      "Delete(**)",
+      "Mcp(*)",
+      "Read(**)",
+    ]);
+  });
+
+  test("empties the shell allowlist when Bash is denied", () => {
+    expect(
+      cursorShellAllowlist({
+        ...workerRequest(),
+        toolsPolicy: {
+          mode: "read-only",
+          deny: ["shell"],
+          readOnlyBashCommands: ["git status"],
+        },
+      }),
+    ).toEqual([]);
+    expect(
+      cursorShellAllowlist({
+        ...workerRequest(),
+        toolsPolicy: { mode: "full" },
+      }),
+    ).toEqual(["*"]);
+  });
+
+  test("discloses hook-only and unknown deny names without a strict false positive", async () => {
+    let deniedNames: string[] = [];
+    const adapter = new CursorSdkAdapter({
+      executor: async (execution) => {
+        deniedNames = JSON.parse(
+          String(execution.env?.FUSION_CURSOR_DENIED_TOOL_NAMES),
+        );
+        return {
+          exitCode: 0,
+          stdout: streamJson([
+            { type: "result", is_error: false, result: "ok" },
+          ]),
+          stderr: "",
+          durationMs: 1,
+        };
+      },
+    });
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      toolsPolicy: {
+        mode: "full",
+        deny: ["WebFetch", "FutureTool"],
+        parity: "strict-same-required",
+      },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(deniedNames).toEqual(["webfetch", "futuretool"]);
+    expect(result.warnings?.join("\n")).toContain(
+      "Cursor config grammar cannot express",
+    );
+    expect(result.warnings?.join("\n")).toContain("unknown tool names");
+    expect(result.complianceEvidence?.notes?.join("\n")).toContain(
+      "Cursor canonical deny names enforced by preToolUse hook",
+    );
+  });
+
+  test("fails a real strict parity gap before spawning Cursor", async () => {
+    let spawned = false;
+    const adapter = new CursorSdkAdapter({
+      executor: async () => {
+        spawned = true;
+        throw new Error("must not spawn");
+      },
+    });
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      toolsPolicy: {
+        mode: "full",
+        deny: ["Bash(rm *)"],
+        parity: "strict-same-required",
+      },
+    });
+
+    expect(spawned).toBe(false);
+    expect(result.status).toBe("error");
+    expect(result.errors?.join("\n")).toContain(
+      "TOOLS_POLICY_STRICT_PARITY_GAP",
+    );
+    expect(result.warnings?.join("\n")).toContain("parity limitation");
+  });
+
   test("records error tool results (live-verified Read(**) denial shape)", async () => {
     const adapter = new CursorSdkAdapter({
       executor: async () => ({
@@ -592,6 +703,8 @@ describe("Fusion Cursor SDK adapter", () => {
         "git log",
       ]),
       FUSION_CURSOR_READ_ROOTS: JSON.stringify([scratch]),
+      FUSION_CURSOR_DENIED_TOOL_NAMES: JSON.stringify(["webfetch", "grep"]),
+      FUSION_CURSOR_DENY_ALL_TOOLS: "0",
     };
     const runHook = (payload: unknown): { permission?: string } => {
       const proc = Bun.spawnSync(["bun", scriptPath], {
@@ -635,12 +748,33 @@ describe("Fusion Cursor SDK adapter", () => {
         expect(shell(command).permission).toBe("allow");
       }
 
+      env.FUSION_CURSOR_SHELL_ALLOWLIST = JSON.stringify(["*"]);
+      expect(shell("rm -rf / && echo full").permission).toBe("allow");
+      env.FUSION_CURSOR_SHELL_ALLOWLIST = JSON.stringify([
+        "git status",
+        "ls",
+        "cat",
+        "rg",
+        "git log",
+      ]);
+
       expect(
         runHook({ hook_event_name: "preToolUse", tool_name: "Task" }).permission,
       ).toBe("deny");
       expect(
         runHook({ hook_event_name: "preToolUse", tool_name: "Read" }).permission,
       ).toBe("allow");
+      expect(
+        runHook({ hook_event_name: "preToolUse", tool_name: "WebFetch" }).permission,
+      ).toBe("deny");
+      expect(
+        runHook({ hook_event_name: "preToolUse", tool_name: "GREP" }).permission,
+      ).toBe("deny");
+      env.FUSION_CURSOR_DENY_ALL_TOOLS = "1";
+      expect(
+        runHook({ hook_event_name: "preToolUse", tool_name: "Read" }).permission,
+      ).toBe("deny");
+      env.FUSION_CURSOR_DENY_ALL_TOOLS = "0";
 
       const read = (filePath: string) =>
         runHook({ hook_event_name: "beforeReadFile", file_path: filePath });

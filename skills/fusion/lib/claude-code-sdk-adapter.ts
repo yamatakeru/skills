@@ -6,6 +6,7 @@ import {
   type CommandResult,
 } from "./headless-cli-adapters";
 import { deriveContainment } from "./containment";
+import { toolPolicyWarnings } from "./tool-policy";
 import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
 import type {
   WorkerRequest,
@@ -192,7 +193,10 @@ function claudeSdkWarnings(
   request: WorkerRequest,
   permissionDenials: string[],
 ): string[] {
-  const warnings = unmappedPreferenceWarnings("claude-code", request);
+  const warnings = [
+    ...unmappedPreferenceWarnings("claude-code", request),
+    ...toolPolicyWarnings(request.toolsPolicy),
+  ];
   if (permissionDenials.length > 0) {
     warnings.push(
       `Claude Code reported ${permissionDenials.length} permission denial${permissionDenials.length === 1 ? "" : "s"}.`,

@@ -539,6 +539,7 @@ interface ToolsPolicy {
   allow?: string[];
   deny?: string[];
   ask?: string[];
+  readOnlyBashCommands?: string[];
   headlessAskBehavior?: "deny" | "error" | "prompt-if-policy-allows";
   parity?: "same-by-default" | "strict-same-required" | "harness-default";
 }
@@ -716,6 +717,11 @@ const minimumRequiredEventsForFullCompliance = [
   "compliance.evaluated",
 ] as const;
 ```
+
+The effective tool set is the mode-based set (including explicit `allow` and
+`readOnlyBashCommands`) minus canonicalized `deny` entries. Deny always wins;
+denying `bash` or `shell` removes shell entirely and discards scoped Bash
+commands with a warning. Command-pattern deny entries are not supported.
 
 ## Notes
 

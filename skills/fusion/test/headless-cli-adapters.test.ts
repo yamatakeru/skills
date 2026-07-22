@@ -121,6 +121,22 @@ describe("Fusion headless CLI adapters", () => {
     expect(args).toContain("--allowedTools=Bash(ls:*)");
   });
 
+  test("makes Claude Bash deny win over tool and command allows", () => {
+    const args = buildClaudeCodeArgs({
+      ...workerRequest(),
+      toolsPolicy: {
+        mode: "read-only",
+        allow: ["Read", "Bash"],
+        deny: ["shell"],
+        readOnlyBashCommands: ["git status"],
+      },
+    });
+
+    expect(args).toContain("--disallowedTools=Bash");
+    expect(args.find((arg) => arg.startsWith("--tools="))).not.toContain("Bash");
+    expect(args.find((arg) => arg.startsWith("--allowedTools="))).not.toContain("Bash(");
+  });
+
   test("separates Claude Code read roots from the positional prompt", () => {
     const request = {
       ...workerRequest(),
