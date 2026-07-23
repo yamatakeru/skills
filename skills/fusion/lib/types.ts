@@ -76,7 +76,13 @@ export interface DryRunReport {
   panelRunId: string;
   transport: "sdk" | "cli";
   resolvedModels: Array<{
-    slot: "parent" | "flagship" | "budget" | "refill" | "explicit";
+    slot:
+      | "parent"
+      | "strong"
+      | "efficient"
+      | "refill"
+      | "parent-repeat"
+      | "explicit";
     entry: string;
     kind: string;
     harness: HarnessKind;

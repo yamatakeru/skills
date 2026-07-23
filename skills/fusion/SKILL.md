@@ -12,7 +12,7 @@ compatibility: >-
   bundled self-contained TypeScript CLI; no node_modules are required inside the
   skill directory.
 metadata:
-  version: "0.10.0"
+  version: "0.11.0"
   kind: "blind-panel synthesis"
   mode: "blind"
   canonical-runtime: "bun-cli"
@@ -86,14 +86,20 @@ The default panel has three workers. Same-harness panels are allowed. Default
 slots are filled in this priority order:
 
 1. Parent model slot from `--parent-model`.
-2. Current OpenAI flagship through OpenCode via the `openai-flagship` alias.
-3. Cheap-but-capable budget model through OpenCode via the `budget-smart`
-   alias.
+2. Strong generalist slot through the `strong-generalist` alias.
+3. Efficient generalist slot through the `efficient-generalist` alias.
 
 If `--parent-model` is missing, the CLI warns and refills that slot from the
-bundled alias fallback lists. Default duplicate model IDs are deduped and
-refilled so the default panel has distinct models. Repeating a model is allowed
-only through explicit `--models` selection.
+bundled alias fallback lists. Default duplicate model IDs are deduped, then
+refilled from unused strong candidates followed by unused efficient candidates.
+If those distinct candidates are exhausted for an effective panel size of
+three or fewer, remaining seats repeat only the resolved parent model under the
+`parent-repeat` slot and emit degraded warnings. Without a resolved parent, or
+at four or more panelists, insufficiency remains an error. Explicit `--models`
+duplicates remain allowed.
+
+Automatic default candidates are privacy-eligible only; free models are
+available solely through explicit `--models` entries.
 
 ## Model Selection
 
@@ -104,7 +110,9 @@ Model entry routing:
 - `provider/model` routes to OpenCode.
 - Claude aliases `fable`, `opus`, `sonnet`, `haiku`, and `claude-*` IDs route
   to Claude Code.
-- `openai-flagship` and `budget-smart` resolve through the bundled alias table.
+- `strong-generalist`, `efficient-generalist`, `openai-flagship`, and
+  `budget-smart` resolve through the bundled alias table. The latter two are
+  compatibility aliases and are not used by the default composition.
 - `opencode:<entry>` and `claude-code:<entry>` force those harnesses.
 - `cursor:<model-id>` selects Cursor. Cursor is explicit-prefix only: it is
   never selected by aliases, bare model patterns, or default composition.
@@ -115,13 +123,9 @@ no model enumeration command; Claude-backed entries use latest aliases and
 `--fallback-model`, then are validated by the worker attempt. Cursor-backed
 entries are checked against `cursor-agent models`.
 
-Alias table resolutions:
-
-- `openai-flagship`: `openai/gpt-5.5` -> `openai/gpt-5.5-fast` ->
-  `openai/gpt-5.4`
-- `budget-smart`: `opencode/deepseek-v4-flash-free` ->
-  `opencode/mimo-v2.5-free` -> `opencode/north-mini-code-free` ->
-  `opencode/nemotron-3-ultra-free`
+Use `--help` to inspect the complete runtime alias table and ordered candidate
+chains. Use `--dry-run` on the intended invocation to see the candidates that
+actually resolve, their slot names, and any fallback or degraded warnings.
 
 The judge model defaults to the parent model. Use `--judge-model <entry>` to
 override it; judge model entries use the same routing rules as panel model

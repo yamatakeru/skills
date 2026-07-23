@@ -14,23 +14,47 @@ import { claudeModelAliases } from "./worker-requests";
 
 export const DEFAULT_PANEL_SIZE = 3;
 
+const STRONG_GENERALIST_CANDIDATES = [
+  "openai/gpt-5.6-sol",
+  "opencode-go/glm-5.2",
+  "opencode-go/deepseek-v4-pro",
+  "openai/gpt-5.6-terra",
+] as const;
+
+const EFFICIENT_GENERALIST_CANDIDATES = [
+  "opencode-go/deepseek-v4-flash",
+  "opencode-go/mimo-v2.5",
+  "opencode-go/qwen3.7-plus",
+  "opencode-go/minimax-m3",
+  "opencode-go/deepseek-v4-pro",
+  "openai/gpt-5.6-luna",
+] as const;
+
+const OPENAI_FLAGSHIP_CANDIDATES = [
+  "openai/gpt-5.6-sol",
+  "openai/gpt-5.6-terra",
+  "openai/gpt-5.6-luna",
+  "openai/gpt-5.5",
+  "openai/gpt-5.4",
+] as const;
+
 export const modelAliasTable: Record<string, ModelPreference> = {
-  "openai-flagship": {
-    provider: "openai",
-    model: "gpt-5.5",
-    aliases: ["openai-flagship"],
-    fallbacks: ["openai/gpt-5.5-fast", "openai/gpt-5.4"],
-  },
-  "budget-smart": {
-    provider: "opencode",
-    model: "deepseek-v4-flash-free",
-    aliases: ["budget-smart"],
-    fallbacks: [
-      "opencode/mimo-v2.5-free",
-      "opencode/north-mini-code-free",
-      "opencode/nemotron-3-ultra-free",
-    ],
-  },
+  "strong-generalist": aliasPreference(
+    "strong-generalist",
+    STRONG_GENERALIST_CANDIDATES,
+  ),
+  "efficient-generalist": aliasPreference(
+    "efficient-generalist",
+    EFFICIENT_GENERALIST_CANDIDATES,
+  ),
+  "openai-flagship": aliasPreference(
+    "openai-flagship",
+    OPENAI_FLAGSHIP_CANDIDATES,
+  ),
+  "budget-smart": aliasPreference(
+    "budget-smart",
+    EFFICIENT_GENERALIST_CANDIDATES,
+  ),
 };
 
 export interface ResolvePanelCompositionOptions {
@@ -47,7 +71,13 @@ export interface ResolvePanelCompositionOptions {
 }
 
 export interface ResolvedPanelModel {
-  slot: "parent" | "flagship" | "budget" | "refill" | "explicit";
+  slot:
+    | "parent"
+    | "strong"
+    | "efficient"
+    | "refill"
+    | "parent-repeat"
+    | "explicit";
   entry: string;
   kind: string;
   resolvedModelId: string;
@@ -203,8 +233,8 @@ async function resolveDefaultModels(
   } else {
     sources.push(sourceFromEntry("parent", parentModel));
   }
-  sources.push(sourceFromEntry("flagship", "openai-flagship"));
-  sources.push(sourceFromEntry("budget", "budget-smart"));
+  sources.push(sourceFromEntry("strong", "strong-generalist"));
+  sources.push(sourceFromEntry("efficient", "efficient-generalist"));
 
   const used = new Set<string>();
   const resolved: ResolvedPanelModel[] = [];
@@ -230,10 +260,10 @@ async function resolveDefaultModels(
     used.add(model.resolvedModelId);
   }
 
-  const refillCandidates = [
-    ...candidateIdsForAlias("openai-flagship"),
-    ...candidateIdsForAlias("budget-smart"),
-  ];
+  const refillCandidates = unique([
+    ...STRONG_GENERALIST_CANDIDATES,
+    ...EFFICIENT_GENERALIST_CANDIDATES,
+  ]);
   while (resolved.length < panelists) {
     const refill = await tryResolveSource(
       {
@@ -247,8 +277,20 @@ async function resolveDefaultModels(
       cursorModels,
     );
     if (refill === undefined) {
+      const parentSeat = resolved.find((model) => model.slot === "parent");
+      if (panelists <= DEFAULT_PANEL_SIZE && parentSeat !== undefined) {
+        resolved.push({ ...parentSeat, slot: "parent-repeat" });
+        warnings.push(
+          `Default panel composition is degraded: parent-repeat duplicated resolved parent model ${parentSeat.resolvedModelId} because distinct candidates were exhausted.`,
+        );
+        continue;
+      }
+      const remediation =
+        parentSeat === undefined
+          ? " Pass --parent-model with an available model to enable degraded parent-repeat filling for panel sizes up to 3."
+          : "";
       throw new Error(
-        `Unable to resolve ${panelists} distinct Fusion models from the default fallback lists.`,
+        `Unable to resolve ${panelists} distinct Fusion models from the default fallback lists.${remediation}`,
       );
     }
     resolved.push(refill);
@@ -368,6 +410,17 @@ function candidateIdsForAlias(alias: string): string[] {
 
   const primary = modelIdFromPreference(preference);
   return [primary, ...(preference.fallbacks ?? [])];
+}
+
+function aliasPreference(
+  alias: string,
+  candidates: readonly [string, ...string[]],
+): ModelPreference {
+  const [primary, ...fallbacks] = candidates;
+  return {
+    ...modelPreferenceFromModelId(primary, fallbacks),
+    aliases: [alias],
+  };
 }
 
 function routeModelEntry(

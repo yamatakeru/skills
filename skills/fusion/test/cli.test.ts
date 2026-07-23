@@ -13,15 +13,19 @@ import {
   registerRuntimeSignalCleanup,
   renderDryRunReport,
   renderMarkdownReport,
+  usage,
   UsageError,
 } from "../bin/fusion-run";
 import {
   ClaudeCodeHeadlessCliAdapter,
   ClaudeCodeSdkAdapter,
   CursorSdkAdapter,
+  modelAliasTable,
+  modelPreferenceToModel,
   OpenCodeHeadlessCliAdapter,
   OpenCodeSdkAdapter,
   recursiveDelegationDenialMessage,
+  resolvePanelComposition,
   type PanelResult,
 } from "../lib/protocol";
 
@@ -46,6 +50,23 @@ describe("Fusion CLI parsing", () => {
       expect(result.stderr).toBe("");
     });
   }
+
+  test("--help renders every alias from the runtime alias table", () => {
+    const result = runFusionCli(["--help"]);
+    const help = result.stdout.trimEnd();
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(help).toBe(usage());
+
+    for (const [alias, preference] of Object.entries(modelAliasTable)) {
+      const primary = modelPreferenceToModel(preference);
+      expect(primary).toBeDefined();
+      expect(help).toContain(
+        `  ${alias}: ${[primary, ...(preference.fallbacks ?? [])].join(" -> ")}`,
+      );
+    }
+  });
 
   test("parses dry-run", () => {
     const options = parseArgs(["--dry-run", "Preflight this."]);
@@ -346,6 +367,39 @@ describe("Fusion CLI parsing", () => {
     expect(report).toContain("# Fusion Dry-Run Preflight");
     expect(report).toContain("no workers or judge were invoked");
     expect(report).toContain("| explicit | claude-code:sonnet | tier-alias |");
+  });
+
+  test("dry-run reports disclose parent-repeat slots and degradation warnings", async () => {
+    const options = parseArgs([
+      "--dry-run",
+      "--models",
+      "claude-code:sonnet",
+      "Preflight this.",
+    ]);
+    const prepared = await preparePanelRequest(options, {
+      cwd: "/tmp",
+      panelRunId: "dry-run-parent-repeat",
+    });
+    const composition = await resolvePanelComposition({
+      parentModel: "fable",
+      panelists: 3,
+      opencodeModels: [],
+    });
+    const report = buildDryRunReport(options, {
+      ...prepared,
+      composition,
+      warnings: composition.warnings,
+    });
+
+    expect(report.resolvedModels.map((model) => model.slot)).toEqual([
+      "parent",
+      "parent-repeat",
+      "parent-repeat",
+    ]);
+    expect(
+      report.warnings.filter((warning) => warning.includes("degraded")),
+    ).toHaveLength(2);
+    expect(renderDryRunReport(report)).toContain("| parent-repeat |");
   });
 
   test("dry-run json exits 0 and emits DryRunReport JSON", () => {

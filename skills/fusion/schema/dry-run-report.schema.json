@@ -71,9 +71,10 @@
               "slot": {
                 "enum": [
                   "parent",
-                  "flagship",
-                  "budget",
+                  "strong",
+                  "efficient",
                   "refill",
+                  "parent-repeat",
                   "explicit"
                 ],
                 "type": "string"
