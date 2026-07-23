@@ -11,7 +11,17 @@ import {
   type CommandResult,
 } from "./headless-cli-adapters";
 import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
+import {
+  assertNoStrictToolPolicyGap,
+  canonicalDeniedToolNames,
+  isBashDenied,
+  normalizeToolName,
+  normalizeToolNameScriptExpression,
+  toolPolicyWarnings,
+  unsupportedCommandPatternDenies,
+} from "./tool-policy";
 import type {
+  ToolsPolicy,
   WorkerRequest,
   WorkerResult,
   WorkerRunner,
@@ -69,6 +79,8 @@ interface CursorRunMaterialization {
   hookFailClosed: boolean;
   shellAllowlist: string[];
   shellAllowlistSource: string;
+  deniedToolNames: string[];
+  denyAllTools: boolean;
   readRoots: string[];
 }
 
@@ -84,6 +96,18 @@ const cursorHookEvents: CursorHookEvent[] = [
 ];
 const workerDenyList = ["Write(**)", "Delete(**)", "Mcp(*)"];
 const judgeDenyList = ["Shell(**)", ...workerDenyList, "Read(**)"];
+const workerDeniedToolNames = new Set([
+  "write",
+  "edit",
+  "delete",
+  "mcp",
+  "task",
+]);
+const judgeDeniedToolNames = new Set([
+  "bash",
+  "read",
+  ...workerDeniedToolNames,
+]);
 const toleratedCursorEventTypes = new Set([
   "system",
   "user",
@@ -110,6 +134,14 @@ export class CursorSdkAdapter implements WorkerRunner {
     const profile = cursorExecutionProfile(request);
     let materialization: CursorRunMaterialization | undefined;
     try {
+      assertNoStrictToolPolicyGap(
+        request.toolsPolicy,
+        "cursor-sdk",
+        (tool) =>
+          profile === "judge"
+            ? judgeDeniedToolNames.has(tool)
+            : workerDeniedToolNames.has(tool),
+      );
       materialization = await materializeCursorRun(request, profile);
       const commandResult = await this.executor({
         command: this.command,
@@ -166,22 +198,25 @@ export function buildCursorSdkArgs(request: WorkerRequest): string[] {
 
 export function buildCursorConfigContent(
   profile: CursorExecutionProfile,
+  toolsPolicy?: ToolsPolicy,
 ): CursorConfigContent {
+  const floor = profile === "judge" ? judgeDenyList : workerDenyList;
   return {
     permissions: {
-      deny: profile === "judge" ? judgeDenyList : workerDenyList,
+      deny: uniqueStrings([...floor, ...mappedCursorDenyPatterns(toolsPolicy)]),
     },
   };
 }
 
 async function writeCursorConfig(
   profile: CursorExecutionProfile,
+  toolsPolicy: ToolsPolicy | undefined,
 ): Promise<string> {
   const configDir = await mkdtemp(join(tmpdir(), "fusion-cursor-"));
   try {
     await writeFile(
       join(configDir, "cli-config.json"),
-      `${JSON.stringify(buildCursorConfigContent(profile), null, 2)}\n`,
+      `${JSON.stringify(buildCursorConfigContent(profile, toolsPolicy), null, 2)}\n`,
       "utf8",
     );
   } catch (error) {
@@ -198,7 +233,7 @@ async function materializeCursorRun(
   let configDir: string | undefined;
   let scratchDir: string | undefined;
   try {
-    configDir = await writeCursorConfig(profile);
+    configDir = await writeCursorConfig(profile, request.toolsPolicy);
     scratchDir = await mkdtemp(join(tmpdir(), "fusion-cursor-run-"));
     const hookScriptPath = join(scratchDir, "fusion-cursor-hook.js");
     const materialization: CursorRunMaterialization = {
@@ -212,6 +247,8 @@ async function materializeCursorRun(
         profile === "judge"
           ? "judge profile (no shell allowlist)"
           : cursorShellAllowlistSource(request),
+      deniedToolNames: cursorHookDeniedToolNames(request.toolsPolicy),
+      denyAllTools: cursorHookDeniesAllTools(request.toolsPolicy),
       readRoots: cursorHookReadRoots(request, profile, scratchDir),
     };
     await writeCursorHooks(materialization);
@@ -287,20 +324,100 @@ function cursorRunEnv(
     FUSION_CURSOR_SHELL_ALLOWLIST: JSON.stringify(
       materialization.shellAllowlist,
     ),
+    FUSION_CURSOR_DENIED_TOOL_NAMES: JSON.stringify(
+      materialization.deniedToolNames,
+    ),
+    FUSION_CURSOR_DENY_ALL_TOOLS: materialization.denyAllTools ? "1" : "0",
     FUSION_CURSOR_READ_ROOTS: JSON.stringify(materialization.readRoots),
   };
 }
 
-function cursorShellAllowlist(request: WorkerRequest): string[] {
+export function cursorShellAllowlist(request: WorkerRequest): string[] {
+  if (
+    request.toolsPolicy?.mode === "none" ||
+    isBashDenied(request.toolsPolicy)
+  ) {
+    return [];
+  }
+  if (request.toolsPolicy?.mode === "full") {
+    return ["*"];
+  }
   return request.toolsPolicy?.readOnlyBashCommands !== undefined
     ? request.toolsPolicy.readOnlyBashCommands
-    : defaultPolicies.tools.readOnlyBashCommands ?? [];
+    : request.toolsPolicy === undefined
+      ? defaultPolicies.tools.readOnlyBashCommands ?? []
+      : [];
+}
+
+function mappedCursorDenyPatterns(
+  toolsPolicy: ToolsPolicy | undefined,
+): string[] {
+  return canonicalDeniedToolNames(toolsPolicy).flatMap((tool) => {
+    switch (tool) {
+      case "bash":
+        return ["Shell(**)"];
+      case "read":
+        return ["Read(**)"];
+      case "write":
+      case "edit":
+        return ["Write(**)"];
+      default:
+        return [];
+    }
+  });
+}
+
+export function cursorHookDeniedToolNames(
+  toolsPolicy: ToolsPolicy | undefined,
+): string[] {
+  const unsupported = new Set(unsupportedCommandPatternDenies(toolsPolicy));
+  return [
+    ...new Set(
+      (toolsPolicy?.deny ?? [])
+        .filter((tool) => !unsupported.has(tool))
+        .map(normalizeToolName),
+    ),
+  ];
+}
+
+export function cursorHookDeniesAllTools(
+  toolsPolicy: ToolsPolicy | undefined,
+): boolean {
+  return toolsPolicy?.mode === "none";
+}
+
+function cursorConfigUnmappedDeniedNames(
+  toolsPolicy: ToolsPolicy | undefined,
+): string[] {
+  const configMappedOrHardDenied = new Set([
+    "bash",
+    "read",
+    "write",
+    "edit",
+    "delete",
+    "mcp",
+    "task",
+  ]);
+  return cursorHookDeniedToolNames(toolsPolicy).filter(
+    (tool) => !configMappedOrHardDenied.has(tool),
+  );
 }
 
 function cursorShellAllowlistSource(request: WorkerRequest): string {
+  if (isBashDenied(request.toolsPolicy)) {
+    return "request.toolsPolicy.deny (Bash disabled)";
+  }
+  if (request.toolsPolicy?.mode === "none") {
+    return "request.toolsPolicy.mode none";
+  }
+  if (request.toolsPolicy?.mode === "full") {
+    return "request.toolsPolicy.mode full";
+  }
   return request.toolsPolicy?.readOnlyBashCommands !== undefined
     ? "request.toolsPolicy.readOnlyBashCommands"
-    : "defaultPolicies.tools";
+    : request.toolsPolicy === undefined
+      ? "defaultPolicies.tools"
+      : "request.toolsPolicy (no readOnlyBashCommands)";
 }
 
 function cursorHookReadRoots(
@@ -437,6 +554,10 @@ process.stdin.on("end", () => {
   if (eventName === "beforeShellExecution") {
     const command = String(payload.command || "").trim();
     const allowlist = parseJsonArrayEnv("FUSION_CURSOR_SHELL_ALLOWLIST");
+    if (allowlist.includes("*")) {
+      respond({ permission: "allow" });
+      return;
+    }
     if (findShellControlSyntax(command)) {
       respond({
         permission: "deny",
@@ -457,13 +578,26 @@ process.stdin.on("end", () => {
     return;
   }
 
-  if (eventName === "preToolUse" && payload.tool_name === "Task") {
-    respond({
-      permission: "deny",
-      user_message: "Task tool denied by Fusion policy.",
-      agent_message: POLICY_NAME + " denies recursive delegation for panel workers.",
-    });
-    return;
+  if (eventName === "preToolUse") {
+    if (payload.tool_name === "Task") {
+      respond({
+        permission: "deny",
+        user_message: "Task tool denied by Fusion policy.",
+        agent_message: POLICY_NAME + " denies recursive delegation for panel workers.",
+      });
+      return;
+    }
+    const deniedTools = parseJsonArrayEnv("FUSION_CURSOR_DENIED_TOOL_NAMES");
+    const normalizedToolName = ${normalizeToolNameScriptExpression('String(payload.tool_name || "")')};
+    const denyAllTools = process.env.FUSION_CURSOR_DENY_ALL_TOOLS === "1";
+    if (denyAllTools || deniedTools.includes(normalizedToolName)) {
+      respond({
+        permission: "deny",
+        user_message: String(payload.tool_name || "Tool") + " denied by Fusion policy.",
+        agent_message: POLICY_NAME + " denied tool " + normalizedToolName + ".",
+      });
+      return;
+    }
   }
 
   if (eventName === "beforeReadFile") {
@@ -653,7 +787,16 @@ function cursorSdkWarnings(
   nonJsonLines: string[],
   unknownEventTypes: string[],
 ): string[] {
-  const warnings = unmappedPreferenceWarnings("cursor", request);
+  const warnings = [
+    ...unmappedPreferenceWarnings("cursor", request),
+    ...toolPolicyWarnings(request.toolsPolicy),
+  ];
+  const hookOnlyDenied = cursorConfigUnmappedDeniedNames(request.toolsPolicy);
+  if (hookOnlyDenied.length > 0) {
+    warnings.push(
+      `Cursor config grammar cannot express deny entries ${hookOnlyDenied.join(", ")}; the run-scoped preToolUse hook enforces them, while tool observation remains best-effort.`,
+    );
+  }
   const deniedCount = tools.filter(isDeniedToolObservation).length;
   if (deniedCount > 0) {
     warnings.push(
@@ -708,6 +851,12 @@ function cursorSdkComplianceNotes(input: {
     );
     notes.push(
       `Cursor shell allowlist enforced by hook: ${input.materialization.shellAllowlist.join(", ")}.`,
+    );
+    notes.push(
+      `Cursor canonical deny names enforced by preToolUse hook: ${input.materialization.deniedToolNames.join(", ")}.`,
+    );
+    notes.push(
+      `Cursor preToolUse hook denies all tools for mode none: ${input.materialization.denyAllTools}.`,
     );
     notes.push(
       input.materialization.readRoots.length === 0

@@ -206,6 +206,51 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(sessionRequests).toBe(0);
   });
 
+  test("probes permission IDs introduced only by deny", async () => {
+    const policy = { mode: "full" as const, deny: ["TodoWrite"] };
+    const config = buildOpenCodeConfigContent({
+      toolsPolicy: policy,
+      environment: undefined,
+    });
+    const workerRules = [
+      ...effectivePermissionRules(config.agent["fusion-worker"].permission),
+      { permission: "todowrite", pattern: "*", action: "allow" as const },
+    ];
+    const judgeRules = effectivePermissionRules(
+      config.agent["fusion-judge"].permission,
+    );
+    let sessionRequests = 0;
+    const adapter = new BaseOpenCodeSdkAdapter({
+      baseUrl: "http://opencode.test",
+      versionExecutor,
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/agent") {
+          return Response.json([
+            { name: "fusion-worker", permission: workerRules },
+            { name: "fusion-judge", permission: judgeRules },
+          ]);
+        }
+        if (url.pathname === "/session" && init?.method === "POST") {
+          sessionRequests += 1;
+          return Response.json({ id: "should-not-exist" });
+        }
+        throw new Error(`unexpected request: ${url.pathname}`);
+      },
+    });
+
+    const result = await adapter.runWorker({
+      ...workerRequest(),
+      toolsPolicy: policy,
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.errors?.join("\n")).toContain(
+      '"probe":{"permission":"todowrite","pattern":"*"},"expected":"deny","observed":"allow"',
+    );
+    expect(sessionRequests).toBe(0);
+  });
+
   test("waits for the SSE stream before sending the prompt", async () => {
     let eventResponse:
       | ((response: Response) => void)
@@ -625,6 +670,25 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(none.webfetch).toBe("deny");
     expect(none.websearch).toBe("deny");
     expect(full.bash).toEqual({ "*": "allow" });
+  });
+
+  test("subtracts deny entries from allowed tools and full Bash", () => {
+    const overlap = buildOpenCodePermissionMap(
+      { mode: "limited", allow: ["Read", "WebFetch"], deny: ["read"] },
+      undefined,
+    );
+    const full = buildOpenCodePermissionMap(
+      {
+        mode: "full",
+        deny: ["SHELL"],
+        readOnlyBashCommands: ["git status"],
+      },
+      undefined,
+    );
+
+    expect(overlap.read).toBe("deny");
+    expect(overlap.webfetch).toBe("allow");
+    expect(full.bash).toEqual({ "*": "deny" });
   });
 
   test("routes no-tools requests to the fusion judge agent", async () => {
@@ -1264,7 +1328,7 @@ describe("Fusion OpenCode SDK adapter", () => {
     );
   });
 
-  test("rejects a divergent non-judge policy on the shared server", async () => {
+  test("rejects a policy with different deny entries on the shared server", async () => {
     let promptMessageId: string | undefined;
     let observedWorkerRules: ReturnType<typeof effectivePermissionRules> = [];
     let observedJudgeRules: ReturnType<typeof effectivePermissionRules> = [];
@@ -1310,10 +1374,15 @@ describe("Fusion OpenCode SDK adapter", () => {
     });
 
     const first = await adapter.runWorker(workerRequest());
+    const defaultPolicy = workerRequest().toolsPolicy;
+    expect(defaultPolicy).toBeDefined();
     const second = await adapter.runWorker({
       ...workerRequest(),
       workerId: "worker-2",
-      toolsPolicy: { mode: "limited", allow: ["Read"] },
+      toolsPolicy: {
+        ...defaultPolicy!,
+        deny: [...(defaultPolicy?.deny ?? []), "Bash"],
+      },
     });
 
     expect(first.status).toBe("ok");

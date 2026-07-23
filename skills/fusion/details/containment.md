@@ -99,6 +99,28 @@ Containment level is orthogonal to the compliance tier. When `bash` is enabled,
 the panel report always renders the containment level; a `full` protocol tier
 with `allowlist-enforced` containment is possible and does not mean sandboxed.
 
+`ToolsPolicy.deny` is applied after the mode-derived tool set, so denial always
+wins over defaults, explicit `allow`, and `readOnlyBashCommands`. Denying
+`bash` or its `shell` alias removes shell entirely, reports `no-shell`, empties
+the command allowlist, and discloses that any requested read-only commands were
+discarded. Unknown or adapter-unmappable names are never silently ignored:
+they are warned and recorded in compliance evidence, while strict parity fails
+only if the capability is still effective after mode and profile floors.
+Unknown names use this strict check uniformly across adapters, without treating
+OpenCode's catch-all denial as a verifiability exception.
+
+Cursor adds only verified config grammar (`Shell(**)`, `Read(**)`, and
+`Write(**)`) to its immutable profile floor. It does not map `Grep`, `Glob`, or
+`LS` to the broader `Read(**)` permission. A run-scoped, fail-closed
+`preToolUse` hook enforces the remaining canonical tool-name denials, and Bash
+denial also empties the shell hook allowlist. Observation of tool results is a
+separate best-effort surface and its limitations remain disclosed. OpenCode's
+headless CLI remains a degraded, non-enforcing transport under ADR 0037.
+
+Tool-name policy does not support command-pattern denials such as
+`Bash(rm *)`; such entries are disclosed rather than treated as effective
+command filters.
+
 ## Residual Shell Holes
 
 The allowlist matches commands, not all shell effects. It cannot completely

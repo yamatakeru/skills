@@ -1,5 +1,13 @@
 import { spawn } from "node:child_process";
 import { deriveContainment } from "./containment";
+import {
+  assertNoStrictToolPolicyGap,
+  isBashDenied,
+  isToolDenied,
+  normalizeToolName,
+  toolPolicyWarnings,
+  unsupportedCommandPatternDenies,
+} from "./tool-policy";
 import type {
   HarnessKind,
   ModelPreference,
@@ -96,6 +104,7 @@ export function buildOpenCodeArgs(request: WorkerRequest): string[] {
 }
 
 export function buildClaudeCodeArgs(request: WorkerRequest): string[] {
+  assertNoStrictToolPolicyGap(request.toolsPolicy, "claude-code");
   const args = buildClaudeCodeBaseArgs(request);
   appendClaudeCodeReadRoots(args, request);
   return [...args, "--", request.prompt];
@@ -330,6 +339,7 @@ function workerWarnings(
       ? "OpenCode CLI adapter result is degraded until tool policy evidence is proven."
       : undefined,
     ...unmappedPreferenceWarnings(kind, request),
+    ...toolPolicyWarnings(request.toolsPolicy),
   ].filter((warning): warning is string => warning !== undefined);
 }
 
@@ -376,19 +386,26 @@ function claudeToolsForPolicy(request: WorkerRequest): string | undefined {
       return "";
     case "read-only":
       return withBashTool(
-        toolsPolicy.allow ?? [
+        (toolsPolicy.allow ?? [
           "Read",
           "Grep",
           "Glob",
           "WebSearch",
           "WebFetch",
-        ],
+        ])
+          .filter((tool) => !isToolDenied(toolsPolicy, tool))
+          .map(claudeToolName),
         toolsPolicy,
       );
     case "limited":
       return toolsPolicy.allow === undefined
         ? undefined
-        : withBashTool(toolsPolicy.allow, toolsPolicy);
+        : withBashTool(
+            toolsPolicy.allow
+              .filter((tool) => !isToolDenied(toolsPolicy, tool))
+              .map(claudeToolName),
+            toolsPolicy,
+          );
     case "full":
     case undefined:
       return undefined;
@@ -400,7 +417,8 @@ function claudeToolsForPolicy(request: WorkerRequest): string | undefined {
 function withBashTool(tools: string[], toolsPolicy: ToolsPolicy): string {
   const needsBash =
     (toolsPolicy.readOnlyBashCommands?.length ?? 0) > 0 &&
-    !tools.includes("Bash");
+    !isBashDenied(toolsPolicy) &&
+    !tools.some((tool) => normalizeToolName(tool) === "bash");
   return unique(needsBash ? [...tools, "Bash"] : tools).join(",");
 }
 
@@ -414,11 +432,15 @@ function claudeAllowedToolsForPolicy(
     return undefined;
   }
 
-  const allowed = toolsPolicy.allow ?? [];
-  const baseTools = allowed.filter((tool) => tool !== "Bash");
-  const bashTools = (toolsPolicy.readOnlyBashCommands ?? []).map(
-    claudeBashPattern,
+  const allowed = (toolsPolicy.allow ?? []).filter(
+    (tool) => !isToolDenied(toolsPolicy, tool),
   );
+  const baseTools = allowed.filter(
+    (tool) => normalizeToolName(tool) !== "bash",
+  ).map(claudeToolName);
+  const bashTools = isBashDenied(toolsPolicy)
+    ? []
+    : (toolsPolicy.readOnlyBashCommands ?? []).map(claudeBashPattern);
   const permissions = [...baseTools, ...bashTools];
   return permissions.length === 0 ? undefined : unique(permissions).join(",");
 }
@@ -426,8 +448,48 @@ function claudeAllowedToolsForPolicy(
 function claudeDisallowedToolsForPolicy(
   toolsPolicy: ToolsPolicy | undefined,
 ): string | undefined {
-  const denied = toolsPolicy?.deny?.filter((tool) => tool !== "Bash") ?? [];
+  const unsupported = new Set(unsupportedCommandPatternDenies(toolsPolicy));
+  const denied = (toolsPolicy?.deny ?? [])
+    .filter((tool) => !unsupported.has(tool))
+    .map(claudeToolName);
   return denied.length === 0 ? undefined : unique(denied).join(",");
+}
+
+function claudeToolName(tool: string): string {
+  switch (tool.trim().toLowerCase()) {
+    case "bash":
+    case "shell":
+      return "Bash";
+    case "read":
+      return "Read";
+    case "grep":
+      return "Grep";
+    case "glob":
+      return "Glob";
+    case "ls":
+    case "list":
+      return "LS";
+    case "write":
+      return "Write";
+    case "edit":
+      return "Edit";
+    case "multiedit":
+      return "MultiEdit";
+    case "notebookedit":
+      return "NotebookEdit";
+    case "task":
+      return "Task";
+    case "todowrite":
+      return "TodoWrite";
+    case "webfetch":
+    case "web-fetch":
+      return "WebFetch";
+    case "websearch":
+    case "web-search":
+      return "WebSearch";
+    default:
+      return tool;
+  }
 }
 
 function claudeBashPattern(command: string): string {

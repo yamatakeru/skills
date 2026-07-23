@@ -6,6 +6,7 @@ export * from "./harness";
 export * from "./worker-prompt";
 export * from "./worker-requests";
 export * from "./containment";
+export * from "./tool-policy";
 export * from "./compliance";
 export * from "./watchdog";
 export * from "./run-panel";

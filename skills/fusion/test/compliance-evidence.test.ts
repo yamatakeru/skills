@@ -255,4 +255,17 @@ describe("containment derivation", () => {
   test("makes no containment claim for full tool mode", () => {
     expect(deriveContainment({ mode: "full" })).toBeUndefined();
   });
+
+  test("derives no-shell whenever Bash is denied", () => {
+    expect(
+      deriveContainment({ mode: "full", deny: ["SHELL"] }),
+    ).toBe("no-shell");
+    expect(
+      deriveContainment({
+        mode: "read-only",
+        allow: ["Bash"],
+        deny: ["bash"],
+      }),
+    ).toBe("no-shell");
+  });
 });

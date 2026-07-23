@@ -7,6 +7,22 @@ import {
 import { withFusionPanelDepth, workerRequest } from "./fixtures";
 
 describe("Fusion Claude Code SDK adapter", () => {
+  test("uses the shared deny-wins Claude tool flags", () => {
+    const args = buildClaudeCodeSdkArgs({
+      ...workerRequest(),
+      toolsPolicy: {
+        mode: "limited",
+        allow: ["Bash", "Read"],
+        deny: ["BASH"],
+        readOnlyBashCommands: ["ls"],
+      },
+    });
+
+    expect(args).toContain("--disallowedTools=Bash");
+    expect(args.find((arg) => arg.startsWith("--tools="))).not.toContain("Bash");
+    expect(args.find((arg) => arg.startsWith("--allowedTools="))).not.toContain("Bash(");
+  });
+
   for (const [label, parentDepth, expectedDepth] of [
     ["defaults an absent panel depth to 0", undefined, "1"],
     ["increments an inherited panel depth", "1", "2"],

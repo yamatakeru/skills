@@ -4,6 +4,14 @@ import { createServer } from "node:net";
 import type { AssistantMessage, Permission } from "@opencode-ai/sdk/client";
 import { deriveContainment } from "./containment";
 import {
+  assertNoStrictToolPolicyGap,
+  isBashDenied,
+  normalizeToolName,
+  readOnlyDefaultAllowedTools,
+  toolPolicyWarnings,
+  unsupportedCommandPatternDenies,
+} from "./tool-policy";
+import {
   executeCommand,
   modelPreferenceToModel,
   snippet,
@@ -133,6 +141,15 @@ const knownOpenCodeTools = [
   "lsp",
   "doom_loop",
 ];
+const hardDeniedOpenCodeTools = new Set([
+  "write",
+  "patch",
+  "task",
+  "todowrite",
+  "skill",
+  "lsp",
+  "doom_loop",
+]);
 
 function openCodeAgentName(
   request: WorkerRequest,
@@ -193,9 +210,14 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     let sessionId: string | undefined;
     let effectiveRules: OpenCodePermissionRule[] | undefined;
     const abortOutcome: WorkerAbortOutcome = { attempted: false };
-    const warnings: string[] = [];
+    const warnings: string[] = toolPolicyWarnings(request.toolsPolicy);
 
     try {
+      assertNoStrictToolPolicyGap(
+        request.toolsPolicy,
+        "opencode-sdk",
+        (tool) => hardDeniedOpenCodeTools.has(tool),
+      );
       const server = await this.ensureServer(request);
       const selectedAgentName = openCodeAgentName(request, this.agentName);
       effectiveRules =
@@ -881,11 +903,41 @@ function openCodeProbeDecisions(
       "skill",
       "mcp_some_tool",
     ].map((permission) => ({ permission, pattern: "*" })),
+    ...enforceableOpenCodeDeniedToolNames(toolsPolicy)
+      .flatMap(openCodeToolIds)
+      .map((permission) => ({ permission, pattern: "*" })),
   ];
-  return probes.map((probe) => ({
+  return uniqueOpenCodeProbes(probes).map((probe) => ({
     ...probe,
     action: openCodeEffectiveDecision(rules, probe.permission, probe.pattern),
   }));
+}
+
+function enforceableOpenCodeDeniedToolNames(
+  toolsPolicy: ToolsPolicy | undefined,
+): string[] {
+  const unsupported = new Set(unsupportedCommandPatternDenies(toolsPolicy));
+  return [
+    ...new Set(
+      (toolsPolicy?.deny ?? [])
+        .filter((tool) => !unsupported.has(tool))
+        .map(normalizeToolName),
+    ),
+  ];
+}
+
+function uniqueOpenCodeProbes<T extends { permission: string; pattern: string }>(
+  probes: T[],
+): T[] {
+  const seen = new Set<string>();
+  return probes.filter((probe) => {
+    const key = `${probe.permission}\u0000${probe.pattern}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 function openCodeEffectiveDecision(
@@ -957,32 +1009,38 @@ function openCodeAgentInfos(value: unknown): OpenCodeAgentInfo[] {
 function allowedOpenCodeTools(
   toolsPolicy: ToolsPolicy | undefined,
 ): Set<string> {
+  let allowed: Set<string>;
   switch (toolsPolicy?.mode) {
     case "none":
-      return new Set();
+      allowed = new Set();
+      break;
     case "read-only":
-      return new Set(
-        (toolsPolicy.allow ?? [
-          "Read",
-          "Grep",
-          "Glob",
-          "LS",
-          "WebFetch",
-          "WebSearch",
-          "Bash",
-        ]).flatMap(openCodeToolIds),
+      allowed = new Set(
+        (toolsPolicy.allow ?? readOnlyDefaultAllowedTools).flatMap(
+          openCodeToolIds,
+        ),
       );
+      break;
     case "limited":
-      return new Set((toolsPolicy.allow ?? []).flatMap(openCodeToolIds));
+      allowed = new Set((toolsPolicy.allow ?? []).flatMap(openCodeToolIds));
+      break;
     case "full":
-      return new Set(knownOpenCodeTools);
+      allowed = new Set(knownOpenCodeTools);
+      break;
     case undefined:
-      return new Set(["read", "grep", "glob", "list", "webfetch", "websearch", "bash"]);
+      allowed = new Set(readOnlyDefaultAllowedTools.flatMap(openCodeToolIds));
+      break;
   }
+  for (const denied of enforceableOpenCodeDeniedToolNames(toolsPolicy)) {
+    for (const permissionId of openCodeToolIds(denied)) {
+      allowed.delete(permissionId);
+    }
+  }
+  return allowed;
 }
 
 function openCodeToolIds(tool: string): string[] {
-  const normalized = tool.toLowerCase();
+  const normalized = normalizeToolName(tool);
   switch (normalized) {
     case "read":
       return ["read"];
@@ -990,22 +1048,17 @@ function openCodeToolIds(tool: string): string[] {
       return ["grep"];
     case "glob":
       return ["glob"];
-    case "ls":
     case "list":
       return ["list"];
     case "webfetch":
-    case "web-fetch":
       return ["webfetch"];
     case "websearch":
-    case "web-search":
       return ["websearch"];
     case "bash":
       return ["bash"];
     case "write":
       return ["write"];
     case "edit":
-    case "multiedit":
-    case "notebookedit":
       return ["edit"];
     case "task":
       return ["task"];
@@ -1019,6 +1072,9 @@ function openCodeToolIds(tool: string): string[] {
 function bashPermissionMap(
   toolsPolicy: ToolsPolicy | undefined,
 ): PermissionMap {
+  if (isBashDenied(toolsPolicy)) {
+    return { "*": "deny" };
+  }
   if (toolsPolicy?.mode === "full") {
     return { "*": "allow" };
   }
