@@ -697,6 +697,14 @@ recorder refuses to write otherwise without an explicit override.
    (2026-07-07): the claude-code arm was broken until this hotfix because
    variadic `--add-dir` swallowed the prompt; it was live-verified only then.
 
+Unnumbered candidates deferred by the default-composition round (issue #15,
+ADR 0041), to be filed as issues when a concrete need appears: dynamic
+scoring over `opencode models --verbose`; family normalization or a
+portfolio optimizer; task-aware model selection; high-stakes / fast presets;
+bare-default auto-selection of Claude Code or Cursor models; conditional
+judge promotion for weak parents (task- or stakes-aware judge selection);
+and cross-provider same-base-model dedupe.
+
 ## Useful Commands
 
 ```bash
