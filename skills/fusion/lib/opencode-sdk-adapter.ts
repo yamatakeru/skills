@@ -7,6 +7,7 @@ import {
   assertNoStrictToolPolicyGap,
   isBashDenied,
   normalizeToolName,
+  readOnlyDefaultAllowedTools,
   toolPolicyWarnings,
   unsupportedCommandPatternDenies,
 } from "./tool-policy";
@@ -1015,15 +1016,9 @@ function allowedOpenCodeTools(
       break;
     case "read-only":
       allowed = new Set(
-        (toolsPolicy.allow ?? [
-          "Read",
-          "Grep",
-          "Glob",
-          "LS",
-          "WebFetch",
-          "WebSearch",
-          "Bash",
-        ]).flatMap(openCodeToolIds),
+        (toolsPolicy.allow ?? readOnlyDefaultAllowedTools).flatMap(
+          openCodeToolIds,
+        ),
       );
       break;
     case "limited":
@@ -1033,7 +1028,7 @@ function allowedOpenCodeTools(
       allowed = new Set(knownOpenCodeTools);
       break;
     case undefined:
-      allowed = new Set(["read", "grep", "glob", "list", "webfetch", "websearch", "bash"]);
+      allowed = new Set(readOnlyDefaultAllowedTools.flatMap(openCodeToolIds));
       break;
   }
   for (const denied of enforceableOpenCodeDeniedToolNames(toolsPolicy)) {

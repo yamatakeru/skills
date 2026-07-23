@@ -4,6 +4,7 @@ import {
   isBashDenied,
   isToolDenied,
   normalizeToolName,
+  normalizeToolNameScriptExpression,
   toolPolicyWarnings,
 } from "../lib/protocol";
 
@@ -19,6 +20,27 @@ describe("ToolsPolicy deny-wins helpers", () => {
     ["UnknownTool", "unknowntool"],
   ])("normalizes %s to %s", (input, expected) => {
     expect(normalizeToolName(input)).toBe(expected);
+  });
+
+  test("script expression matches tool-name normalization", () => {
+    const evaluate = new Function(
+      "name",
+      `return ${normalizeToolNameScriptExpression("name")};`,
+    ) as (name: string) => string;
+
+    for (const input of [
+      "BASH",
+      "shell",
+      "LS",
+      "Web-Fetch",
+      "Web-Search",
+      "MultiEdit",
+      "NotebookEdit",
+      "FutureTool",
+      " Read ",
+    ]) {
+      expect(evaluate(input)).toBe(normalizeToolName(input));
+    }
   });
 
   test("deny wins over an overlapping allow in every mode", () => {

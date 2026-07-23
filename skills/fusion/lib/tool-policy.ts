@@ -29,6 +29,16 @@ const knownToolNames = new Set([
   "write",
 ]);
 
+export const readOnlyDefaultAllowedTools = [
+  "read",
+  "grep",
+  "glob",
+  "list",
+  "webfetch",
+  "websearch",
+  "bash",
+] as const;
+
 export function normalizeToolName(name: string): string {
   const normalized = name.trim().toLowerCase();
   return aliases[normalized] ?? normalized;
@@ -163,9 +173,7 @@ function isBaseToolEnabled(policy: ToolsPolicy, tool: string): boolean {
   }
   const allow =
     policy.allow ??
-    (policy.mode === "read-only"
-      ? ["read", "grep", "glob", "list", "webfetch", "websearch", "bash"]
-      : []);
+    (policy.mode === "read-only" ? readOnlyDefaultAllowedTools : []);
   return allow.some((allowed) => normalizeToolName(allowed) === tool);
 }
 
