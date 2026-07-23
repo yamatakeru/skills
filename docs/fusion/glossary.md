@@ -364,10 +364,18 @@ complete `PanelResult`.
 
 The three-slot default composition used when no explicit model selection is
 given: the parent model slot (the parent agent's own model, passed via
-`--parent-model`), the flagship slot (current OpenAI flagship through
-OpenCode), and the budget slot (a cheap-but-capable model through OpenCode).
-Slots resolve through the model alias table, deduplicate by resolved model ID,
-and refill from unused fallback entries.
+`--parent-model`), the strong slot (the `strong-generalist` pool), and the
+efficient slot (the `efficient-generalist` pool). Slots resolve through the
+model alias table, deduplicate by resolved model ID, and use the `refill` slot
+for unused entries from the strong-then-efficient candidate pools.
+
+## Parent Repeat
+
+A degraded default-composition fallback used only when the effective panel size
+is three or fewer and distinct candidates are exhausted. A `parent-repeat`
+seat duplicates only the successfully resolved `parent` seat and emits a
+degraded warning. It is unavailable when `--parent-model` is omitted, when that
+entry fails availability, or when four or more panelists are requested.
 
 ## Model Alias Table
 

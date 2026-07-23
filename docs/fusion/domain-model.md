@@ -72,10 +72,16 @@ recorder writes project-local artifacts under
 ### PanelCompositionPolicy
 
 The rules that turn an option-less invocation into a concrete worker set: the
-default three slots (parent model, flagship, budget), the bundled model alias
-table with ordered fallbacks, availability checks per harness, and
-deduplication by resolved model ID with refill. Explicit user selection
-replaces the default composition.
+default parent, strong, and efficient slots; the bundled model alias table with
+ordered fallbacks; availability checks per harness; and deduplication by
+resolved model ID with refill. Resolved slots use `parent`, `strong`,
+`efficient`, and `refill`. If distinct candidates are exhausted for an
+effective panel size of three or fewer, remaining seats may use
+`parent-repeat`, but only by copying a successfully resolved parent seat and
+emitting a degraded warning. A missing or unavailable parent, or a panel size
+of four or more, leaves insufficiency as an error. Explicit user selection
+replaces the default composition and uses `explicit`; its duplicates remain
+allowed.
 
 ### ModelEntry
 

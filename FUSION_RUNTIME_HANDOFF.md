@@ -41,13 +41,14 @@ simplify fix — `kindForRoutedEntry` dropped a redundant forced-harness
 parameter): `ResolvedPanelModel` gained `kind`/`validatedBy`,
 `DryRunReport` added to types and schema generation
 (`dry-run-report.schema.json`), `--dry-run` branch in the CLI, alias-table
-resolutions now visible in `usage()` and SKILL.md (v0.10.0), glossary
+resolutions made visible in `usage()` and, at that time, SKILL.md (v0.10.0),
+glossary
 (Model Entry / Entry Kind / Dry-Run Preflight), spec section, domain-model
 ModelEntry value object. `bun test` 122 pass / 0 fail; typecheck clean;
 schema regen idempotent apart from the new file.
 
 Live smoke (all passed): default-composition dry-run (real
-`opencode models` shell-out; fable tier-alias/pattern, alias slots
+`opencode models` shell-out; fable tier-alias/pattern, default alias slots
 fusion-alias/harness-list), explicit `--models` with a cursor entry plus
 sonnet judge under `--json` (real `cursor-agent models` check,
 discriminated JSON), transport-mismatch case exits 1 with the real
@@ -416,8 +417,9 @@ checked-in prettier-style output — pre-existing toolchain quirk, schemas
 restored to HEAD).
 
 Loose ends noted for later rounds: the CLAUDE.md shorthand `-m
-gpt,deepseek,composer` is not accepted by the model alias table (only
-`openai-flagship`/`budget-smart` aliases exist; panels were run with
+gpt,deepseek,composer` is not accepted by the model alias table (the current
+generalist aliases and compatibility aliases use full names; panels were run
+with
 provider-qualified IDs), and deepseek-v4-flash-free produced invalid output
 in this round's panel (cheap-worker dropout class, disclosed in the report).
 
@@ -547,11 +549,13 @@ CLI verification (`opencode --variant` is silently ignored when unsupported;
   complete `PanelResult`. Exit code 0 for `ok`/`partial`, 1 for `failed`/usage
   errors.
 - `skills/fusion/lib/panel-composition.ts`: default three-slot composition
-  (parent model / `openai-flagship` / `budget-smart`), bundled alias table with
-  ordered OpenAI-family and budget fallbacks, availability checks against
-  `opencode models`, dedupe by resolved model ID with refill, and model-entry
+  (parent model / `strong-generalist` / `efficient-generalist`), bundled alias
+  table with ordered privacy-eligible fallbacks, availability checks against
+  `opencode models`, exact-ID dedupe with refill and small-panel parent repeat,
+  and model-entry
   routing (`provider/model` → opencode, Claude aliases → claude-code,
-  `opencode:`/`claude-code:` forced prefixes, unknown entries error) (ADR 0015).
+  `opencode:`/`claude-code:` forced prefixes, unknown entries error)
+  (ADR 0015/0041).
 - `skills/fusion/lib/headless-cli-adapters.ts`: adapters send the rendered
   prompt verbatim, map reasoning effort per harness, grant the bash allowlist
   on claude-code, and record unmapped preference warnings and compliance notes.
@@ -628,7 +632,8 @@ recorder refuses to write otherwise without an explicit override.
   claude-code workers plus claude-code judge with a declared read root, all
   ok, compliance tier `full` — the exact combination that previously failed
   deterministically).
-- The alias table (`openai-flagship`, `budget-smart`) pins current model IDs;
+- The alias table (including the default generalist and compatibility aliases)
+  pins current model IDs;
   generation changes are absorbed by editing
   `skills/fusion/lib/panel-composition.ts` in a skill update.
 - The judge is one invocation of the parent-model-by-default; a weak judge

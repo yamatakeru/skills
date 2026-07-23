@@ -85,10 +85,13 @@ and plugin files are loaded at startup.
 
 ## Model Setup
 
-The CLI composes a default three-worker panel from `--parent-model`, the
-`openai-flagship` alias, and the `budget-smart` alias. Use `--models` to
-replace that default composition with explicit model entries. Use this command
-to inspect OpenCode-backed model IDs:
+The CLI composes a default three-worker panel from the parent slot
+(`--parent-model` when provided; omitting it warns and refills the seat from
+the alias fallback chains), the `strong-generalist` alias, and the
+`efficient-generalist` alias. Use `--models` to replace that default
+composition with explicit model entries.
+Use `--help` to inspect the runtime alias chains, or this command to inspect
+OpenCode-backed model IDs:
 
 ```bash
 opencode models
@@ -113,13 +116,13 @@ fusion --panelists 3 で、このAPI設計案をレビューして。
 ```
 
 ```text
-fusion --models sonnet,openai-flagship,budget-smart で、このAPI設計案をレビューして。
+fusion --models sonnet,strong-generalist,efficient-generalist で、このAPI設計案をレビューして。
 ```
 
 Supported model entries are provider-qualified OpenCode models such as
 `openai/gpt-5.5`, Claude aliases such as `sonnet`, alias-table names such as
-`openai-flagship` and `budget-smart`, and explicit harness prefixes such as
-`opencode:openai/gpt-5.5`, `claude-code:sonnet`, or
+`strong-generalist` and `efficient-generalist`, and explicit harness prefixes
+such as `opencode:openai/gpt-5.5`, `claude-code:sonnet`, or
 `cursor:composer-2.5-fast`. Cursor is explicit-prefix only and is available
 only with the SDK transport. Unknown entries are errors.
 

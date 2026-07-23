@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  modelAliasTable,
+  modelPreferenceToModel,
   parseCursorModels,
   resolveModelEntry,
   resolvePanelComposition,
@@ -8,23 +10,32 @@ import {
 import { opencodeModelsExecutor } from "./fixtures";
 
 describe("Fusion panel composition", () => {
-  test("builds the default parent, flagship, and budget slots", async () => {
+  test("builds the default parent, strong, and efficient slots", async () => {
     const composition = await resolvePanelComposition({
-      parentModel: "sonnet",
+      parentModel: "fable",
       executor: opencodeModelsExecutor([
-        "openai/gpt-5.5",
-        "opencode/deepseek-v4-flash-free",
+        "openai/gpt-5.6-sol",
+        "opencode-go/deepseek-v4-flash",
       ]),
     });
 
     expect(composition.panelSpec.workerCount).toBe(3);
     expect(composition.panelSpec.parentModel).toEqual({
-      model: "sonnet",
-      fallbacks: ["haiku"],
+      model: "fable",
+      fallbacks: ["sonnet", "haiku"],
     });
     expect(
       composition.resolvedModels.map((model) => model.resolvedModelId),
-    ).toEqual(["sonnet", "openai/gpt-5.5", "opencode/deepseek-v4-flash-free"]);
+    ).toEqual([
+      "fable",
+      "openai/gpt-5.6-sol",
+      "opencode-go/deepseek-v4-flash",
+    ]);
+    expect(composition.resolvedModels.map((model) => model.slot)).toEqual([
+      "parent",
+      "strong",
+      "efficient",
+    ]);
     expect(composition.panelSpec.workers?.map((worker) => worker.harness)).toEqual([
       { kind: "claude-code", invocation: "headless" },
       { kind: "opencode", invocation: "headless" },
@@ -33,63 +44,114 @@ describe("Fusion panel composition", () => {
     expect(composition.harnessSelectionPolicy.userPolicy).toBeUndefined();
   });
 
-  test("warns and refills when the parent model is omitted", async () => {
+  test("advances the strong slot when the parent already uses Sol", async () => {
     const composition = await resolvePanelComposition({
+      parentModel: "openai/gpt-5.6-sol",
       executor: opencodeModelsExecutor([
-        "openai/gpt-5.5",
-        "openai/gpt-5.5-fast",
-        "opencode/deepseek-v4-flash-free",
+        "openai/gpt-5.6-sol",
+        "opencode-go/glm-5.2",
+        "opencode-go/deepseek-v4-flash",
       ]),
     });
 
-    expect(composition.warnings.join("\n")).toContain("No --parent-model");
-    expect(
-      new Set(composition.resolvedModels.map((model) => model.resolvedModelId))
-        .size,
-    ).toBe(3);
     expect(
       composition.resolvedModels.map((model) => model.resolvedModelId),
     ).toEqual([
-      "openai/gpt-5.5",
-      "opencode/deepseek-v4-flash-free",
-      "openai/gpt-5.5-fast",
+      "openai/gpt-5.6-sol",
+      "opencode-go/glm-5.2",
+      "opencode-go/deepseek-v4-flash",
     ]);
   });
 
-  test("dedupes default model ids and refills from fallback entries", async () => {
+  test("advances the efficient slot when the parent already uses DeepSeek Flash", async () => {
     const composition = await resolvePanelComposition({
-      parentModel: "openai/gpt-5.5",
+      parentModel: "opencode-go/deepseek-v4-flash",
       executor: opencodeModelsExecutor([
-        "openai/gpt-5.5",
-        "openai/gpt-5.4",
-        "opencode/deepseek-v4-flash-free",
+        "opencode-go/deepseek-v4-flash",
+        "openai/gpt-5.6-sol",
+        "opencode-go/mimo-v2.5",
       ]),
     });
 
     expect(
       composition.resolvedModels.map((model) => model.resolvedModelId),
     ).toEqual([
-      "openai/gpt-5.5",
-      "openai/gpt-5.4",
-      "opencode/deepseek-v4-flash-free",
+      "opencode-go/deepseek-v4-flash",
+      "openai/gpt-5.6-sol",
+      "opencode-go/mimo-v2.5",
     ]);
+  });
+
+  test("falls through to OpenAI models when OpenCode Go models are absent", async () => {
+    const composition = await resolvePanelComposition({
+      parentModel: "fable",
+      executor: opencodeModelsExecutor([
+        "openai/gpt-5.6-sol",
+        "openai/gpt-5.6-luna",
+      ]),
+    });
+
+    expect(
+      composition.resolvedModels.map((model) => model.resolvedModelId),
+    ).toEqual([
+      "fable",
+      "openai/gpt-5.6-sol",
+      "openai/gpt-5.6-luna",
+    ]);
+  });
+
+  test("repeats only the resolved parent for exhausted panels up to size 3", async () => {
+    const composition = await resolvePanelComposition({
+      parentModel: "fable",
+      panelists: 3,
+      panelistsExplicit: true,
+      opencodeModels: [],
+    });
+
+    expect(
+      composition.resolvedModels.map((model) => model.resolvedModelId),
+    ).toEqual(["fable", "fable", "fable"]);
+    expect(composition.resolvedModels.map((model) => model.slot)).toEqual([
+      "parent",
+      "parent-repeat",
+      "parent-repeat",
+    ]);
+    expect(
+      composition.warnings.filter((warning) => warning.includes("degraded")),
+    ).toHaveLength(2);
+  });
+
+  test("suggests --parent-model when exhausted without a resolved parent", async () => {
+    await expect(
+      resolvePanelComposition({ opencodeModels: [] }),
+    ).rejects.toThrow("--parent-model");
+  });
+
+  test("does not repeat the parent for exhausted panels of size 4 or more", async () => {
+    await expect(
+      resolvePanelComposition({
+        parentModel: "fable",
+        panelists: 4,
+        opencodeModels: [],
+      }),
+    ).rejects.toThrow("Unable to resolve 4 distinct Fusion models");
   });
 
   test("keeps duplicate models only for explicit selection", async () => {
     const composition = await resolvePanelComposition({
       models: [
-        "opencode:opencode/deepseek-v4-flash-free",
-        "opencode:opencode/deepseek-v4-flash-free",
+        "opencode:opencode-go/deepseek-v4-flash",
+        "opencode:opencode-go/deepseek-v4-flash",
       ],
-      executor: opencodeModelsExecutor(["opencode/deepseek-v4-flash-free"]),
+      executor: opencodeModelsExecutor(["opencode-go/deepseek-v4-flash"]),
     });
 
     expect(composition.panelSpec.workerCount).toBe(2);
     expect(
       composition.resolvedModels.map((model) => model.resolvedModelId),
     ).toEqual([
-      "opencode/deepseek-v4-flash-free",
-      "opencode/deepseek-v4-flash-free",
+      "opencode-go/deepseek-v4-flash",
+      "opencode-go/deepseek-v4-flash",
     ]);
   });
 
@@ -119,28 +181,71 @@ describe("Fusion panel composition", () => {
     expect(model.resolvedModelId).toBe("openai/gpt-5.5");
   });
 
-  test("discloses kind and validation authority for alias table entries", async () => {
+  test("resolves compatibility aliases through their privacy-eligible chains", async () => {
     const primary = await resolveModelEntry("openai-flagship", {
-      executor: opencodeModelsExecutor(["openai/gpt-5.5"]),
+      executor: opencodeModelsExecutor(["openai/gpt-5.6-sol"]),
     });
     const fallback = await resolveModelEntry("openai-flagship", {
-      executor: opencodeModelsExecutor(["openai/gpt-5.5-fast"]),
+      executor: opencodeModelsExecutor(["openai/gpt-5.4"]),
+    });
+    const compatibility = await resolveModelEntry("budget-smart", {
+      executor: opencodeModelsExecutor(["openai/gpt-5.6-luna"]),
     });
 
     expect(primary).toMatchObject({
       entry: "openai-flagship",
       kind: "fusion-alias",
-      resolvedModelId: "openai/gpt-5.5",
+      resolvedModelId: "openai/gpt-5.6-sol",
       validatedBy: "harness-list",
       fallbackUsed: false,
     });
     expect(fallback).toMatchObject({
       entry: "openai-flagship",
       kind: "fusion-alias",
-      resolvedModelId: "openai/gpt-5.5-fast",
+      resolvedModelId: "openai/gpt-5.4",
       validatedBy: "harness-list",
       fallbackUsed: true,
     });
+    expect(fallback.modelPreference.fallbacks).toEqual([]);
+    expect(compatibility).toMatchObject({
+      entry: "budget-smart",
+      resolvedModelId: "openai/gpt-5.6-luna",
+      fallbackUsed: true,
+    });
+    expect(
+      compatibility.modelPreference.fallbacks?.some((model) =>
+        model.includes("free"),
+      ),
+    ).toBe(false);
+    expect(aliasCandidates("strong-generalist")).toEqual([
+      "openai/gpt-5.6-sol",
+      "opencode-go/glm-5.2",
+      "opencode-go/deepseek-v4-pro",
+      "openai/gpt-5.6-terra",
+    ]);
+    expect(aliasCandidates("efficient-generalist")).toEqual([
+      "opencode-go/deepseek-v4-flash",
+      "opencode-go/mimo-v2.5",
+      "opencode-go/qwen3.7-plus",
+      "opencode-go/minimax-m3",
+      "opencode-go/deepseek-v4-pro",
+      "openai/gpt-5.6-luna",
+    ]);
+    expect(aliasCandidates("budget-smart")).toEqual(
+      aliasCandidates("efficient-generalist"),
+    );
+    expect(aliasCandidates("openai-flagship")).toEqual([
+      "openai/gpt-5.6-sol",
+      "openai/gpt-5.6-terra",
+      "openai/gpt-5.6-luna",
+      "openai/gpt-5.5",
+      "openai/gpt-5.4",
+    ]);
+    expect(
+      aliasCandidates("openai-flagship").some((model) =>
+        model.includes("-fast"),
+      ),
+    ).toBe(false);
   });
 
   test("discloses kind and validation authority for Claude routed entries", async () => {
@@ -200,7 +305,7 @@ describe("Fusion panel composition", () => {
 
   test("discloses kind and validation authority for forced prefixes", async () => {
     const forcedAlias = await resolveModelEntry("opencode:openai-flagship", {
-      executor: opencodeModelsExecutor(["openai/gpt-5.5"]),
+      executor: opencodeModelsExecutor(["openai/gpt-5.6-sol"]),
     });
     const forcedOpenCode = await resolveModelEntry("opencode:openai/gpt-5.5", {
       executor: opencodeModelsExecutor(["openai/gpt-5.5"]),
@@ -277,6 +382,18 @@ describe("Fusion panel composition", () => {
     ).rejects.toThrow("Unrecognized Fusion model entry");
   });
 });
+
+function aliasCandidates(alias: string): string[] {
+  const preference = modelAliasTable[alias];
+  if (preference === undefined) {
+    throw new Error(`Expected alias: ${alias}`);
+  }
+  const primary = modelPreferenceToModel(preference);
+  if (primary === undefined) {
+    throw new Error(`Expected primary model for alias: ${alias}`);
+  }
+  return [primary, ...(preference.fallbacks ?? [])];
+}
 
 function commandSwitchExecutor(options: {
   opencodeModels?: string[];

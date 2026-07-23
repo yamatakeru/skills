@@ -81,23 +81,30 @@ and are scheduled for removal consideration once the skill matures.
 ## Reference Panel Composition Policy
 
 The default panel is three workers; same-harness panels are allowed
-(ADR 0015). Default slots, in priority order:
+(ADR 0041). Default slots, in priority order:
 
 1. the parent agent's own model (a default, not a requirement), conveyed via
    `--parent-model` on the CLI as instructed by `SKILL.md`;
-2. the current OpenAI flagship through OpenCode;
-3. a cheap-but-capable budget model through OpenCode.
+2. a strong generalist selected through the `strong-generalist` alias;
+3. an efficient generalist selected through the `efficient-generalist` alias.
 
 Explicit model selection replaces the default composition entirely. Model
-staleness is absorbed by a bundled alias table with ordered fallback lists
-(`openai-flagship`, `budget-smart`), using `ModelPreference.fallbacks`.
-OpenCode slots verify availability via `opencode models`; Claude Code slots use
-the built-in latest aliases plus `--fallback-model` because Claude Code has no
-enumeration command.
+staleness is absorbed by a bundled alias table with ordered fallback lists,
+using `ModelPreference.fallbacks`. The refill pool is the strong candidates
+followed by the efficient candidates, deduplicated in that order. Automatic
+default candidates are privacy-eligible and exclude free models; free models
+remain available only through explicit `--models` entries. OpenCode slots
+verify availability via `opencode models`; Claude Code slots use the built-in
+latest aliases plus `--fallback-model` because Claude Code has no enumeration
+command.
 
 After resolution, duplicate model IDs are deduplicated and refilled from unused
-fallback entries so a default panel always has three distinct models. Repeating
-a model is allowed only by explicit selection.
+fallback entries. If the distinct pools are exhausted at an effective panel
+size of three or fewer, each remaining seat may repeat only the successfully
+resolved parent seat, uses the `parent-repeat` slot, and emits a degraded
+warning. Without a resolved parent the insufficiency remains an error that
+suggests `--parent-model`; at four or more seats it remains an error regardless.
+Explicit `--models` selection continues to allow duplicates.
 
 Model entries route to harnesses by pattern (`provider/model` to OpenCode,
 Claude aliases to Claude Code, alias-table names via the table), with optional
@@ -132,6 +139,10 @@ warnings. The task prompt remains required; with `--json` the output is a
 when the full composition resolves cleanly. Entry-list validation and a
 harness-grouped model listing were considered and deferred; the listing's
 grammar is deliberately unlocked (ADR 0036).
+
+`DryRunReport.resolvedModels[].slot` is one of `"parent"`, `"strong"`,
+`"efficient"`, `"refill"`, `"parent-repeat"`, or `"explicit"`. The
+`parent-repeat` value and its warning disclose degraded duplicate filling.
 
 ## Reference Worker Prompt Policy
 
