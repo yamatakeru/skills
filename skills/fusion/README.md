@@ -119,11 +119,15 @@ fusion --panelists 3 で、このAPI設計案をレビューして。
 fusion --models sonnet,strong-generalist,efficient-generalist で、このAPI設計案をレビューして。
 ```
 
-Supported model entries are provider-qualified OpenCode models such as
-`openai/gpt-5.5`, Claude aliases such as `sonnet`, alias-table names such as
-`strong-generalist` and `efficient-generalist`, and explicit harness prefixes
-such as `opencode:openai/gpt-5.5`, `claude-code:sonnet`, or
-`cursor:composer-2.5-fast`. Cursor is explicit-prefix only and is available
+Supported model entries are provider-qualified OpenCode models
+(`<provider>/<model>`), Claude aliases (`fable`, `opus`, `sonnet`, `haiku`,
+and `claude-*` ids), alias-table names, and the explicit harness prefixes
+`opencode:`, `claude-code:`, and `cursor:`. The alias table holds
+`strong-generalist` and `efficient-generalist`, used by the default
+composition, plus the `openai-flagship` and `budget-smart` compatibility
+aliases, which are not; run `--help` for the chain behind each one. Free
+models are excluded from automatic selection and are reachable only through
+explicit `--models` entries. Cursor is explicit-prefix only and is available
 only with the SDK transport. Unknown entries are errors.
 
 ## Limits
