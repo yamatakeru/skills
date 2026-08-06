@@ -1,6 +1,6 @@
 # Fusion Runtime Handoff
 
-Date: 2026-08-07 (instruction-environment round — phase 1 merged via PR #18, phase 2 probe complete)
+Date: 2026-08-07 (instruction-environment round — phase 1 merged via PR #18, phase 2 probed and implemented, PR pending)
 
 This handoff captures the state of the Fusion runtime after the usable
 milestone, the worker-investigation round, the harness-backed judge round,
@@ -11,7 +11,7 @@ instruction-environment round (phase 1 merged via PR #18, phase 2 probe
 complete). The design authority
 is `docs/fusion/` (spec, domain model, glossary, ADR 0001-0044).
 
-## Instruction-Environment Round (2026-08-07): Phase 2 P2-1 Probe Complete
+## Instruction-Environment Round (2026-08-07): Phase 2 Probed and Implemented
 
 Phase 1 merged as PR #18 (`4fe8786`). P2-1 startup-blocking probes ran
 under the mandatory restore-to-pristine constraint (ADR 0034 precedent):
@@ -53,9 +53,21 @@ Probed findings (decisive for ADR 0045):
   CLI transport is both unblockable and hazard-prone under the planned
   `~/.agents/AGENTS.md` wiring.
 
-Next: P2-2 grilling → ADR 0045 (遮断プロファイル; also records the
-disclosure-wording narrowing now that `--pure` is a verified negative),
-then P2-3 implementation.
+P2-2/P2-3 landed on this branch: ADR 0045 records the grilled blocking
+decisions (claude-code `--setting-sources local`; opencode SDK
+`XDG_CONFIG_HOME` redirect at the server-factory seam; opencode CLI
+disclosure-only with the `--pure` wording narrowed to a verified
+negative; cursor unchanged), and the implementation ships the argv/env
+changes, the blocked-state disclosure wording, unit coverage, and the
+refusal-resistant live smoke pairs
+(`test/live-instruction-environment-smoke.test.ts`, claude scratch-cwd
+marker pair plus opencode populated/blocked redirect pair — the blocked
+leg simulates a marker user config via scratch `XDG_CONFIG_HOME` so an
+adapter regression leaks the nonce). Live proof: smoke suite 4/4 under
+`FUSION_LIVE_TESTS=1` and a recorded default panel
+(`fusion-1abda3ee-*`, run status ok) rendering the blocked-state header
+line with the judge-notes lift intact. Remaining for this round: PR and
+conversation review.
 
 ## Instruction-Environment Round (2026-08-06/07): Phase 1 Implemented
 

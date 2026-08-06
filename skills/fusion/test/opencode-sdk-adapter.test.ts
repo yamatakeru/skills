@@ -86,7 +86,12 @@ describe("Fusion OpenCode SDK adapter", () => {
     const serverFactory: OpenCodeServerFactory = async (input) => {
       const configDirectory = input.env.XDG_CONFIG_HOME;
 
+      expect(Object.hasOwn(input.env, "OPENCODE_CONFIG")).toBe(true);
+      expect(input.env.OPENCODE_CONFIG).toBeUndefined();
       expect(configDirectory).toBeDefined();
+      if (configDirectory === undefined) {
+        throw new Error("Expected an isolated OpenCode config directory.");
+      }
       expect(await readdir(configDirectory)).toEqual([]);
       configDirectories.push(configDirectory);
       throw new Error("stop after config directory capture");

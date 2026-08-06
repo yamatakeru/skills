@@ -53,7 +53,7 @@ export interface OpenCodeServerFactoryInput {
   command: string;
   configContent: OpenCodeConfigContent;
   cwd?: string;
-  env: Record<string, string>;
+  env: Record<string, string | undefined>;
   fetch: Fetch;
 }
 
@@ -317,6 +317,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
                     request.environment?.workspaceRoot,
                   env: {
                     [fusionPanelDepthEnv]: nextFusionPanelDepth(),
+                    OPENCODE_CONFIG: undefined,
                     XDG_CONFIG_HOME: configDirectory,
                   },
                   fetch: this.fetch,

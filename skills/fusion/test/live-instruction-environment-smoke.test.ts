@@ -125,12 +125,21 @@ liveTest(
     );
     const marker = probeMarker("opencode-blocked");
     const configDirectory = join(configHome, "opencode");
+    const configInstructions = join(configHome, "config-instructions.md");
+    const explicitConfig = join(configHome, "explicit-config.json");
     await mkdir(configDirectory, { recursive: true });
     await writeFile(join(configDirectory, "AGENTS.md"), `${marker.line}\n`);
+    await writeFile(configInstructions, `${marker.line}\n`);
+    await writeFile(
+      explicitConfig,
+      JSON.stringify({ instructions: [configInstructions] }),
+    );
     const originalConfigHome = process.env.XDG_CONFIG_HOME;
-    process.env.XDG_CONFIG_HOME = configHome;
+    const originalOpenCodeConfig = process.env.OPENCODE_CONFIG;
     const adapter = new OpenCodeSdkAdapter();
     try {
+      process.env.XDG_CONFIG_HOME = configHome;
+      process.env.OPENCODE_CONFIG = explicitConfig;
       const request = probeWorkerRequest(workspace, openCodeModelPreference());
       const result = await adapter.runWorker(request);
 
@@ -143,6 +152,11 @@ liveTest(
         delete process.env.XDG_CONFIG_HOME;
       } else {
         process.env.XDG_CONFIG_HOME = originalConfigHome;
+      }
+      if (originalOpenCodeConfig === undefined) {
+        delete process.env.OPENCODE_CONFIG;
+      } else {
+        process.env.OPENCODE_CONFIG = originalOpenCodeConfig;
       }
       await rm(workspace, { recursive: true, force: true });
       await rm(configHome, { recursive: true, force: true });
