@@ -6,6 +6,7 @@ import {
   type CommandResult,
 } from "./headless-cli-adapters";
 import { deriveContainment } from "./containment";
+import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import { toolPolicyWarnings } from "./tool-policy";
 import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
 import type {
@@ -186,6 +187,12 @@ function claudeSdkComplianceNotes(
   }
   notes.push(...permissionDenials.map((denial) => `Claude Code permission denial: ${denial}`));
   notes.push(...warnings);
+  notes.push(
+    ...instructionEnvironmentDisclosures({
+      kind: "claude-code",
+      transport: "sdk",
+    }).map((disclosure) => disclosure.note),
+  );
   return notes;
 }
 

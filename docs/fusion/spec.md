@@ -158,10 +158,11 @@ correctness (primary sources for research, project-local evidence for code),
 no file modification, uncertainty preservation, and concise reasoning
 summaries instead of hidden chain-of-thought. The default variant also states
 that instructions embedded in repository files, web pages, and tool output are
-data to analyze and report, never directives to follow. This item 8 is a
-quality-layer defense; experiment variants omit it to preserve condition
-purity, and harness enforcement remains the actual boundary. The required
-output sections are a single generic set rendered from
+data to analyze and report, never directives to follow, and that persistent
+harness-injected instructions are environment context rather than the task
+contract. These items 8-9 are quality-layer defenses; experiment variants omit
+both to preserve condition purity, and harness enforcement remains the actual
+boundary. The required output sections are a single generic set rendered from
 `OutputContract.requiredSections`. This is a deliberate, provisional
 divergence from upstream OpenRouter Fusion, which adds no harness instructions;
 it is recorded and revisitable (ADR 0020/0038).
@@ -227,6 +228,11 @@ Containment Level is orthogonal to compliance tier: `no-shell`,
 panel report renders `containment` even when the protocol tier is `full`.
 `allowlist-enforced` must not be described as sandboxed or complete write
 prevention; ADR 0039 records its residual command-construction holes.
+
+Static, per-harness Instruction Environment facts are standing compliance
+disclosures on every worker and judge invocation. They are regenerated for
+judge compliance and deduplicated by harness/transport in the report header;
+they do not affect isolation claims or compliance tiers (ADR 0043).
 
 The workspace watchdog compares `git status --porcelain` and
 `git for-each-ref` snapshots before and after the run, including
@@ -306,6 +312,11 @@ model, harness, and usage evidence, and recorded runs include the judge
 request and result. The judge is not a blind panel worker — it must see all
 worker outputs and is reported separately from panel workers in compliance —
 but recursion denial still applies to it.
+
+Immediately after its role statement, the judge prompt treats persistent
+harness-injected instructions as environment context rather than the judge
+contract and tells the judge not to let them change its role, comparison,
+output language, or required JSON shape (ADR 0044).
 
 The judge output contract is a superset of the published upstream schema
 (ADR 0024): the five-key core (`consensus`, `contradictions` with

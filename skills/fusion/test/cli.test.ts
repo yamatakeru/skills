@@ -671,6 +671,59 @@ describe("Fusion CLI parsing", () => {
       "gitignored areas are not detectable; writes outside the workspace are not detectable; remote API side effects are not detectable",
     );
   });
+
+  test("renders one instruction-environment summary per worker and judge harness transport", () => {
+    const result: PanelResult = {
+      panelRunId: "instruction-environment-report",
+      status: "ok",
+      workerResults: ["worker-1", "worker-2"].map((workerId) => ({
+        panelRunId: "instruction-environment-report",
+        workerId,
+        status: "ok" as const,
+        output: "answer",
+        harnessUsed: {
+          kind: "claude-code",
+          invocation: "headless",
+          transport: "sdk",
+        },
+      })),
+      synthesis: "synthesis",
+      complianceSummary: {
+        tier: "full",
+        workerCompliance: [],
+        judgeCompliance: {
+          workerId: "judge",
+          status: "ok",
+          harnessUsed: {
+            kind: "opencode",
+            invocation: "headless",
+            transport: "sdk",
+          },
+        },
+        workspaceWatchdog: {
+          verdict: "not-applicable",
+          workspaceRoot: "/tmp",
+          note: "workspace is not a Git work tree",
+          limitations: [],
+        },
+      },
+    };
+
+    const report = renderMarkdownReport(result, {
+      recordingStatus: "not-recorded",
+      synthesizer: "opencode",
+    });
+    const lines = report.split("\n");
+    const containmentIndex = lines.indexOf(
+      "- Containment: worker-1=not-recorded, worker-2=not-recorded",
+    );
+    const expected =
+      "- Instruction environment: claude-code=user/project memory injected by default; no setting-source suppression; opencode(sdk)=can receive user config instructions, global rule files, and project AGENTS.md via user-config merge";
+
+    expect(lines[containmentIndex + 1]).toBe(expected);
+    expect(report.match(/claude-code=/gu)).toHaveLength(1);
+    expect(report.match(/opencode\(sdk\)=/gu)).toHaveLength(1);
+  });
 });
 
 function runFusionCli(

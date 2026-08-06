@@ -26,6 +26,7 @@ import {
   runPanel,
   isImplementedJudgeHarness,
   isNonJudgeSynthesizerStrategy,
+  instructionEnvironmentDisclosures,
   assertTopLevelFusionInvocation,
   type DryRunReport,
   type HarnessKind,
@@ -936,6 +937,28 @@ export function renderMarkdownReport(
   );
   lines.push(`- Containment: ${containments.join(", ") || "none"}`);
   const judgeCompliance = result.complianceSummary.judgeCompliance;
+  const instructionEnvironmentSummaries = new Map<string, string>();
+  for (const harness of [
+    ...result.workerResults.map((worker) => worker.harnessUsed),
+    judgeCompliance?.harnessUsed,
+  ]) {
+    if (harness === undefined) {
+      continue;
+    }
+    const key = `${harness.kind}\0${harness.transport ?? ""}`;
+    if (instructionEnvironmentSummaries.has(key)) {
+      continue;
+    }
+    const summary = instructionEnvironmentDisclosures(harness)
+      .map((disclosure) => disclosure.summary)
+      .join(", ");
+    if (summary.length > 0) {
+      instructionEnvironmentSummaries.set(key, summary);
+    }
+  }
+  lines.push(
+    `- Instruction environment: ${[...instructionEnvironmentSummaries.values()].join("; ") || "none"}`,
+  );
   if (judgeCompliance !== undefined) {
     lines.push(`- ${renderJudgeStatusLine(result)}`);
   }

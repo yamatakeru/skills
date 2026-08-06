@@ -8,6 +8,7 @@ import {
   buildCursorSdkArgs,
   cursorShellAllowlist,
   cursorHookScriptContent,
+  instructionEnvironmentDisclosures,
   type CommandExecution,
 } from "../lib/protocol";
 import { withFusionPanelDepth, workerRequest } from "./fixtures";
@@ -193,6 +194,12 @@ describe("Fusion Cursor SDK adapter", () => {
     expect(notes).toContain("request.toolsPolicy.readOnlyBashCommands");
     expect(notes).toContain("Cursor read roots enforced by beforeReadFile hook");
     expect(notes).toContain("account-level User Rules inject");
+    expect(result.complianceEvidence?.notes).toContain(
+      instructionEnvironmentDisclosures({
+        kind: "cursor",
+        transport: "sdk",
+      })[0]?.note,
+    );
     expect(notes).toContain("headless project hook loading");
     expect(notes).not.toContain("compliance is degraded");
     await expect(

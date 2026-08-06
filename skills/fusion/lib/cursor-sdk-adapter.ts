@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deriveContainment } from "./containment";
+import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import { defaultPolicies } from "./defaults";
 import {
   executeCommand,
@@ -900,7 +901,10 @@ function cursorSdkComplianceNotes(input: {
 
 function cursorStandingDisclosureNotes(): string[] {
   return [
-    "Cursor account-level User Rules inject into headless sessions regardless of CURSOR_CONFIG_DIR; this is an environment input, not a panel-state isolation breaker.",
+    ...instructionEnvironmentDisclosures({
+      kind: "cursor",
+      transport: "sdk",
+    }).map((disclosure) => disclosure.note),
     "Cursor CURSOR_CONFIG_DIR and headless project hook loading are undocumented surfaces and remain smoke-monitored fragilities.",
   ];
 }

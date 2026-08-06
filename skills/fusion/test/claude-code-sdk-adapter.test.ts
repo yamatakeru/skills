@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   ClaudeCodeSdkAdapter,
   buildClaudeCodeSdkArgs,
+  instructionEnvironmentDisclosures,
   type CommandExecution,
 } from "../lib/protocol";
 import { withFusionPanelDepth, workerRequest } from "./fixtures";
@@ -128,6 +129,12 @@ describe("Fusion Claude Code SDK adapter", () => {
     });
     expect(result.complianceEvidence?.notes?.join("\n")).toContain(
       "num_turns: 2",
+    );
+    expect(result.complianceEvidence?.notes).toContain(
+      instructionEnvironmentDisclosures({
+        kind: "claude-code",
+        transport: "sdk",
+      })[0]?.note,
     );
   });
 
