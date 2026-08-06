@@ -7,7 +7,7 @@ describe("instruction environment disclosures", () => {
       {
         note: "Claude Code injects user-level memory (~/.claude/CLAUDE.md and its imports) and project-level memory (CLAUDE.md resolved from the session cwd, plus imports) by default; no setting-source suppression is applied.",
         summary:
-          "claude-code=user/project memory injected by default; no setting-source suppression",
+          "claude-code=user/project memory injected by default, no setting-source suppression",
       },
     ];
 
@@ -44,7 +44,7 @@ describe("instruction environment disclosures", () => {
       {
         note: "OpenCode CLI sessions can receive user-level config instructions, global rule files, and project AGENTS.md through user-config merge; the CLI transport passes --pure, and its suppression effect on instruction loading is unverified.",
         summary:
-          "opencode(cli)=can receive user config instructions, global rule files, and project AGENTS.md via user-config merge; --pure effect on instruction loading unverified",
+          "opencode(cli)=can receive user config instructions, global rule files, and project AGENTS.md via user-config merge, --pure effect on instruction loading unverified",
       },
     ]);
   });
