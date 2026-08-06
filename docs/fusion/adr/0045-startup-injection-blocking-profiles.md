@@ -53,22 +53,49 @@ Probed findings, all live-verified:
   proving the redirect target is honored rather than silently ignored.
   The project layer (cwd `AGENTS.md`) is cwd-scoped, not config-scoped,
   and still injects under the redirect.
-- **The opencode CLI path has no viable blocking means.** `opencode run`
-  hung with zero output under either redirect env (`XDG_CONFIG_HOME`,
-  `OPENCODE_CONFIG`) even against a pristine config, and independently
-  hung whenever an `instructions` key was present in `opencode.json`
-  (4/4, with and without `--pure`, instructions-file-path independent),
-  while serve succeeded on every equivalent leg.
+- **The opencode CLI path has no viable blocking mechanism.** `opencode
+  run` hung with zero output under either redirect env
+  (`XDG_CONFIG_HOME`, `OPENCODE_CONFIG`) even against a pristine config,
+  and independently hung whenever an `instructions` key was present in
+  `opencode.json` (4/4, with and without `--pure`,
+  instructions-file-path independent), while serve succeeded on every
+  equivalent leg.
+
+Post-review follow-up probes (2026-08-07, PR #19 review finding), all
+scratch-scoped and live-verified:
+
+- `--setting-sources local` also loads `CLAUDE.local.md` from the
+  session cwd AND the per-project auto-memory file
+  (`~/.claude/projects/<mangled-cwd>/memory/MEMORY.md`) — both
+  marker-verified, so the originally adopted `local` profile left two
+  persistent instruction channels open.
+- The accepted empty source list (`--setting-sources ""`) blocks
+  `CLAUDE.local.md` but does NOT block auto memory.
+- `--settings '{"autoMemoryEnabled":false}'` blocks the auto-memory
+  channel; this is the documented disable surface, honored from the
+  `--settings` flag.
+- Faithful panel worker and judge argv under the combined profile
+  (`--setting-sources ""` + the autoMemoryEnabled=false settings flag)
+  behaved normally: Read tool, Bash allowlist, permission mode, and the
+  judge no-tools JSON contract all intact.
+- Headless `claude --print` creates `~/.claude/projects/` entries per
+  cwd even under `--no-session-persistence` — cosmetic state litter with
+  no instruction effect unless memory content exists for that cwd.
 
 ## Decision
 
 ### Claude Code (both transports, worker and judge)
 
-Append `--setting-sources local` to the shared base argv. This blocks
-both the user memory layer and the project memory layer. Losing the
-project layer is intended, not collateral: panel task context flows
-through the rendered prompt and ContextManifest, and removing cwd-picked
-instructions is the same trade ADR 0034 made for cursor's project rules.
+Append `--setting-sources ""` (empty source list) plus
+`--settings '{"autoMemoryEnabled":false}'` to the shared base argv.
+Together these block the user memory layer, the project memory layer,
+`CLAUDE.local.md`, and auto memory. The profile was `--setting-sources
+local` when first accepted; the PR #19 review surfaced the two channels
+`local` leaves open, and the follow-up probes above drove the amendment.
+Losing the project layer is intended, not collateral: panel task context
+flows through the rendered prompt and ContextManifest, and removing
+cwd-picked instructions is the same trade ADR 0034 made for cursor's
+project rules.
 
 ### OpenCode SDK/serve (default transport, worker and judge)
 
@@ -116,9 +143,9 @@ behavior and join the smoke-monitored fragility list:
 Non-invasive live smokes (gated like the existing live suite) monitor
 the adopted surfaces without ever touching real user configs:
 
-- claude-code pair: a scratch cwd `CLAUDE.md` marker is detected by a
-  baseline argv without the flag, and suppressed to NONE by the adopted
-  argv.
+- claude-code pair: scratch cwd `CLAUDE.md` and `CLAUDE.local.md`
+  markers are detected by a baseline argv without the blocking flags,
+  and suppressed to NONE by the adopted argv.
 - opencode pair: a marker inside a populated scratch redirect target is
   detected (redirect honored), and the adapter's empty redirect yields
   NONE (block effective).
@@ -136,6 +163,11 @@ the adopted surfaces without ever touching real user configs:
   credentials into scratch dirs is not acceptable practice.
 - **A hang-guard mechanism for the opencode CLI transport**: the worker
   timeout already converts hangs into disclosed dropouts.
+- **An auto-memory smoke leg**: it would have to plant marker files
+  inside the real `~/.claude/projects/` namespace (scratch-scoped
+  entries, but still the live state tree); the disable flag is
+  documented behavior, so the channel stays covered by the probe record
+  rather than a recurring smoke.
 - **Recording probe markers as a runtime detection feature**: probes are
   one-shot rounds with synthetic tokens; runtime detection of real
   injected content stays prohibited (ADR 0043).

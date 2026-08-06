@@ -66,8 +66,25 @@ leg simulates a marker user config via scratch `XDG_CONFIG_HOME` so an
 adapter regression leaks the nonce). Live proof: smoke suite 4/4 under
 `FUSION_LIVE_TESTS=1` and a recorded default panel
 (`fusion-1abda3ee-*`, run status ok) rendering the blocked-state header
-line with the judge-notes lift intact. Remaining for this round: PR and
-conversation review.
+line with the judge-notes lift intact.
+
+PR #19 conversation review (post-implementation): a Major finding proved
+the originally adopted `--setting-sources local` profile insufficient —
+follow-up scratch probes (L/A legs in the probe job dir) confirmed
+`local` also loads cwd `CLAUDE.local.md` and the per-project auto-memory
+file (`~/.claude/projects/<mangled-cwd>/memory/MEMORY.md`), and that the
+empty source list blocks `CLAUDE.local.md` but not auto memory. The
+profile was amended to `--setting-sources ""` plus
+`--settings '{"autoMemoryEnabled":false}'` (documented disable surface;
+side-effect leg green), the disclosure wording updated, and the claude
+smoke pair extended with a `CLAUDE.local.md` marker. An auto-memory
+smoke leg was rejected (it would write inside the real
+`~/.claude/projects/` namespace). Date-class finding rejected on the
+0033/0034 precedent; "no blocking means"→"no blocking mechanism" wording
+adopted. Side observation: headless `claude --print` creates
+`~/.claude/projects/` entries per cwd even under
+`--no-session-persistence` — probe/smoke litter was cleaned after the
+round; harmless unless memory content exists for that cwd.
 
 ## Instruction-Environment Round (2026-08-06/07): Phase 1 Implemented
 

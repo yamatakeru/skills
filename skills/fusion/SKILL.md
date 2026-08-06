@@ -208,7 +208,8 @@ structured tool error: the worker keeps running and discloses the denial in
 its answer instead of being dropped from the panel.
 
 The Instruction Environment is a standing harness input: Claude Code blocks
-user- and project-level memory via `--setting-sources local`; OpenCode SDK
+user, project, and local memory via an empty `--setting-sources` list and auto
+memory via `--settings '{"autoMemoryEnabled":false}'`; OpenCode SDK
 blocks user/global instruction layers through a run-scoped config-directory
 redirect while project `AGENTS.md` still injects; OpenCode CLI blocks nothing
 and `--pure` is verified plugins-only; and Cursor account-level User Rules

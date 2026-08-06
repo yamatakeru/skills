@@ -5,9 +5,9 @@ describe("instruction environment disclosures", () => {
   test("returns the normative static entry for each supported harness and transport", () => {
     const claudeCode = [
       {
-        note: "Claude Code user and project memory layers (CLAUDE.md files and their imports) are blocked via --setting-sources local (ADR 0045); no persistent instruction layer is loaded.",
+        note: "Claude Code user, project, and local memory layers (CLAUDE.md, CLAUDE.local.md, and their imports) are blocked via an empty --setting-sources list, and auto memory is disabled via --settings autoMemoryEnabled=false (ADR 0045); no persistent instruction layer is loaded.",
         summary:
-          "claude-code=user/project memory blocked via --setting-sources local",
+          "claude-code=memory layers and auto memory blocked via empty setting-sources and autoMemoryEnabled=false",
       },
     ];
 
@@ -42,9 +42,9 @@ describe("instruction environment disclosures", () => {
       }),
     ).toEqual([
       {
-        note: "OpenCode CLI sessions receive user-level config instructions, global rule files, and project AGENTS.md through user-config merge; no blocking means exists on this path, and --pure is verified plugins-only (it does not suppress instruction loading).",
+        note: "OpenCode CLI sessions receive user-level config instructions, global rule files, and project AGENTS.md through user-config merge; no blocking mechanism exists on this path, and --pure is verified plugins-only (it does not suppress instruction loading).",
         summary:
-          "opencode(cli)=user config instructions, global rule files, and project AGENTS.md inject, no blocking means, --pure verified plugins-only",
+          "opencode(cli)=user config instructions, global rule files, and project AGENTS.md inject, no blocking mechanism, --pure verified plugins-only",
       },
     ]);
   });

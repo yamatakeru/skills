@@ -20,22 +20,24 @@ const PROBE_PROMPT =
 const legTimeoutMs = 240_000;
 
 liveTest(
-  "detects scratch project memory without the Claude Code blocking profile",
+  "detects scratch project and local memory without the Claude Code blocking profile",
   async () => {
     const output = await runClaudeProbe("claude-baseline", false);
 
-    expect(output.text).toContain(output.nonce);
+    expect(output.text).toContain(output.projectNonce);
+    expect(output.text).toContain(output.localNonce);
   },
   legTimeoutMs,
 );
 
 liveTest(
-  "blocks scratch project memory with the Claude Code blocking profile",
+  "blocks scratch project and local memory with the Claude Code blocking profile",
   async () => {
     const output = await runClaudeProbe("claude-adopted", true);
 
     expect(output.text).toContain("NONE");
-    expect(output.text).not.toContain(output.nonce);
+    expect(output.text).not.toContain(output.projectNonce);
+    expect(output.text).not.toContain(output.localNonce);
   },
   legTimeoutMs,
 );
@@ -168,16 +170,21 @@ liveTest(
 async function runClaudeProbe(
   leg: string,
   useBlockingProfile: boolean,
-): Promise<{ nonce: string; text: string }> {
+): Promise<{ localNonce: string; projectNonce: string; text: string }> {
   const workspace = await mkdtemp(join(tmpdir(), "fusion-live-claude-probe-"));
-  const marker = probeMarker(leg);
+  const projectMarker = probeMarker(`${leg}-project`);
+  const localMarker = probeMarker(`${leg}-local`);
   try {
-    await writeFile(join(workspace, "CLAUDE.md"), `${marker.line}\n`);
+    await writeFile(join(workspace, "CLAUDE.md"), `${projectMarker.line}\n`);
+    await writeFile(
+      join(workspace, "CLAUDE.local.md"),
+      `${localMarker.line}\n`,
+    );
     const args = buildClaudeCodeArgs(
       probeWorkerRequest(workspace, { model: "haiku" }),
     );
     if (!useBlockingProfile) {
-      removeClaudeSettingSources(args);
+      removeClaudeBlockingArgs(args);
     }
     const result = spawnSync("claude", args, {
       cwd: workspace,
@@ -190,7 +197,11 @@ async function runClaudeProbe(
         `claude probe failed with status ${result.status}: ${result.stderr}`,
       );
     }
-    return { nonce: marker.nonce, text: result.stdout };
+    return {
+      localNonce: localMarker.nonce,
+      projectNonce: projectMarker.nonce,
+      text: result.stdout,
+    };
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -213,15 +224,18 @@ function probeWorkerRequest(
   };
 }
 
-function removeClaudeSettingSources(args: string[]): void {
-  const index = args.findIndex(
+function removeClaudeBlockingArgs(args: string[]): void {
+  const blockingArgsIndex = args.findIndex(
     (arg, position) =>
-      arg === "--setting-sources" && args[position + 1] === "local",
+      arg === "--setting-sources" &&
+      args[position + 1] === "" &&
+      args[position + 2] === "--settings" &&
+      args[position + 3] === '{"autoMemoryEnabled":false}',
   );
-  if (index < 0) {
+  if (blockingArgsIndex < 0) {
     throw new Error("Claude Code args did not contain the blocking profile.");
   }
-  args.splice(index, 2);
+  args.splice(blockingArgsIndex, 4);
 }
 
 function probeMarker(leg: string): { line: string; nonce: string } {
