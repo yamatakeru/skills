@@ -62,7 +62,8 @@ deliver on breadth-bound work.
   panels; the glossary gains "Comparison-Shaped Task".
 - Casual cheap panels raise exposure to cheap-worker dropouts. Existing
   partial-run disclosure semantics are the mitigation; the OpenCode adapter
-  invalid-output investigation is tracked in the runtime handoff.
+  invalid-output investigation is tracked in the fusion backlog issue
+  (#20; originally in the since-retired runtime handoff).
 - The recorded-divergence list grows: usage tone (this ADR) joins portable
   worker instructions (ADR 0020) and degraded compliance evidence
   (ADR 0007/0022).
