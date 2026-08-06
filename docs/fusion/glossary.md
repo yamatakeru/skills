@@ -76,7 +76,19 @@ worker.
 Isolation is about panel state only. Harness-level environment inputs that
 reach every session alike (user-level rules or instructions, global harness
 configuration) do not negate isolation; they are disclosed as compliance
-evidence instead.
+evidence instead. The instruction-bearing subset of those inputs is the
+Instruction Environment.
+
+## Instruction Environment
+
+The persistent instruction layer a harness injects into a session from outside
+the rendered prompt: user-level rules or memory files, project-level rule files
+picked up from the session's working directory, and account-level rules. The
+instruction-bearing subset of the harness-level environment inputs named in the
+Isolation entry.
+
+Instruction environment facts do not negate isolation and are not inputs to
+compliance tiers; they are disclosed as compliance evidence notes (ADR 0033).
 
 ## Full Compliance
 
