@@ -1,14 +1,61 @@
 # Fusion Runtime Handoff
 
-Date: 2026-08-07 (instruction-environment round phase 1 — implemented, PR pending)
+Date: 2026-08-07 (instruction-environment round — phase 1 merged via PR #18, phase 2 probe complete)
 
 This handoff captures the state of the Fusion runtime after the usable
 milestone, the worker-investigation round, the harness-backed judge round,
 the upstream fidelity round, the SDK transport round (reserved milestones 1
 and 6), the cursor harness round (PR #3, merged), the cursor probe
-round (PR #4, merged), the model-discovery round, and phase 1 of the
-instruction-environment round. The design authority
+round (PR #4, merged), the model-discovery round, and the
+instruction-environment round (phase 1 merged via PR #18, phase 2 probe
+complete). The design authority
 is `docs/fusion/` (spec, domain model, glossary, ADR 0001-0044).
+
+## Instruction-Environment Round (2026-08-07): Phase 2 P2-1 Probe Complete
+
+Phase 1 merged as PR #18 (`4fe8786`). P2-1 startup-blocking probes ran
+under the mandatory restore-to-pristine constraint (ADR 0034 precedent):
+every probed global file (`~/.claude/CLAUDE.md`,
+`~/.config/opencode/opencode.json`, `~/.config/opencode/AGENTS.md`
+absent-pristine) was proven byte-identical to its pre-probe snapshot after
+each marker window and at round close. Full leg matrix, transcripts, and
+restore proofs: `.fusion-runs/probe-2026-08-07-instruction-env/`
+(`probe-summary.md` is the entry point). Markers were synthetic passive
+tokens; the ADR 0043 recording prohibition (user-injected content) is not
+implicated.
+
+Probed findings (decisive for ADR 0045):
+
+- **claude-code**: `--setting-sources` exists (user/project/local). User
+  memory loads iff `user` OR `project` is listed — excluding `user` alone
+  does not suppress it. Project memory loads iff `project` is listed. Both
+  layers are suppressed only by `--setting-sources local` (or the accepted
+  empty string). With faithful panel worker/judge argv plus
+  `--setting-sources local`, tools, permission-mode, and the judge JSON
+  contract all behaved normally (no observed side-effects).
+- **opencode**: `--pure` is plugins-only on BOTH paths — global AGENTS.md
+  markers reached CLI `run --pure` sessions and `serve --pure` sessions
+  alike. `OPENCODE_CONFIG_CONTENT` merges with (does not replace) user
+  config: global AGENTS.md and user-config `instructions` files both
+  reached serve sessions started with the adapter's faithful config
+  content. On the serve/SDK path a blocking means EXISTS: pointing
+  `XDG_CONFIG_HOME` at an empty scratch dir in the serve spawn env
+  blocked both channels (marker probe returned NONE) with auth and
+  operation intact (auth lives outside the config dir). The project
+  layer (cwd AGENTS.md) is cwd-scoped and survives the redirect — a
+  disclosed asymmetry vs claude-code's `--setting-sources local`, which
+  drops both layers.
+- **Fragile surface**: `opencode run` (CLI transport) hung with zero
+  output under two independent triggers — an `instructions` key present
+  in `opencode.json` (4/4, ±`--pure`, path-independent) and either
+  config-redirect env (`XDG_CONFIG_HOME`, `OPENCODE_CONFIG`) even with a
+  pristine config — while serve succeeded on every equivalent leg. The
+  CLI transport is both unblockable and hazard-prone under the planned
+  `~/.agents/AGENTS.md` wiring.
+
+Next: P2-2 grilling → ADR 0045 (遮断プロファイル; also records the
+disclosure-wording narrowing now that `--pure` is a verified negative),
+then P2-3 implementation.
 
 ## Instruction-Environment Round (2026-08-06/07): Phase 1 Implemented
 
