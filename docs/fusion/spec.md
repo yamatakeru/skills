@@ -381,7 +381,10 @@ the procedure documented for re-execution:
 
 These are manual smoke checks with real model invocations; CI automation of
 this matrix is deferred to a later milestone because it requires credential
-management and paid model calls in CI.
+management and paid model calls in CI. The concrete re-execution procedure
+(machine-specific commands and expected results) lives in
+`docs/fusion/runbook.md`, which is deliberately outside this spec's
+harness-neutral scope.
 
 ## Contract Sketch
 
