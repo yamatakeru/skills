@@ -1,7 +1,37 @@
 import { describe, expect, test } from "bun:test";
-import { renderJudgePrompt } from "../lib/protocol";
+import {
+  AdapterRegistry,
+  buildJudgeRequest,
+  renderJudgePrompt,
+} from "../lib/protocol";
+import { okRunner, panelRequest } from "./fixtures";
 
 describe("Fusion judge synthesizer prompt", () => {
+  test("explicit synthesizer strategy inherits the runtime transport", () => {
+    const registry = new AdapterRegistry({ transport: "sdk" }).register(
+      "opencode",
+      okRunner(),
+    );
+
+    const request = buildJudgeRequest(
+      {
+        panelRequest: panelRequest({
+          synthesizer: { strategy: "opencode" },
+        }),
+        workerRequests: [],
+        workerResults: [],
+        events: [],
+      },
+      { harnessSelector: registry },
+    );
+
+    expect(request.harness).toEqual({
+      kind: "opencode",
+      invocation: "headless",
+      transport: "sdk",
+    });
+  });
+
   test("renders the exact injection-subordination clause in contract order", () => {
     const prompt = renderJudgePrompt({
       task: "Compare answers.",

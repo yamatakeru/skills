@@ -305,13 +305,12 @@ function selectJudgeHarness(
   harnessSelector: HarnessSelector,
 ): HarnessDescriptor {
   const strategy = request.synthesizer?.strategy;
-  if (isHarnessSynthesizerStrategy(strategy)) {
-    return { kind: strategy, invocation: "headless" };
-  }
-
   return harnessSelector.selectHarness({
     workerId: "judge",
     modelPreference,
+    harnessPreference: isHarnessSynthesizerStrategy(strategy)
+      ? { kind: strategy }
+      : undefined,
     policy: request.harnessSelectionPolicy,
   });
 }

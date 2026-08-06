@@ -229,8 +229,8 @@ panel report renders `containment` even when the protocol tier is `full`.
 `allowlist-enforced` must not be described as sandboxed or complete write
 prevention; ADR 0039 records its residual command-construction holes.
 
-Static, per-harness Instruction Environment facts are standing compliance
-disclosures on every worker and judge invocation. They are regenerated for
+Static, per-harness/transport Instruction Environment facts are standing
+compliance disclosures on every worker and judge invocation. They are regenerated for
 judge compliance and deduplicated by harness/transport in the report header;
 they do not affect isolation claims or compliance tiers (ADR 0043).
 
