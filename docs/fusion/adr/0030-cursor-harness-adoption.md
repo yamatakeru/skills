@@ -85,7 +85,7 @@ free today and expensive after user-visible surfaces (forced prefixes,
    access succeeding). Where cursor semantics make an arm meaningless (see
    ADR 0032 on open reads), the divergence disclosure replaces the arm.
 6. Spec, glossary, domain model, `types.ts`, `SKILL.md` (version bump), and
-   the handoff updated.
+   the runtime handoff (since retired) updated.
 
 ## Consequences
 

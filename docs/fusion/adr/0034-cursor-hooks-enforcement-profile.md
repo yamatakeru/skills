@@ -119,6 +119,7 @@ itself; both stay on the smoke-monitored fragility list from ADR 0032.
   Rules injection (not run-scope controllable), undocumented surfaces
   (`CURSOR_CONFIG_DIR`, headless hooks), and display-name model echoes.
 - The probe artifacts (fourteen transcripts, hook event logs, restore
-  proofs) live under the probe job directory and are summarized in
-  `FUSION_RUNTIME_HANDOFF.md`; the decisive behaviors are re-verifiable
-  with the commands recorded there.
+  proofs) live under the machine-local probe job directory; this ADR is
+  their durable record (the ADR 0042 principle). The decisive behaviors
+  remain exercised by the cursor adapter test suite and the smoke
+  procedures in `docs/fusion/runbook.md`.

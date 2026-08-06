@@ -14,8 +14,10 @@ and ADR 0029 (read-root semantics) on this harness.
 ## Context
 
 All findings below are live-probed unless marked documented; probe artifacts
-are session-local, and the decisive behaviors are re-verifiable with the
-commands noted in the handoff.
+are session-local, and this ADR is their durable record (the ADR 0042
+principle). The behaviors that remained decision-relevant were superseded
+into the ADR 0034 hooks profile, whose surfaces are exercised by the
+cursor adapter test suite and `docs/fusion/runbook.md`.
 
 ### Protocol surface
 

@@ -18,9 +18,9 @@ per-slot models, but the harness routing that `resolvePanelComposition`
 derives from model entries travels out-of-band: a `workerId → HarnessKind`
 map smuggled through the untyped
 `harnessSelectionPolicy.userPolicy.fusionForcedHarnesses` bag
-(`panel-composition.ts` → `worker-requests.ts`). The handoff has recorded
-this as a known limitation ("revisit if the portable contract grows one")
-since the judge round.
+(`panel-composition.ts` → `worker-requests.ts`). The since-retired runtime
+handoff had recorded this as a known limitation ("revisit if the portable
+contract grows one") since the judge round; this ADR resolves it.
 
 Adopting cursor (ADR 0030) makes the pressure structural: cursor entries are
 reachable only through the explicit `cursor:` forced prefix, so every cursor

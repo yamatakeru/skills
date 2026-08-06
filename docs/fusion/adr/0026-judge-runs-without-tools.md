@@ -70,7 +70,8 @@ Standing rationales, classified by lifetime:
   The judge is a single synthesis-critical invocation on the serial critical
   path. Tool use through the current headless CLI adapters exposes it to the
   permission-abort dropout class that already fells panel workers (diagnosed
-  2026-07-06; runtime handoff milestone 6). A worker dropout costs one panel
+  2026-07-06; reserved milestone 6, `docs/fusion/milestones.md`). A worker
+  dropout costs one panel
   seat; a judge dropout costs the entire structured analysis.
 - Policy-enforcement asymmetry (infrastructure-bound — expires with
   milestone 1). The opencode adapter cannot enforce tool policy (ADR 0022); a

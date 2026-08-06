@@ -10,11 +10,12 @@ restore-to-pristine constraint: every probed user-global file
 (`~/.claude/CLAUDE.md`, `~/.config/opencode/opencode.json`,
 `~/.config/opencode/AGENTS.md` pristine-absent) was proven byte-identical
 to its pre-probe snapshot after each marker window and at round close.
-Probe transcripts, leg matrix, and restore proofs live in the probe job
-directory (`.fusion-runs/probe-2026-08-07-instruction-env/`,
-entry point `probe-summary.md`) and are summarized in
-`FUSION_RUNTIME_HANDOFF.md`. Completes the blocking phase reserved by
-ADR 0043; disclosure mechanics from ADR 0043 are unchanged.
+Probe transcripts, leg matrix, and restore proofs live in the
+machine-local probe job directory
+(`.fusion-runs/probe-2026-08-07-instruction-env/`, entry point
+`probe-summary.md`); this ADR is their durable record (the ADR 0042
+principle). Completes the blocking phase reserved by ADR 0043;
+disclosure mechanics from ADR 0043 are unchanged.
 
 ## Context
 
