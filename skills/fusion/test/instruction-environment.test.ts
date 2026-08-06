@@ -5,9 +5,9 @@ describe("instruction environment disclosures", () => {
   test("returns the normative static entry for each supported harness and transport", () => {
     const claudeCode = [
       {
-        note: "Claude Code injects user-level memory (~/.claude/CLAUDE.md and its imports) and project-level memory (CLAUDE.md resolved from the session cwd, plus imports) by default; no setting-source suppression is applied.",
+        note: "Claude Code user, project, and local memory layers (CLAUDE.md, CLAUDE.local.md, and their imports) are blocked via an empty --setting-sources list, and auto memory is disabled via --settings autoMemoryEnabled=false (ADR 0045); no persistent instruction layer is loaded.",
         summary:
-          "claude-code=user/project memory injected by default, no setting-source suppression",
+          "claude-code=memory layers and auto memory blocked via empty setting-sources and autoMemoryEnabled=false",
       },
     ];
 
@@ -30,9 +30,9 @@ describe("instruction environment disclosures", () => {
       }),
     ).toEqual([
       {
-        note: "OpenCode SDK sessions can receive user-level config instructions, global rule files, and project AGENTS.md through user-config merge.",
+        note: "OpenCode SDK sessions run with XDG_CONFIG_HOME redirected to a run-scoped empty config directory, blocking user config instructions and global rule files (ADR 0045); project AGENTS.md from the session cwd still injects.",
         summary:
-          "opencode(sdk)=can receive user config instructions, global rule files, and project AGENTS.md via user-config merge",
+          "opencode(sdk)=user/global instruction layers blocked via config-dir redirect, project AGENTS.md still injects",
       },
     ]);
     expect(
@@ -42,9 +42,9 @@ describe("instruction environment disclosures", () => {
       }),
     ).toEqual([
       {
-        note: "OpenCode CLI sessions can receive user-level config instructions, global rule files, and project AGENTS.md through user-config merge; the CLI transport passes --pure, and its suppression effect on instruction loading is unverified.",
+        note: "OpenCode CLI sessions receive user-level config instructions and global rule files through user-config merge, and project AGENTS.md from the session cwd; no blocking mechanism exists on this path, and --pure is verified plugins-only (it does not suppress instruction loading).",
         summary:
-          "opencode(cli)=can receive user config instructions, global rule files, and project AGENTS.md via user-config merge, --pure effect on instruction loading unverified",
+          "opencode(cli)=user config instructions, global rule files, and cwd AGENTS.md inject, no blocking mechanism, --pure verified plugins-only",
       },
     ]);
   });
@@ -68,5 +68,19 @@ describe("instruction environment disclosures", () => {
     expect(
       instructionEnvironmentDisclosures({ kind: "pi", transport: "sdk" }),
     ).toEqual([]);
+  });
+
+  test("keeps report-safe summaries free of semicolons", () => {
+    for (const harness of [
+      { kind: "claude-code" as const, transport: "sdk" as const },
+      { kind: "claude-code" as const, transport: "cli" as const },
+      { kind: "opencode" as const, transport: "sdk" as const },
+      { kind: "opencode" as const, transport: "cli" as const },
+      { kind: "cursor" as const, transport: "sdk" as const },
+    ]) {
+      for (const disclosure of instructionEnvironmentDisclosures(harness)) {
+        expect(disclosure.summary).not.toContain(";");
+      }
+    }
   });
 });

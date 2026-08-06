@@ -157,6 +157,12 @@ function buildClaudeCodeBaseArgs(request: WorkerRequest): string[] {
   if (disallowedTools !== undefined) {
     args.push(`--disallowedTools=${disallowedTools}`);
   }
+  args.push(
+    "--setting-sources",
+    "",
+    "--settings",
+    '{"autoMemoryEnabled":false}',
+  );
   return args;
 }
 

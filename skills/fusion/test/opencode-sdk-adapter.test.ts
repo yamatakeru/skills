@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { readdir } from "node:fs/promises";
 import {
   OpenCodeSdkAdapter as BaseOpenCodeSdkAdapter,
   buildOpenCodeConfigContent,
@@ -79,6 +80,36 @@ describe("Fusion OpenCode SDK adapter", () => {
       });
     });
   }
+
+  test("gives each server factory a distinct empty XDG config directory", async () => {
+    const configDirectories: string[] = [];
+    const serverFactory: OpenCodeServerFactory = async (input) => {
+      const configDirectory = input.env.XDG_CONFIG_HOME;
+
+      expect(Object.hasOwn(input.env, "OPENCODE_CONFIG")).toBe(true);
+      expect(input.env.OPENCODE_CONFIG).toBeUndefined();
+      expect(configDirectory).toBeDefined();
+      if (configDirectory === undefined) {
+        throw new Error("Expected an isolated OpenCode config directory.");
+      }
+      expect(await readdir(configDirectory)).toEqual([]);
+      configDirectories.push(configDirectory);
+      throw new Error("stop after config directory capture");
+    };
+    const adapters = [
+      new OpenCodeSdkAdapter({ serverFactory, versionExecutor }),
+      new OpenCodeSdkAdapter({ serverFactory, versionExecutor }),
+    ];
+
+    const results = await Promise.all(
+      adapters.map((adapter) => adapter.runWorker(workerRequest())),
+    );
+    await Promise.all(adapters.map((adapter) => adapter.dispose()));
+
+    expect(results.map((result) => result.status)).toEqual(["error", "error"]);
+    expect(configDirectories).toHaveLength(2);
+    expect(configDirectories[0]).not.toBe(configDirectories[1]);
+  });
 
   test("maps SDK response evidence to a worker result", async () => {
     let promptMessageId: string | undefined;

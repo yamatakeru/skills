@@ -103,9 +103,26 @@ describe("Fusion headless CLI adapters", () => {
       "--tools=Read,Grep,Glob,WebSearch,WebFetch,Bash",
       "--allowedTools=Read,Grep,Glob,WebSearch,WebFetch,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(rg:*),Bash(grep:*),Bash(ls:*),Bash(cat:*)",
       "--disallowedTools=Write,Edit,MultiEdit,Task,NotebookEdit",
+      "--setting-sources",
+      "",
+      "--settings",
+      '{"autoMemoryEnabled":false}',
       "--",
       request.prompt,
     ]);
+  });
+
+  test("blocks Claude Code memory layers and auto memory", () => {
+    const args = buildClaudeCodeArgs(workerRequest());
+    const settingSourcesIndex = args.indexOf("--setting-sources");
+
+    expect(args.slice(settingSourcesIndex, settingSourcesIndex + 4)).toEqual([
+      "--setting-sources",
+      "",
+      "--settings",
+      '{"autoMemoryEnabled":false}',
+    ]);
+    expect(settingSourcesIndex).toBeLessThan(args.indexOf("--"));
   });
 
   test("grants scoped bash from readOnlyBashCommands without an explicit Bash allow", () => {

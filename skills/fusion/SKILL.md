@@ -12,7 +12,7 @@ compatibility: >-
   bundled self-contained TypeScript CLI; no node_modules are required inside the
   skill directory.
 metadata:
-  version: "0.12.0"
+  version: "0.13.0"
   kind: "blind-panel synthesis"
   mode: "blind"
   canonical-runtime: "bun-cli"
@@ -207,14 +207,15 @@ directory with `--read-root`. A denied request surfaces to the worker as a
 structured tool error: the worker keeps running and discloses the denial in
 its answer instead of being dropped from the panel.
 
-The Instruction Environment is a standing harness input: Claude Code injects
-user- and project-level memory by default without setting-source suppression;
-OpenCode can receive user-config instructions, global rule files, and project
-`AGENTS.md` through user-config merge, while the CLI passes `--pure` with an
-unverified suppression effect; and Cursor injects account-level User Rules
-regardless of `CURSOR_CONFIG_DIR`. Worker and judge prompts carry
-injection-subordination clauses, and runs disclose these facts in compliance
-notes and the report's Instruction environment header line.
+The Instruction Environment is a standing harness input: Claude Code blocks
+user, project, and local memory via an empty `--setting-sources` list and auto
+memory via `--settings '{"autoMemoryEnabled":false}'`; OpenCode SDK
+blocks user/global instruction layers through a run-scoped config-directory
+redirect while project `AGENTS.md` still injects; OpenCode CLI blocks nothing
+and `--pure` is verified plugins-only; and Cursor account-level User Rules
+remain injected regardless of `CURSOR_CONFIG_DIR`. Worker and judge prompts
+carry injection-subordination clauses, and runs disclose these facts in
+compliance notes and the report's Instruction environment header line.
 
 Cursor workers use a run-scoped scratch cwd with project hooks to enforce the
 read-only bash allowlist, recursive delegation denial, and declared read-root

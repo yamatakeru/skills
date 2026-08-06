@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AssistantMessage, Permission } from "@opencode-ai/sdk/client";
 import { deriveContainment } from "./containment";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
@@ -50,7 +53,7 @@ export interface OpenCodeServerFactoryInput {
   command: string;
   configContent: OpenCodeConfigContent;
   cwd?: string;
-  env: Record<string, string>;
+  env: Record<string, string | undefined>;
   fetch: Fetch;
 }
 
@@ -286,7 +289,9 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     await server?.dispose();
   }
 
-  private async ensureServer(request: WorkerRequest): Promise<OpenCodeServerHandle> {
+  private async ensureServer(
+    request: WorkerRequest,
+  ): Promise<OpenCodeServerHandle> {
     const requestPolicyFingerprint = canonicalOpenCodePolicyFingerprint(
       request.toolsPolicy,
       request.environment,
@@ -295,19 +300,48 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
       this.serverPolicyFingerprint = requestPolicyFingerprint;
       const promise =
         this.injectedBaseUrl === undefined
-          ? this.serverFactory({
-              command: this.command,
-              configContent: buildOpenCodeConfigContent({
-                toolsPolicy: request.toolsPolicy,
-                environment: request.environment,
-                agentName: this.agentName,
-              }),
-              cwd:
-                request.environment?.workingDirectory ??
-                request.environment?.workspaceRoot,
-              env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
-              fetch: this.fetch,
-            })
+          ? (async () => {
+              const configDirectory = await mkdtemp(
+                join(tmpdir(), "fusion-opencode-config-"),
+              );
+              try {
+                const server = await this.serverFactory({
+                  command: this.command,
+                  configContent: buildOpenCodeConfigContent({
+                    toolsPolicy: request.toolsPolicy,
+                    environment: request.environment,
+                    agentName: this.agentName,
+                  }),
+                  cwd:
+                    request.environment?.workingDirectory ??
+                    request.environment?.workspaceRoot,
+                  env: {
+                    [fusionPanelDepthEnv]: nextFusionPanelDepth(),
+                    OPENCODE_CONFIG: undefined,
+                    XDG_CONFIG_HOME: configDirectory,
+                  },
+                  fetch: this.fetch,
+                });
+                return {
+                  baseUrl: server.baseUrl,
+                  async dispose() {
+                    try {
+                      await server.dispose();
+                    } finally {
+                      await rm(configDirectory, {
+                        recursive: true,
+                        force: true,
+                      }).catch(() => undefined);
+                    }
+                  },
+                };
+              } catch (error) {
+                await rm(configDirectory, { recursive: true, force: true }).catch(
+                  () => undefined,
+                );
+                throw error;
+              }
+            })()
           : Promise.resolve({
               baseUrl: this.injectedBaseUrl,
               dispose() {},

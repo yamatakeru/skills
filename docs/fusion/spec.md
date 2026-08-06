@@ -233,6 +233,11 @@ Static, per-harness/transport Instruction Environment facts are standing
 compliance disclosures on every worker and judge invocation. They are regenerated for
 judge compliance and deduplicated by harness/transport in the report header;
 they do not affect isolation claims or compliance tiers (ADR 0043).
+Claude Code blocks user/project/local memory with an empty `--setting-sources`
+list and auto memory with `--settings '{"autoMemoryEnabled":false}'`, and the
+OpenCode SDK redirects `XDG_CONFIG_HOME` to block user/global instruction layers
+while leaving project `AGENTS.md` active. OpenCode CLI has no blocking profile
+(`--pure` is plugins-only); Cursor User Rules remain injected (ADR 0045).
 
 The workspace watchdog compares `git status --porcelain` and
 `git for-each-ref` snapshots before and after the run, including

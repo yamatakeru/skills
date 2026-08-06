@@ -724,7 +724,7 @@ describe("Fusion CLI parsing", () => {
       "- Containment: worker-1=not-recorded, worker-2=not-recorded, worker-3=not-recorded",
     );
     const expected =
-      "- Instruction environment: claude-code=user/project memory injected by default, no setting-source suppression; opencode(cli)=can receive user config instructions, global rule files, and project AGENTS.md via user-config merge, --pure effect on instruction loading unverified; opencode(sdk)=can receive user config instructions, global rule files, and project AGENTS.md via user-config merge";
+      "- Instruction environment: claude-code=memory layers and auto memory blocked via empty setting-sources and autoMemoryEnabled=false; opencode(cli)=user config instructions, global rule files, and cwd AGENTS.md inject, no blocking mechanism, --pure verified plugins-only; opencode(sdk)=user/global instruction layers blocked via config-dir redirect, project AGENTS.md still injects";
 
     expect(lines[containmentIndex + 1]).toBe(expected);
     expect(report.match(/claude-code=/gu)).toHaveLength(1);
