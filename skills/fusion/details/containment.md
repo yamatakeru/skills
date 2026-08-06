@@ -52,7 +52,10 @@ in gitignored areas, or remote API side effects.
    and persistent harness-injected instructions as environment context rather
    than the task contract. These items 8-9 reduce quality drift but do not
    replace technical enforcement. Experiment prompt variants omit both items to
-   preserve condition purity.
+   preserve condition purity. Claude Code user/project memory and OpenCode SDK
+   user/global instruction layers are also blocked at startup; OpenCode project
+   `AGENTS.md`, OpenCode CLI instruction layers, and Cursor User Rules remain
+   standing disclosed inputs (ADR 0043/0045).
 6. **Workspace watchdog.** Before/after Git status and ref snapshots detect
    tracked-worktree changes and ref movements, including remote-tracking ref
    updates. Findings are unattributed unless worker tool evidence corroborates
