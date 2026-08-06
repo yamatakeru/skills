@@ -124,10 +124,14 @@ blocked by the ADR 0034 scratch-cwd profile.
 
 `instructionEnvironmentDisclosures` remains the single wording source
 (ADR 0043). Its entries shift from "injected by default" to the blocked
-state per harness/transport: claude-code notes the `--setting-sources
-local` block; opencode(sdk) notes the config-dir redirect block plus the
-surviving project layer; opencode(cli) notes that nothing is blocked and
-that `--pure` is verified plugins-only.
+state per harness/transport: claude-code notes the amended profile block
+(empty `--setting-sources` list plus autoMemoryEnabled=false, covering
+user/project memory, `CLAUDE.local.md`, and auto memory); opencode(sdk)
+notes the config-dir redirect block plus the surviving project layer;
+opencode(cli) notes that nothing is blocked — user config instructions
+and global rule files arriving through user-config merge, project
+`AGENTS.md` from the session cwd — and that `--pure` is verified
+plugins-only.
 
 ### Fragility register and smokes
 

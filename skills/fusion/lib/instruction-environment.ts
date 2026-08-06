@@ -31,9 +31,9 @@ export function instructionEnvironmentDisclosures(
   if (harness.kind === "opencode" && harness.transport === "cli") {
     return [
       {
-        note: "OpenCode CLI sessions receive user-level config instructions, global rule files, and project AGENTS.md through user-config merge; no blocking mechanism exists on this path, and --pure is verified plugins-only (it does not suppress instruction loading).",
+        note: "OpenCode CLI sessions receive user-level config instructions and global rule files through user-config merge, and project AGENTS.md from the session cwd; no blocking mechanism exists on this path, and --pure is verified plugins-only (it does not suppress instruction loading).",
         summary:
-          "opencode(cli)=user config instructions, global rule files, and project AGENTS.md inject, no blocking mechanism, --pure verified plugins-only",
+          "opencode(cli)=user config instructions, global rule files, and cwd AGENTS.md inject, no blocking mechanism, --pure verified plugins-only",
       },
     ];
   }
