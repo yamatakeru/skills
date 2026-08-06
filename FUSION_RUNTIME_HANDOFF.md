@@ -9,7 +9,7 @@ and 6), the cursor harness round (PR #3, merged), the cursor probe
 round (PR #4, merged), the model-discovery round, and the
 instruction-environment round (phase 1 merged via PR #18, phase 2 probe
 complete). The design authority
-is `docs/fusion/` (spec, domain model, glossary, ADR 0001-0044).
+is `docs/fusion/` (spec, domain model, glossary, ADR 0001-0045).
 
 ## Instruction-Environment Round (2026-08-07): Phase 2 Probed and Implemented
 
