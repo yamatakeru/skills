@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import type { AssistantMessage, Permission } from "@opencode-ai/sdk/client";
 import { deriveContainment } from "./containment";
+import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import {
   assertNoStrictToolPolicyGap,
   isBashDenied,
@@ -658,6 +659,12 @@ function openCodeComplianceNotes(input: {
     );
   }
   notes.push(...input.warnings);
+  notes.push(
+    ...instructionEnvironmentDisclosures({
+      kind: "opencode",
+      transport: "sdk",
+    }).map((disclosure) => disclosure.note),
+  );
   return notes;
 }
 

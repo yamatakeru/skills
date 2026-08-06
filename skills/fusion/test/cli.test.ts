@@ -671,6 +671,66 @@ describe("Fusion CLI parsing", () => {
       "gitignored areas are not detectable; writes outside the workspace are not detectable; remote API side effects are not detectable",
     );
   });
+
+  test("renders one instruction-environment summary per worker and judge harness transport", () => {
+    const result: PanelResult = {
+      panelRunId: "instruction-environment-report",
+      status: "ok",
+      workerResults: (
+        [
+          ["worker-1", "claude-code", "sdk"],
+          ["worker-2", "claude-code", "sdk"],
+          ["worker-3", "opencode", "cli"],
+        ] as const
+      ).map(([workerId, kind, transport]) => ({
+        panelRunId: "instruction-environment-report",
+        workerId,
+        status: "ok" as const,
+        output: "answer",
+        harnessUsed: {
+          kind,
+          invocation: "headless" as const,
+          transport,
+        },
+      })),
+      synthesis: "synthesis",
+      complianceSummary: {
+        tier: "full",
+        workerCompliance: [],
+        judgeCompliance: {
+          workerId: "judge",
+          status: "ok",
+          harnessUsed: {
+            kind: "opencode",
+            invocation: "headless",
+            transport: "sdk",
+          },
+        },
+        workspaceWatchdog: {
+          verdict: "not-applicable",
+          workspaceRoot: "/tmp",
+          note: "workspace is not a Git work tree",
+          limitations: [],
+        },
+      },
+    };
+
+    const report = renderMarkdownReport(result, {
+      recordingStatus: "not-recorded",
+      synthesizer: "opencode",
+    });
+    const lines = report.split("\n");
+    const containmentIndex = lines.indexOf(
+      "- Containment: worker-1=not-recorded, worker-2=not-recorded, worker-3=not-recorded",
+    );
+    const expected =
+      "- Instruction environment: claude-code=user/project memory injected by default, no setting-source suppression; opencode(cli)=can receive user config instructions, global rule files, and project AGENTS.md via user-config merge, --pure effect on instruction loading unverified; opencode(sdk)=can receive user config instructions, global rule files, and project AGENTS.md via user-config merge";
+
+    expect(lines[containmentIndex + 1]).toBe(expected);
+    expect(report.match(/claude-code=/gu)).toHaveLength(1);
+    expect(report.match(/opencode\(cli\)=/gu)).toHaveLength(1);
+    expect(report.match(/opencode\(sdk\)=/gu)).toHaveLength(1);
+  });
 });
 
 function runFusionCli(

@@ -3,6 +3,7 @@ import {
   OpenCodeSdkAdapter as BaseOpenCodeSdkAdapter,
   buildOpenCodeConfigContent,
   buildOpenCodePermissionMap,
+  instructionEnvironmentDisclosures,
   type OpenCodePermissionConfig,
   type OpenCodeSdkAdapterOptions,
   type OpenCodeServerFactory,
@@ -169,6 +170,12 @@ describe("Fusion OpenCode SDK adapter", () => {
     expect(result.usage?.costUsd).toBe(0.03);
     expect(result.toolUseSummary?.toolsUsed).toEqual(["grep"]);
     expect(result.warnings?.join("\n") ?? "").not.toContain("degraded");
+    expect(result.complianceEvidence?.notes).toContain(
+      instructionEnvironmentDisclosures({
+        kind: "opencode",
+        transport: "sdk",
+      })[0]?.note,
+    );
   });
 
   test("verifies effective rules for an injected base URL before creating a session", async () => {

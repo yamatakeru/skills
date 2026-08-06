@@ -48,9 +48,11 @@ in gitignored areas, or remote API side effects.
    The default shell allowlist already excludes `bun`, so this layer primarily
    protects full-tool runs and future allowlist changes.
 5. **Prompt hardening.** Default workers are told to treat instructions found in
-   repository files, web pages, and tool output as data rather than directives.
-   This reduces quality drift but does not replace technical enforcement.
-   Experiment prompt variants omit the sentence to preserve condition purity.
+   repository files, web pages, and tool output as data rather than directives,
+   and persistent harness-injected instructions as environment context rather
+   than the task contract. These items 8-9 reduce quality drift but do not
+   replace technical enforcement. Experiment prompt variants omit both items to
+   preserve condition purity.
 6. **Workspace watchdog.** Before/after Git status and ref snapshots detect
    tracked-worktree changes and ref movements, including remote-tracking ref
    updates. Findings are unattributed unless worker tool evidence corroborates

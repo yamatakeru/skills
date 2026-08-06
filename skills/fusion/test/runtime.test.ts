@@ -4,13 +4,16 @@ import {
   DeterministicSynthesizer,
   evaluateCompliance,
   HarnessBackedJudgeSynthesizer,
+  instructionEnvironmentDisclosures,
   runPanel,
+  type WorkerResult,
 } from "../lib/protocol";
 import {
   judgeAnalysisJson,
   judgeRunner,
   mixedRunner,
   okRunner,
+  okWorkerResult,
   panelRequest,
 } from "./fixtures";
 
@@ -151,6 +154,58 @@ describe("Fusion panel runtime", () => {
     expect(result.warnings?.join("\n")).toContain("judge exploded");
     expect(result.complianceSummary.judgeCompliance?.workerId).toBe("judge");
     expect(result.complianceSummary.judgeCompliance?.status).toBeUndefined();
+  });
+
+  test("regenerates judge instruction-environment notes through failure fallbacks", () => {
+    const request = panelRequest();
+    const workerRequests = buildWorkerRequests(request);
+    const workerResults = workerRequests.map((workerRequest) =>
+      okWorkerResult(workerRequest)
+    );
+    const [baseJudgeRequest] = workerRequests;
+    if (baseJudgeRequest === undefined) {
+      throw new Error("Expected a judge request base.");
+    }
+    const judgeRequest = {
+      ...baseJudgeRequest,
+      workerId: "judge",
+      harness: {
+        kind: "opencode" as const,
+        invocation: "headless" as const,
+        transport: "sdk" as const,
+      },
+    };
+    const judgeResultWithoutEvidence: WorkerResult = {
+      panelRunId: request.panelRunId,
+      workerId: "judge",
+      status: "error",
+      output: "",
+      harnessUsed: { kind: "opencode", invocation: "headless" },
+    };
+    const expectedNote = instructionEnvironmentDisclosures({
+      kind: "opencode",
+      transport: "sdk",
+    })[0]?.note;
+
+    for (const judgeResult of [undefined, judgeResultWithoutEvidence]) {
+      const summary = evaluateCompliance({
+        panelRequest: request,
+        workerRequests,
+        workerResults,
+        events: [],
+        synthesisResult: {
+          synthesis: "",
+          judgeRequest,
+          judgeResult,
+        },
+      });
+
+      expect(summary.judgeCompliance?.notes).toContain(expectedNote);
+      expect(summary.judgeCompliance?.harnessUsed).toMatchObject({
+        kind: "opencode",
+        transport: "sdk",
+      });
+    }
   });
 
   test("downgrades resumed sessions without clean lineage evidence", async () => {

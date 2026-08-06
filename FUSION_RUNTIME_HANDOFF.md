@@ -1,13 +1,54 @@
 # Fusion Runtime Handoff
 
-Date: 2026-07-09 (model-discovery round — implemented, PR pending)
+Date: 2026-08-07 (instruction-environment round phase 1 — implemented, PR pending)
 
 This handoff captures the state of the Fusion runtime after the usable
 milestone, the worker-investigation round, the harness-backed judge round,
 the upstream fidelity round, the SDK transport round (reserved milestones 1
 and 6), the cursor harness round (PR #3, merged), the cursor probe
-round (PR #4, merged), and the model-discovery round. The design authority
-is `docs/fusion/` (spec, domain model, glossary, ADR 0001-0036).
+round (PR #4, merged), the model-discovery round, and phase 1 of the
+instruction-environment round. The design authority
+is `docs/fusion/` (spec, domain model, glossary, ADR 0001-0044).
+
+## Instruction-Environment Round (2026-08-06/07): Phase 1 Implemented
+
+Trigger: an external report on harness-injected persistent context reaching
+panel workers. Campaign state lives in issue #17; decisions are ADR
+0043/0044, produced by a grilled session plus two recorded panels
+(`fusion-5bc8c671-*` validity review; `fusion-c9338de8-*` disclosure-surface
+review, partial — opus worker timeout, disclosed). Key corrections the
+panels made to the report: the claude-code SDK transport reuses the CLI
+argv, so no injection-free claude route exists; project-layer memory
+injection (cwd=workspaceRoot) predates any global wiring; severity is
+bounded by ADR 0033's already-decided environment-input boundary. The
+glossary gained the Instruction Environment term.
+
+Implementation (Codex from ADR 0043/0044; parent-reviewed): central
+`instructionEnvironmentDisclosures(harness)` helper (`{note, summary}` per
+harness/transport) is the single wording source; adapters attach the notes
+on every invocation (judge included via the shared `runWorker` path);
+`evaluateJudgeCompliance` regenerates judge disclosures from the helper —
+rationale recorded as compensation for judge primary evidence being absent
+from the result surface (`PanelResult`/`--json`), with judge-failure
+tolerance; mandatory deduped "Instruction environment" report header line;
+worker item 9 and the judge clause verbatim from ADR 0044; SKILL.md 0.12.0;
+spec/containment updated to items 8-9. `bun test` 249 pass / 0 fail;
+typecheck clean; schema regen no-diff. Live smoke `fusion-a362daab-*`
+(sonnet + deepseek, sonnet judge): ok, tier `full`, header line rendered,
+judge notes lifted; the smoke exposed a summary-separator ambiguity, fixed
+by switching intra-summary separators to commas.
+
+Review triage: CodeRabbit (CLI, committed vs main, all 25 files) returned
+zero code findings and 2 minor ADR-style findings (remove decided dates and
+"grilled maintainer session" wording); both rejected — decided dates and
+grilled-session provenance in ADR Context are established house convention
+(ADR 0030/0033/0035 precedent; date-class rejections per the 0033/0034
+precedent).
+
+Phase 2 reserved (issue #17): launch-time blocking probes (claude-code
+setting-source suppression; opencode `serve` vs `--pure` semantics), then
+ADR 0045 and implementation change 2. Phase-1 disclosure wording narrows
+with those results.
 
 ## Model-Discovery Round (2026-07-09): ADR 0035/0036 Implemented
 

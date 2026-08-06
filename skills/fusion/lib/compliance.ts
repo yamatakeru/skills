@@ -1,9 +1,11 @@
 import { describeJudgeInvocation } from "./judge-synthesizer";
 import { deriveContainment } from "./containment";
+import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import { notApplicableWatchdogEvidence } from "./watchdog";
 import type {
   ComplianceSummary,
   ComplianceTier,
+  HarnessDescriptor,
   JudgeCompliance,
   PanelRequest,
   ProvenanceEvent,
@@ -128,12 +130,36 @@ function evaluateJudgeCompliance(
     return undefined;
   }
   const judge = describeJudgeInvocation(synthesisResult);
+  const resultHarness = synthesisResult?.judgeResult?.harnessUsed;
+  const requestHarness = judgeRequest.harness;
+  const harnessUsed = {
+    kind: resultHarness?.kind ?? requestHarness?.kind,
+    invocation: resultHarness?.invocation ?? requestHarness?.invocation,
+    transport: resultHarness?.transport ?? requestHarness?.transport,
+    version: resultHarness?.version ?? requestHarness?.version,
+  };
+  const instructionEnvironmentNotes =
+    harnessUsed.kind === undefined
+      ? []
+      : instructionEnvironmentDisclosures({
+          kind: harnessUsed.kind,
+          transport: harnessUsed.transport,
+        }).map((disclosure) => disclosure.note);
+  const resolvedHarnessUsed: HarnessDescriptor | undefined =
+    harnessUsed.kind === undefined || harnessUsed.invocation === undefined
+      ? judge.harnessUsed
+      : {
+          kind: harnessUsed.kind,
+          invocation: harnessUsed.invocation,
+          transport: harnessUsed.transport,
+          version: harnessUsed.version,
+        };
 
   return {
     workerId: judgeRequest.workerId,
     status: judge.status,
     modelUsed: judge.modelUsed,
-    harnessUsed: judge.harnessUsed,
+    harnessUsed: resolvedHarnessUsed,
     toolsPolicy: judgeRequest.toolsPolicy,
     notes: [
       "Judge invocation is recorded separately from blind panel worker compliance.",
@@ -142,6 +168,7 @@ function evaluateJudgeCompliance(
         : judgeRequest.toolsPolicy.mode === "none"
           ? "Judge requested a no-tools policy."
           : "Judge requested a non-no-tools policy.",
+      ...instructionEnvironmentNotes,
     ],
   };
 }

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { deriveContainment } from "./containment";
+import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import {
   assertNoStrictToolPolicyGap,
   isBashDenied,
@@ -302,6 +303,11 @@ function adapterComplianceNotes(
     );
   }
   notes.push(...warnings);
+  notes.push(
+    ...instructionEnvironmentDisclosures({ kind, transport: "cli" }).map(
+      (disclosure) => disclosure.note,
+    ),
+  );
   return notes;
 }
 

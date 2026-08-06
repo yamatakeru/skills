@@ -3,6 +3,7 @@ import {
   buildClaudeCodeArgs,
   buildOpenCodeArgs,
   ClaudeCodeHeadlessCliAdapter,
+  instructionEnvironmentDisclosures,
   OpenCodeHeadlessCliAdapter,
   type CommandExecution,
 } from "../lib/protocol";
@@ -233,6 +234,12 @@ describe("Fusion headless CLI adapters", () => {
     expect(result.complianceEvidence?.notes?.join("\n")).toContain(
       "does not enforce or prove",
     );
+    expect(result.complianceEvidence?.notes).toContain(
+      instructionEnvironmentDisclosures({
+        kind: "opencode",
+        transport: "cli",
+      })[0]?.note,
+    );
     expect(result.warnings?.[0]).toContain("degraded");
   });
 
@@ -315,6 +322,12 @@ describe("Fusion headless CLI adapters", () => {
     expect(result.status).toBe("ok");
     expect(result.output).toBe("claude output");
     expect(result.complianceEvidence?.enforcement).toBeUndefined();
+    expect(result.complianceEvidence?.notes).toContain(
+      instructionEnvironmentDisclosures({
+        kind: "claude-code",
+        transport: "cli",
+      })[0]?.note,
+    );
   });
 
   test("warns when Claude Code cannot map reasoning max tokens or turn caps", async () => {
