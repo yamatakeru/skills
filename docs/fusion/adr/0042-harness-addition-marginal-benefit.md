@@ -27,8 +27,8 @@ sources but document-based on the pi side (no live probe was run):
 - The enforcement-evidence ceiling does not move: opencode already reaches
   `verified-effective`.
 - pi has no native permission or approval system. The ADR 0022 bash allowlist
-  would require a Fusion-owned pi extension with undocumented fail-closed
-  behavior, or dropping bash and its allowlist parity permanently.
+  would require shipping a policy extension, or dropping bash and its
+  allowlist parity permanently.
 - pi ships no built-in web search, web fetch, or MCP — an ADR 0018 parity gap
   that directly hits the deep-research use case.
 - pi is pre-1.0 and mid-migration from `@mariozechner/*` / `badlogic/pi-mono`
@@ -39,6 +39,18 @@ sources but document-based on the pi side (no live probe was run):
 - Server-side compaction cannot fire in short-lived blind single-task
   workers; if it did fire, it would diverge the recorded transcript from the
   context the model actually saw.
+
+A follow-up primary-source check (2026-08-11) confirmed that the extension
+route exists but shifts the burden rather than removing it. pi's CLI and SDK
+can pin an exact extension set per session (`--no-extensions` plus explicit
+paths or in-process factories), and published permission-gate and web-access
+extensions exist. However, pi documents extension load errors as fail-open —
+errors are logged and the session continues — and user-global extensions
+under `~/.pi/agent/extensions/` auto-load into SDK sessions unless
+suppressed. Fail-closed enforcement would therefore be adapter-implemented,
+with Fusion authoring and maintaining policy-critical code against a pre-1.0
+extension API, and the adapter would have to actively suppress ambient
+personal extensions to keep worker evidence clean.
 
 ## Decision
 
