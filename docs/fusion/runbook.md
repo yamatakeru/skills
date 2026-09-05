@@ -72,6 +72,36 @@ opencode models
 cursor-agent models
 ```
 
+## Provisional candidate refresh (2026-09-05)
+
+This is an ordered-candidate update under ADR 0015/0041, not a new selection
+policy. The runtime table remains authoritative; inspect `--help` and
+`--dry-run` rather than maintaining another copy of the fallback chains.
+
+- Astra becomes the primary strong and OpenAI-flagship candidate. Sol remains
+  a fallback, behind GLM-5.2 and DeepSeek V4 Pro in the strong pool so an Astra
+  parent does not immediately select Sol when those alternatives are listed.
+- Qwen3.8 Flash provisionally leads the efficient pool; previous candidates
+  remain as fallbacks. This is a trial based on published pricing and privacy
+  terms, not a measured quality or latency win over DeepSeek V4 Flash.
+- GLM-5.2 stays: the [Go usage table](https://opencode.ai/docs/go/#usage-limits)
+  currently lists identical token prices for GLM-5.2/5.3 but monthly usage
+  equivalents of $60/$15 respectively. A newer name alone does not justify
+  the quota trade-off.
+- The [Go privacy table](https://opencode.ai/docs/go/#privacy), checked on this
+  date, lists Qwen3.8 Flash as not used for training with zero-day retention.
+  Go now has model-specific exceptions; ADR 0041's historical blanket-ZDR
+  premise must not be used to admit additional models by provider prefix.
+- Parent and judge defaults, explicit selection, and exact-ID deduplication
+  are unchanged. Astra-fast can still coexist with Astra. No family-aware
+  selection or runtime privacy gate is introduced by this refresh.
+
+The design deliberation successfully invoked Astra, Fable 5.1, and DeepSeek
+V4 Flash; it was not a candidate benchmark and did not invoke Qwen3.8 Flash.
+Before treating the new order as validated, compare representative Fusion
+outputs, success rates, elapsed time, and actual cost/quota against retained
+candidates. Catalog presence and dry-run success alone do not establish these.
+
 ## Notes
 
 - `.fusion-runs/` must stay git-ignored; the file recorder refuses to

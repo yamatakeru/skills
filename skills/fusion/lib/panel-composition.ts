@@ -15,13 +15,15 @@ import { claudeModelAliases } from "./worker-requests";
 export const DEFAULT_PANEL_SIZE = 3;
 
 const STRONG_GENERALIST_CANDIDATES = [
-  "openai/gpt-5.6-sol",
+  "openai/gpt-6-astra",
   "opencode-go/glm-5.2",
   "opencode-go/deepseek-v4-pro",
+  "openai/gpt-5.6-sol",
   "openai/gpt-5.6-terra",
 ] as const;
 
 const EFFICIENT_GENERALIST_CANDIDATES = [
+  "opencode-go/qwen3.8-flash",
   "opencode-go/deepseek-v4-flash",
   "opencode-go/mimo-v2.5",
   "opencode-go/qwen3.7-plus",
@@ -31,6 +33,7 @@ const EFFICIENT_GENERALIST_CANDIDATES = [
 ] as const;
 
 const OPENAI_FLAGSHIP_CANDIDATES = [
+  "openai/gpt-6-astra",
   "openai/gpt-5.6-sol",
   "openai/gpt-5.6-terra",
   "openai/gpt-5.6-luna",
@@ -131,18 +134,18 @@ export async function resolvePanelComposition(
   const cursorModels = new LazyCursorModels(options);
   const explicitModels = options.models?.filter((entry) => entry.length > 0);
   const resolvedModels =
-    explicitModels !== undefined
-      ? await resolveExplicitModels(
-          explicitModels,
-          panelists,
-          options,
-          opencodeModels,
-          cursorModels,
-        )
-      : await resolveDefaultModels(
+    explicitModels === undefined
+      ? await resolveDefaultModels(
           panelists,
           options.parentModel,
           warnings,
+          opencodeModels,
+          cursorModels,
+        )
+      : await resolveExplicitModels(
+          explicitModels,
+          panelists,
+          options,
           opencodeModels,
           cursorModels,
         );
@@ -548,7 +551,8 @@ class LazyOpenCodeModels {
 
   constructor(
     private readonly options:
-      ResolvePanelCompositionOptions | ResolveModelEntryOptions,
+      | ResolvePanelCompositionOptions
+      | ResolveModelEntryOptions,
   ) {
     this.loadedModels = options.opencodeModels;
   }
@@ -591,7 +595,8 @@ class LazyCursorModels {
 
   constructor(
     private readonly options:
-      ResolvePanelCompositionOptions | ResolveModelEntryOptions,
+      | ResolvePanelCompositionOptions
+      | ResolveModelEntryOptions,
   ) {
     this.loadedModels = options.cursorModels;
   }
