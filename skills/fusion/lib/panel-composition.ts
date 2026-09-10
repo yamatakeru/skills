@@ -17,18 +17,17 @@ export const DEFAULT_PANEL_SIZE = 3;
 const STRONG_GENERALIST_CANDIDATES = [
   "openai/gpt-6-astra",
   "opencode-go/glm-5.2",
-  "opencode-go/deepseek-v4-pro",
+  "opencode-go/deepseek-flash",
   "openai/gpt-5.6-sol",
   "openai/gpt-5.6-terra",
 ] as const;
 
 const EFFICIENT_GENERALIST_CANDIDATES = [
   "opencode-go/qwen3.8-flash",
-  "opencode-go/deepseek-v4-flash",
+  "opencode-go/deepseek-flash",
   "opencode-go/mimo-v2.5",
   "opencode-go/qwen3.7-plus",
   "opencode-go/minimax-m3",
-  "opencode-go/deepseek-v4-pro",
   "openai/gpt-5.6-luna",
 ] as const;
 

@@ -102,6 +102,19 @@ Before treating the new order as validated, compare representative Fusion
 outputs, success rates, elapsed time, and actual cost/quota against retained
 candidates. Catalog presence and dry-run success alone do not establish these.
 
+## DeepSeek candidate consolidation (2026-09-10)
+
+Under ADR 0015/0041, consolidate the pools' V4 Pro/Flash candidates into
+`opencode-go/deepseek-flash` (V4.1 Flash), keeping Astra/GLM/Qwen priorities.
+[DeepSeek](https://api-docs.deepseek.com/news/news260910) redirects old Flash
+IDs to V4.1 Flash and announces the same for Pro on September 14 at 04:00 UTC;
+Go-side routing is unverified. This avoids retaining potentially equivalent
+automatic candidates, without changing exact-ID deduplication or explicit IDs.
+The [Go catalog/privacy table](https://opencode.ai/docs/go/) and local listing
+confirm the new ID; Go lists no training use and ZDR through September 30, 2026
+(monthly renewal). No live Fusion quality comparison was performed, so this
+refresh does not establish superiority over Qwen or change selection policy.
+
 ## Notes
 
 - `.fusion-runs/` must stay git-ignored; the file recorder refuses to
