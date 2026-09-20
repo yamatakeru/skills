@@ -23,8 +23,3 @@
 - コード変更: 関連テストを先に実行し、完了前に `bun test` と `bun run typecheck:fusion`。
 - 文書のみの変更: 参照先・記載コマンドと実装の整合、`git diff --check` を確認する。全テストは不要。
 - 通常検証では `FUSION_LIVE_TESTS` を未設定にする。`FUSION_LIVE_TESTS=1` のテストと実パネルは実モデルを呼び、課金・quota 消費があり得るため、通常テストの代わりに無条件で実行しない。
-
-## レビュー
-
-- 出荷する差分ごとに CodeRabbit レビューを少なくとも一度実施し、simplify（不要な複雑さ・重複の削減）を検討する。手順は [code-review skill](.agents/skills/code-review/SKILL.md)。同一差分への過度な反復は避ける。
-- PR 作成後は最新 head のレビュー check 完了を待ち、Nitpicks を含む全指摘の妥当性を確認する。必要な修正と各指摘への返信を行い、未対応指摘がなくなるまで確認する。スレッドの返信は check 完了の代わりにしない。
