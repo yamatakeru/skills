@@ -1017,7 +1017,22 @@ async function requestJson(
   return record;
 }
 
+class RetryableStartupError extends Error {}
+
 async function spawnOpenCodeServer(
+  input: OpenCodeServerFactoryInput,
+): Promise<OpenCodeServerHandle> {
+  try {
+    return await startOpenCodeServerOnce(input);
+  } catch (error) {
+    if (!(error instanceof RetryableStartupError)) throw error;
+    // The failed child has been reaped. Allocate a fresh port for one retry;
+    // authentication, version and identity failures must never take this path.
+    return startOpenCodeServerOnce(input);
+  }
+}
+
+async function startOpenCodeServerOnce(
   input: OpenCodeServerFactoryInput,
 ): Promise<OpenCodeServerHandle> {
   const port = await freePort();
@@ -1049,7 +1064,7 @@ async function spawnOpenCodeServer(
           `OpenCode serve failed to spawn: ${spawnError.message}`,
         );
       if (child.exitCode !== null || child.signalCode !== null)
-        throw new Error(
+        throw new RetryableStartupError(
           `OpenCode serve exited before readiness (${child.exitCode ?? child.signalCode}).`,
         );
       try {
@@ -1068,7 +1083,7 @@ async function spawnOpenCodeServer(
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    throw new Error(
+    throw new RetryableStartupError(
       "OpenCode authenticated readiness timed out (expected /api/info, not 401/404).",
     );
   } catch (error) {

@@ -29,9 +29,13 @@ service for worker/judge execution. `--stdio` removes the server password from
 the environment inherited by tools and ties server lifetime to its parent's
 stdin. All REST and SSE requests authenticate; redirects and secret-bearing
 HTTP error bodies are not accepted as diagnostic evidence. Readiness uses
-`/api/info`, not a success interpretation of 401/404. An explicitly injected
-server requires its own password and identity, is never killed, and cannot
-claim Fusion-controlled startup instruction isolation.
+`/api/info`, not a success interpretation of 401/404. Retain ADR 0028's single
+fresh-port startup retry for an early process exit or readiness timeout, after
+reaping the failed child; authentication, unsupported-version, and invalid
+identity errors fail immediately without retry. Each attempt has a 30-second
+readiness window. An explicitly injected server requires its own password and
+identity, is never killed, and cannot claim Fusion-controlled startup
+instruction isolation.
 
 Emit native ordered `agents.<name>.permissions` rules. Verify the exact ordered
 suffix beginning with Fusion's catch-all deny before prompting, including
