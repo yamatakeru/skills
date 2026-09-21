@@ -3,7 +3,7 @@ import {
   assertNoStrictToolPolicyGap,
   buildClaudeCodeArgs,
   buildCursorConfigContent,
-  buildOpenCodePermissionMap,
+  buildOpenCodePermissionRules,
   cursorHookDeniesAllTools,
   cursorHookDeniedToolNames,
   cursorShellAllowlist,
@@ -18,8 +18,13 @@ type Harness = "opencode" | "claude" | "cursor";
 function effectiveCapabilities(
   policy: ToolsPolicy,
 ): Record<Harness, Record<Capability, boolean>> {
-  const openCode = buildOpenCodePermissionMap(policy, undefined);
-  const claudeArgs = buildClaudeCodeArgs({ ...workerRequest(), toolsPolicy: policy });
+  const openCode = buildOpenCodePermissionRules(policy, undefined);
+  const openCodeAllows = (action: string) =>
+    openCode.some((rule) => rule.action === action && rule.effect === "allow");
+  const claudeArgs = buildClaudeCodeArgs({
+    ...workerRequest(),
+    toolsPolicy: policy,
+  });
   const cursor = buildCursorConfigContent("worker", policy).permissions.deny;
   const cursorHookDenied = cursorHookDeniedToolNames(policy);
   const cursorDenyAll = cursorHookDeniesAllTools(policy);
@@ -34,17 +39,17 @@ function effectiveCapabilities(
     policy.mode !== "none" &&
     !claudeDenied.some((denied) => tools.includes(denied)) &&
     (policy.mode === "full" ||
-      tools.some((tool) => claudeTools.map((value) => value.toLowerCase()).includes(tool)));
+      tools.some((tool) =>
+        claudeTools.map((value) => value.toLowerCase()).includes(tool),
+      ));
   const cursorEnabled = (tool: Capability) =>
     !cursorDenyAll && !cursorHookDenied.includes(tool);
   return {
     opencode: {
-      bash:
-        typeof openCode.bash !== "string" &&
-        Object.values(openCode.bash).includes("allow"),
-      read: openCode.read === "allow",
-      edit: openCode.edit === "allow",
-      webfetch: openCode.webfetch === "allow",
+      bash: openCodeAllows("shell"),
+      read: openCodeAllows("read"),
+      edit: openCodeAllows("edit"),
+      webfetch: openCodeAllows("webfetch"),
     },
     claude: {
       bash: claudeEnabled(["bash"]),
@@ -56,7 +61,8 @@ function effectiveCapabilities(
       bash:
         cursorEnabled("bash") &&
         !cursor.includes("Shell(**)") &&
-        cursorShellAllowlist({ ...workerRequest(), toolsPolicy: policy }).length > 0,
+        cursorShellAllowlist({ ...workerRequest(), toolsPolicy: policy })
+          .length > 0,
       read: cursorEnabled("read") && !cursor.includes("Read(**)"),
       edit: cursorEnabled("edit") && !cursor.includes("Write(**)"),
       webfetch: cursorEnabled("webfetch"),
@@ -68,12 +74,21 @@ describe("cross-adapter ToolsPolicy parity", () => {
   test.each([
     {
       label: "allow and deny both contain Bash",
-      policy: { mode: "read-only", allow: ["Read", "Bash"], deny: ["bash"], readOnlyBashCommands: ["git status"] },
+      policy: {
+        mode: "read-only",
+        allow: ["Read", "Bash"],
+        deny: ["bash"],
+        readOnlyBashCommands: ["git status"],
+      },
       expected: { bash: false, read: true },
     },
     {
       label: "read-only shell commands plus Bash deny",
-      policy: { mode: "limited", deny: ["shell"], readOnlyBashCommands: ["ls"] },
+      policy: {
+        mode: "limited",
+        deny: ["shell"],
+        readOnlyBashCommands: ["ls"],
+      },
       expected: { bash: false },
     },
     {
@@ -91,17 +106,18 @@ describe("cross-adapter ToolsPolicy parity", () => {
       policy: { mode: "limited", allow: ["MultiEdit"], deny: ["notebookedit"] },
       expected: { bash: false, edit: false },
     },
-  ] as Array<{ label: string; policy: ToolsPolicy; expected: Partial<Record<Capability, boolean>> }>) (
-    "$label",
-    ({ policy, expected }) => {
-      const effective = effectiveCapabilities(policy);
-      for (const harness of ["opencode", "claude", "cursor"] as const) {
-        for (const [capability, enabled] of Object.entries(expected)) {
-          expect(effective[harness][capability as Capability]).toBe(enabled);
-        }
+  ] as Array<{
+    label: string;
+    policy: ToolsPolicy;
+    expected: Partial<Record<Capability, boolean>>;
+  }>)("$label", ({ policy, expected }) => {
+    const effective = effectiveCapabilities(policy);
+    for (const harness of ["opencode", "claude", "cursor"] as const) {
+      for (const [capability, enabled] of Object.entries(expected)) {
+        expect(effective[harness][capability as Capability]).toBe(enabled);
       }
-    },
-  );
+    }
+  });
 
   test("hook-only and unknown names are disclosed non-strictly and unknown names fail strict parity", () => {
     const policy: ToolsPolicy = {
@@ -110,7 +126,9 @@ describe("cross-adapter ToolsPolicy parity", () => {
       parity: "same-by-default",
     };
     expect(() => buildCursorConfigContent("worker", policy)).not.toThrow();
-    expect(toolPolicyWarnings(policy).join("\n")).toContain("unknown tool names");
+    expect(toolPolicyWarnings(policy).join("\n")).toContain(
+      "unknown tool names",
+    );
     for (const effective of Object.values(effectiveCapabilities(policy))) {
       expect(effective.webfetch).toBe(false);
     }

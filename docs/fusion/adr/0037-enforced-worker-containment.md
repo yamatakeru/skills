@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. OpenCode-specific implementation mechanisms and CLI retention are
+superseded by [ADR 0046](0046-opencode-v2-only-sdk-transport.md); the portable
+containment and cleanup requirements remain.
 
 Amends ADR 0022 and ADR 0029.
 

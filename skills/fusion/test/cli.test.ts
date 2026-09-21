@@ -22,7 +22,6 @@ import {
   CursorSdkAdapter,
   modelAliasTable,
   modelPreferenceToModel,
-  OpenCodeHeadlessCliAdapter,
   OpenCodeSdkAdapter,
   recursiveDelegationDenialMessage,
   resolvePanelComposition,
@@ -193,9 +192,7 @@ describe("Fusion CLI parsing", () => {
     expect(() => parseArgs(["--context-file", "task"])).toThrow(
       "Fusion requires a task prompt",
     );
-    expect(() => parseArgs(["--transport", "api", "task"])).toThrow(
-      "sdk, cli",
-    );
+    expect(() => parseArgs(["--transport", "api", "task"])).toThrow("sdk, cli");
   });
 
   test("rejects inline values on boolean flags", () => {
@@ -343,8 +340,7 @@ describe("Fusion CLI parsing", () => {
         harness: "claude-code",
       },
       manifest: {
-        renderedPromptHash:
-          prepared.request.contextManifest.renderedPromptHash,
+        renderedPromptHash: prepared.request.contextManifest.renderedPromptHash,
         sharedContextHash: prepared.request.contextManifest.sharedContextHash,
       },
       warnings: [],
@@ -493,16 +489,39 @@ describe("Fusion CLI parsing", () => {
     expect(prepared.workerRequests[0]?.harness?.transport).toBe("sdk");
   });
 
-  test("creates SDK adapters by default and CLI adapters on request", async () => {
+  test.each(
+    [
+      ["--models", "opencode:openai/gpt-5.5"],
+      ["--models", "openai/gpt-5.5"],
+      ["--models", "sonnet", "--judge-model", "openai/gpt-5.5"],
+      ["--models", "sonnet", "--synthesizer", "opencode"],
+    ].map((selection) => ({ selection })),
+  )(
+    "rejects retired OpenCode CLI transport before model listing: $selection",
+    async ({ selection }) => {
+      const options = parseArgs([
+        "--transport",
+        "cli",
+        "--dry-run",
+        ...selection,
+        "task",
+      ]);
+      await expect(preparePanelRequest(options)).rejects.toThrow(
+        "OpenCode requires --transport sdk",
+      );
+    },
+  );
+
+  test("creates SDK adapters by default and Claude-only CLI on request", async () => {
     const sdkRuntime = createFusionRuntime("sdk");
     const cliRuntime = createFusionRuntime("cli");
     try {
       expect(sdkRuntime.runners.opencode).toBeInstanceOf(OpenCodeSdkAdapter);
-      expect(sdkRuntime.runners.claudeCode).toBeInstanceOf(ClaudeCodeSdkAdapter);
-      expect(sdkRuntime.runners.cursor).toBeInstanceOf(CursorSdkAdapter);
-      expect(cliRuntime.runners.opencode).toBeInstanceOf(
-        OpenCodeHeadlessCliAdapter,
+      expect(sdkRuntime.runners.claudeCode).toBeInstanceOf(
+        ClaudeCodeSdkAdapter,
       );
+      expect(sdkRuntime.runners.cursor).toBeInstanceOf(CursorSdkAdapter);
+      expect(cliRuntime.runners.opencode).toBeUndefined();
       expect(cliRuntime.runners.claudeCode).toBeInstanceOf(
         ClaudeCodeHeadlessCliAdapter,
       );
@@ -514,7 +533,7 @@ describe("Fusion CLI parsing", () => {
       ).toEqual({
         kind: "opencode",
         invocation: "headless",
-          transport: "sdk",
+        transport: "sdk",
       });
       expect(
         sdkRuntime.registry.selectHarness({
@@ -680,7 +699,7 @@ describe("Fusion CLI parsing", () => {
         [
           ["worker-1", "claude-code", "sdk"],
           ["worker-2", "claude-code", "sdk"],
-          ["worker-3", "opencode", "cli"],
+          ["worker-3", "opencode", "sdk"],
         ] as const
       ).map(([workerId, kind, transport]) => ({
         panelRunId: "instruction-environment-report",
@@ -724,11 +743,11 @@ describe("Fusion CLI parsing", () => {
       "- Containment: worker-1=not-recorded, worker-2=not-recorded, worker-3=not-recorded",
     );
     const expected =
-      "- Instruction environment: claude-code=memory layers and auto memory blocked via empty setting-sources and autoMemoryEnabled=false; opencode(cli)=user config instructions, global rule files, and cwd AGENTS.md inject, no blocking mechanism, --pure verified plugins-only; opencode(sdk)=user/global instruction layers blocked via config-dir redirect, project AGENTS.md still injects";
+      "- Instruction environment: claude-code=memory layers and auto memory blocked via empty setting-sources and autoMemoryEnabled=false; opencode(sdk)=owned-server user/global instruction layers blocked via config-dir redirect, project and ancestor AGENTS.md still inject, external startup uncontrolled";
 
     expect(lines[containmentIndex + 1]).toBe(expected);
     expect(report.match(/claude-code=/gu)).toHaveLength(1);
-    expect(report.match(/opencode\(cli\)=/gu)).toHaveLength(1);
+    expect(report).not.toContain("opencode(cli)=");
     expect(report.match(/opencode\(sdk\)=/gu)).toHaveLength(1);
   });
 });

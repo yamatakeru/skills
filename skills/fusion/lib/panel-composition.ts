@@ -571,21 +571,31 @@ class LazyOpenCodeModels {
     }
 
     const executor = this.options.executor ?? executeCommand;
-    const result = await executor({
-      command: this.options.opencodeCommand ?? "opencode",
-      args: ["models"],
-      cwd: this.options.cwd,
-    });
-    if (result.exitCode !== 0) {
-      throw new Error(
-        `opencode models failed with code ${result.exitCode}: ${snippet(result.stderr || result.stdout)}`,
-      );
+    // OpenCode v2 can return an empty successful catalog while a newly
+    // started service/location is registering providers asynchronously.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const result = await executor({
+        command: this.options.opencodeCommand ?? "opencode",
+        args: ["models"],
+        cwd: this.options.cwd,
+        timeoutMs: 10_000,
+      });
+      if (result.exitCode !== 0 || result.timedOut) {
+        throw new Error(
+          `opencode models failed with code ${result.exitCode}: ${snippet(result.stderr || result.stdout)}`,
+        );
+      }
+      const models = parseOpenCodeModels(result.stdout);
+      if (models.length > 0) {
+        this.loadedModels = models;
+        return models;
+      }
+      if (attempt < 4)
+        await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
     }
-    this.loadedModels = parseOpenCodeModels(result.stdout);
-    if (this.loadedModels.length === 0) {
-      throw new Error("opencode models returned no provider-qualified models.");
-    }
-    return this.loadedModels;
+    throw new Error(
+      "opencode models returned no provider-qualified models after bounded startup retries.",
+    );
   }
 }
 

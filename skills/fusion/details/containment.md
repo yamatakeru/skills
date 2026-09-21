@@ -11,9 +11,9 @@ allowed the panel to report full compliance.
 
 Issue [yamatakeru/skills#11](https://github.com/yamatakeru/skills/issues/11)
 confirmed that deprecated agent-level `tools` also corrupts effective rule
-ordering during OpenCode normalization. For the OpenCode SDK transport,
-`permission` is therefore the sole source of both authority and tool
-availability. Neither prompts nor agent definitions may also supply `tools`.
+ordering during OpenCode v1 normalization. The v2-only SDK transport uses native
+ordered `permissions` rules as the sole authority (ADR 0046); the historical v1
+workarounds and deprecated `tools` toggles are not carried forward.
 
 ## Threat Model
 
@@ -55,20 +55,20 @@ in gitignored areas, or remote API side effects.
    preserve condition purity. Claude Code user/project/local memory and auto
    memory are also blocked at startup via an empty `--setting-sources` list and
    `--settings '{"autoMemoryEnabled":false}'`; OpenCode SDK user/global
-   instruction layers are blocked at startup; OpenCode project `AGENTS.md`,
-   OpenCode CLI instruction layers, and Cursor User Rules remain standing
-   disclosed inputs (ADR 0043/0045).
+   instruction layers are blocked at startup through both config-directory
+   redirects and removal of the explicit config-file pointer; OpenCode project
+   and ancestor `AGENTS.md` and Cursor User Rules remain standing disclosed
+   inputs (ADR 0043/0045/0046).
 6. **Workspace watchdog.** Before/after Git status and ref snapshots detect
    tracked-worktree changes and ref movements, including remote-tracking ref
    updates. Findings are unattributed unless worker tool evidence corroborates
    them, and the report discloses detection gaps.
 
-   OpenCode rule pre-denials do not emit permission events; they surface as tool
-   errors instead. Fusion attributes those denials by matching the error prefixes
-   used by OpenCode v1.17.20's `PermissionV1` denial, rejection, and correction
-   errors. If OpenCode changes those messages, Fusion conservatively records the
-   tool outcome as `failed`, underclaiming rather than overclaiming denial
-   evidence.
+   OpenCode v2 rule pre-denials surface as structured tool failures with
+   `error.type: "permission.rejected"`. Unexpected `permission.asked` requests
+   are rejected with feedback and attributed by their source tool-call id.
+   Denials are deduplicated, and unknown errors remain `failed`, never guessed
+   from human-readable message prefixes.
 7. **Compliance and containment disclosure.** Compliance tier is derived from
    runtime evidence. Enforcement source and containment level are reported
    separately so protocol compliance never implies sandboxing.
@@ -79,18 +79,32 @@ in gitignored areas, or remote API side effects.
 
 ## OpenCode Version Boundary
 
-The minimum supported OpenCode version for SDK containment is v1.17.20, the
-version against which permission-driven tool availability was verified.
-OpenCode's `resolveTools` filters the model-visible tool set through
-`Permission.disabled`; a tool whose last matching rule is `"*": "deny"` is
-therefore unavailable without a separate agent `tools` map.
+The supported line is stable OpenCode 2.0.x from 2.0.12, with 2.0.12 as the
+measured target (ADR 0046). Older versions, prereleases and unknown release
+lines fail explicitly. There is no v1 adapter or OpenCode CLI transport.
+The `sdk` label denotes the structured REST/SSE machine protocol, not a runtime
+npm dependency; `@opencode/client` is pinned for type-only imports.
 
-This version floor is an evidence-backed compatibility boundary and remains a
-stopgap, not a claim that every older release behaves identically. If support
-for an older OpenCode without this permission-driven filter becomes necessary,
-it must use a separately designed, version-specific configuration path. Fusion
-must not reintroduce `tools` and `permission` on the same agent, because their
-normalization order can turn the intended allows into effective denials.
+The owned server runs authenticated `serve --stdio`; readiness and every
+request authenticate. Both the local binary and actual `/api/info` identity
+are checked. Before any prompt, Fusion verifies the exact ordered suffix of
+native agent rules beginning with its catch-all deny, including declared read
+roots and the no-tools judge. Earlier inherited defaults are shadowed by that
+reset. Asynchronous agent initialization is awaited, not treated as permission
+to skip verification. Native actions map portable `bash` to `shell` and
+recursive delegation to `subagent`.
+
+SSE must confirm `server.connected` before prompt admission. Only terminal
+execution success completes the worker; a prompt response or tool step does
+not. Every terminal path requests interrupt before aborting the stream. An
+idle `interrupted:false` response is a successful cleanup no-op. Stream loss
+fails rather than attempting replay of a live-only event feed. Externally
+injected servers require explicit authentication and version/rule checks but
+cannot claim Fusion-controlled startup isolation and are never killed.
+
+Web search selects Exa in the run-scoped config with the owner's consent. This
+avoids v2's interactive first-use provider form without changing persisted user
+settings or silently sending queries to a different provider.
 
 ## Containment Levels
 
@@ -122,7 +136,7 @@ Cursor adds only verified config grammar (`Shell(**)`, `Read(**)`, and
 `preToolUse` hook enforces the remaining canonical tool-name denials, and Bash
 denial also empties the shell hook allowlist. Observation of tool results is a
 separate best-effort surface and its limitations remain disclosed. OpenCode's
-headless CLI remains a degraded, non-enforcing transport under ADR 0037.
+former degraded headless CLI transport was removed by ADR 0046.
 
 Tool-name policy does not support command-pattern denials such as
 `Bash(rm *)`; such entries are disclosed rather than treated as effective
@@ -138,14 +152,11 @@ exclude:
 - chaining after an allowed prefix: `git status && ...`; or
 - write-capable flags: `git log --output=f`.
 
-OpenCode v1.17.20's shell tool uses tree-sitter to generate and evaluate a
-permission pattern for each subcommand, so every subcommand in an `&&` or `;`
-chain is checked against the allowlist separately. This substantially mitigates
-the chaining class at that layer, but it is a version-specific OpenCode
-implementation detail rather than a guarantee provided by Fusion's rules, so
-chaining remains a residual risk. Redirection is not split into a separate
-pattern and can still execute under the leading command's allow decision; it
-remains an open hole class covered by the watchdog and disclosure.
+Historical v1 measurements of subcommand parsing are not a v2 containment
+guarantee. Fusion's command-pattern rules do not themselves parse every shell
+effect, so chaining, redirection and write-capable flags remain residual risks.
+Effective-rule inspection proves the configured policy, not complete shell
+sandboxing; the watchdog and disclosure remain necessary.
 
 Broad metacharacter deny patterns are not used: they reject legitimate searches
 such as `rg "=>"` or `rg "a|b"` and remain bypassable by deliberate

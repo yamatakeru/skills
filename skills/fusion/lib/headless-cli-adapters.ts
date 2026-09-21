@@ -12,7 +12,6 @@ import {
 import type {
   HarnessKind,
   ModelPreference,
-  ReasoningPreference,
   ToolsPolicy,
   WorkerRequest,
   WorkerResult,
@@ -45,29 +44,6 @@ export interface HeadlessCliAdapterOptions {
   executor?: CommandExecutor;
 }
 
-export class OpenCodeHeadlessCliAdapter implements WorkerRunner {
-  private readonly command: string;
-  private readonly executor: CommandExecutor;
-
-  constructor(options: HeadlessCliAdapterOptions = {}) {
-    this.command = options.command ?? "opencode";
-    this.executor = options.executor ?? executeCommand;
-  }
-
-  async runWorker(request: WorkerRequest): Promise<WorkerResult> {
-    const result = await this.executor({
-      command: this.command,
-      args: buildOpenCodeArgs(request),
-      cwd:
-        request.environment?.workingDirectory ??
-        request.environment?.workspaceRoot,
-      env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
-      timeoutMs: request.budget?.timeoutMs,
-    });
-    return cliResultToWorkerResult("opencode", request, result);
-  }
-}
-
 export class ClaudeCodeHeadlessCliAdapter implements WorkerRunner {
   private readonly command: string;
   private readonly executor: CommandExecutor;
@@ -89,19 +65,6 @@ export class ClaudeCodeHeadlessCliAdapter implements WorkerRunner {
     });
     return cliResultToWorkerResult("claude-code", request, result);
   }
-}
-
-export function buildOpenCodeArgs(request: WorkerRequest): string[] {
-  const args = ["run", "--format", "json", "--pure"];
-  const model = modelPreferenceToModel(request.modelPreference);
-  if (model !== undefined) {
-    args.push("--model", model);
-  }
-  const variant = openCodeVariantForEffort(request.reasoning?.effort);
-  if (variant !== undefined) {
-    args.push("--variant", variant);
-  }
-  return [...args, request.prompt];
 }
 
 export function buildClaudeCodeArgs(request: WorkerRequest): string[] {
@@ -220,8 +183,7 @@ function cliResultToWorkerResult(
 ): WorkerResult {
   const parsedOutput = parseTextOutput(result.stdout);
   const output = parsedOutput.ok ? parsedOutput.output.trim() : "";
-  const ok = result.exitCode === 0 && output.length > 0 && !result.timedOut;
-  const warnings = workerWarnings(kind, request, ok);
+  const warnings = workerWarnings(kind, request);
 
   return {
     panelRunId: request.panelRunId,
@@ -236,10 +198,7 @@ function cliResultToWorkerResult(
       adapterClaimsIsolatedContext: request.session.mode === "fresh",
       adapterClaimsBlindness: true,
       observedSessionMode: request.session.mode,
-      containment:
-        kind === "opencode"
-          ? undefined
-          : deriveContainment(request.toolsPolicy),
+      containment: deriveContainment(request.toolsPolicy),
       notes: adapterComplianceNotes(kind, request, warnings),
     },
     warnings: warnings.length === 0 ? undefined : warnings,
@@ -292,12 +251,11 @@ function adapterComplianceNotes(
   request: WorkerRequest,
   warnings: string[],
 ): string[] {
-  const notes = [...adapterBaseComplianceNotes(kind)];
+  const notes = [
+    "Claude Code CLI adapter uses dontAsk and explicit tool flags when available.",
+  ];
   if (request.reasoning?.effort !== undefined) {
-    const mapping =
-      kind === "opencode"
-        ? `opencode --variant ${openCodeVariantForEffort(request.reasoning.effort)}`
-        : `claude --effort ${request.reasoning.effort}`;
+    const mapping = `claude --effort ${request.reasoning.effort}`;
     notes.push(`reasoning.effort mapped through ${mapping}.`);
   }
   if (
@@ -317,18 +275,6 @@ function adapterComplianceNotes(
   return notes;
 }
 
-function adapterBaseComplianceNotes(kind: HarnessKind): string[] {
-  if (kind === "opencode") {
-    return [
-      "OpenCode CLI adapter does not enforce or prove exact tool policy containment.",
-    ];
-  }
-
-  return [
-    "Claude Code CLI adapter uses dontAsk and explicit tool flags when available.",
-  ];
-}
-
 export function modelPreferenceToModel(
   modelPreference: ModelPreference | undefined,
 ): string | undefined {
@@ -341,15 +287,8 @@ export function modelPreferenceToModel(
   return modelPreference?.model ?? modelPreference?.aliases?.[0];
 }
 
-function workerWarnings(
-  kind: HarnessKind,
-  request: WorkerRequest,
-  ok: boolean,
-): string[] {
+function workerWarnings(kind: HarnessKind, request: WorkerRequest): string[] {
   return [
-    ok && kind === "opencode"
-      ? "OpenCode CLI adapter result is degraded until tool policy evidence is proven."
-      : undefined,
     ...unmappedPreferenceWarnings(kind, request),
     ...toolPolicyWarnings(request.toolsPolicy),
   ].filter((warning): warning is string => warning !== undefined);
@@ -370,25 +309,7 @@ function unmappedPreferenceWarnings(
       `${kind} does not expose a CLI turn-cap flag in installed help; requested maxTurns=${request.budget.maxTurns} was not mapped.`,
     );
   }
-  if (
-    kind === "opencode" &&
-    request.environment?.readRoots !== undefined &&
-    request.environment.readRoots.length > 0
-  ) {
-    warnings.push(
-      `${kind} does not expose a CLI flag for environment.readRoots; requested ${request.environment.readRoots.join(", ")} was not mapped.`,
-    );
-  }
   return warnings;
-}
-
-function openCodeVariantForEffort(
-  effort: ReasoningPreference["effort"] | undefined,
-): string | undefined {
-  if (effort === undefined) {
-    return undefined;
-  }
-  return effort === "xhigh" ? "max" : effort;
 }
 
 function claudeToolsForPolicy(request: WorkerRequest): string | undefined {
@@ -398,13 +319,7 @@ function claudeToolsForPolicy(request: WorkerRequest): string | undefined {
       return "";
     case "read-only":
       return withBashTool(
-        (toolsPolicy.allow ?? [
-          "Read",
-          "Grep",
-          "Glob",
-          "WebSearch",
-          "WebFetch",
-        ])
+        (toolsPolicy.allow ?? ["Read", "Grep", "Glob", "WebSearch", "WebFetch"])
           .filter((tool) => !isToolDenied(toolsPolicy, tool))
           .map(claudeToolName),
         toolsPolicy,
@@ -437,19 +352,16 @@ function withBashTool(tools: string[], toolsPolicy: ToolsPolicy): string {
 function claudeAllowedToolsForPolicy(
   toolsPolicy: ToolsPolicy | undefined,
 ): string | undefined {
-  if (
-    toolsPolicy?.mode !== "read-only" &&
-    toolsPolicy?.mode !== "limited"
-  ) {
+  if (toolsPolicy?.mode !== "read-only" && toolsPolicy?.mode !== "limited") {
     return undefined;
   }
 
   const allowed = (toolsPolicy.allow ?? []).filter(
     (tool) => !isToolDenied(toolsPolicy, tool),
   );
-  const baseTools = allowed.filter(
-    (tool) => normalizeToolName(tool) !== "bash",
-  ).map(claudeToolName);
+  const baseTools = allowed
+    .filter((tool) => normalizeToolName(tool) !== "bash")
+    .map(claudeToolName);
   const bashTools = isBashDenied(toolsPolicy)
     ? []
     : (toolsPolicy.readOnlyBashCommands ?? []).map(claudeBashPattern);
@@ -584,10 +496,6 @@ function extractJsonLineText(line: string): ExtractedJsonLineText {
     if (messageText !== undefined) {
       return { ok: true, assistantText: messageText };
     }
-    const partText = textFromRecordPart(record.part);
-    if (partText !== undefined) {
-      return { ok: true, assistantText: partText };
-    }
     if (Array.isArray(record.content)) {
       return {
         ok: true,
@@ -613,18 +521,6 @@ function textFromMessage(message: unknown): string | undefined {
   return Array.isArray(record.content)
     ? textFromContent(record.content)
     : undefined;
-}
-
-function textFromRecordPart(part: unknown): string | undefined {
-  if (part === null || typeof part !== "object") {
-    return undefined;
-  }
-
-  const record = part as Record<string, unknown>;
-  if (record.type !== "text") {
-    return undefined;
-  }
-  return typeof record.text === "string" ? record.text : undefined;
 }
 
 function textFromContent(content: unknown[]): string {

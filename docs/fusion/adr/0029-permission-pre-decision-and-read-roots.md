@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. OpenCode-specific implementation mechanisms are superseded by
+[ADR 0046](0046-opencode-v2-only-sdk-transport.md); the portable policy remains.
 
 ## Amendment (2026-07-07)
 

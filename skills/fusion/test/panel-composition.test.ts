@@ -10,6 +10,24 @@ import {
 import { opencodeModelsExecutor } from "./fixtures";
 
 describe("Fusion panel composition", () => {
+  test("retries a cold OpenCode v2 catalog without invoking a model", async () => {
+    let calls = 0;
+    const resolved = await resolveModelEntry("openai/gpt-5.5", {
+      executor: async (execution) => {
+        expect(execution.args).toEqual(["models"]);
+        expect(execution.timeoutMs).toBe(10_000);
+        return {
+          exitCode: 0,
+          stdout: calls++ === 0 ? "" : "openai/gpt-5.5\n",
+          stderr: "",
+          durationMs: 1,
+        };
+      },
+    });
+    expect(calls).toBe(2);
+    expect(resolved.resolvedModelId).toBe("openai/gpt-5.5");
+  });
+
   test("builds the default parent, strong, and efficient slots", async () => {
     const composition = await resolvePanelComposition({
       parentModel: "fable",

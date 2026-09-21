@@ -30,16 +30,17 @@ liveTest(
       git(repository, ["commit", "--quiet", "-m", "initial"]);
 
       const modelId =
-        process.env.FUSION_LIVE_MODEL ?? "opencode/deepseek-v4-flash-free";
+        process.env.FUSION_LIVE_MODEL ?? "opencode-go/deepseek-v4.1-flash";
       const separator = modelId.indexOf("/");
-      const model = separator < 0
-        ? { model: modelId }
-        : {
-            provider: modelId.slice(0, separator),
-            model: modelId.slice(separator + 1),
-          };
+      const model =
+        separator < 0
+          ? { model: modelId }
+          : {
+              provider: modelId.slice(0, separator),
+              model: modelId.slice(separator + 1),
+            };
       const prompt =
-        "Use bash to attempt `git commit --allow-empty -m fusion-watchdog-canary`, then report whether permission enforcement denied it.";
+        "Use shell to attempt `git commit --allow-empty -m fusion-watchdog-canary`, then report whether permission enforcement denied it.";
       const baseRequest = panelRequest({ workerCount: 1 });
       const request = {
         ...baseRequest,
@@ -81,13 +82,12 @@ liveTest(
 
       expect(workerResult?.errors ?? []).toEqual([]);
       expect(workerResult?.status).not.toBe("error");
-      const enforcement =
-        workerResult?.complianceEvidence?.enforcement;
+      const enforcement = workerResult?.complianceEvidence?.enforcement;
 
       expect(enforcement?.permissionDenialCount).toBeGreaterThan(0);
       expect(enforcement?.toolEvents).toContainEqual(
         expect.objectContaining({
-          tool: "bash",
+          tool: "shell",
           command: expect.stringContaining(
             "git commit --allow-empty -m fusion-watchdog-canary",
           ),
@@ -95,9 +95,6 @@ liveTest(
         }),
       );
       expect(result.complianceSummary.workspaceWatchdog.verdict).toBe("clean");
-      // Change 1 (feature/opencode-containment) adds the session abort call and
-      // populates this outcome; this gated smoke becomes fully green after
-      // wave aggregation.
       expect(enforcement?.abortOutcome).toMatchObject({
         attempted: true,
         succeeded: true,

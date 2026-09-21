@@ -30,9 +30,9 @@ describe("instruction environment disclosures", () => {
       }),
     ).toEqual([
       {
-        note: "OpenCode SDK sessions run with XDG_CONFIG_HOME redirected to a run-scoped empty config directory, blocking user config instructions and global rule files (ADR 0045); project AGENTS.md from the session cwd still injects.",
+        note: "Fusion-owned OpenCode v2 SDK servers redirect OPENCODE_CONFIG_DIR and XDG_CONFIG_HOME to an empty run-scoped directory and unset OPENCODE_CONFIG, blocking user/global config instructions and rule files (ADR 0046); project and ancestor AGENTS.md still inject. Web search uses the explicitly selected Exa provider without changing user settings. Injected external servers do not carry this startup-isolation claim.",
         summary:
-          "opencode(sdk)=user/global instruction layers blocked via config-dir redirect, project AGENTS.md still injects",
+          "opencode(sdk)=owned-server user/global instruction layers blocked via config-dir redirect, project and ancestor AGENTS.md still inject, external startup uncontrolled",
       },
     ]);
     expect(
@@ -40,13 +40,7 @@ describe("instruction environment disclosures", () => {
         kind: "opencode",
         transport: "cli",
       }),
-    ).toEqual([
-      {
-        note: "OpenCode CLI sessions receive user-level config instructions and global rule files through user-config merge, and project AGENTS.md from the session cwd; no blocking mechanism exists on this path, and --pure is verified plugins-only (it does not suppress instruction loading).",
-        summary:
-          "opencode(cli)=user config instructions, global rule files, and cwd AGENTS.md inject, no blocking mechanism, --pure verified plugins-only",
-      },
-    ]);
+    ).toEqual([]);
   });
 
   test("keeps the prior Cursor User Rules note byte-identical", () => {
@@ -57,7 +51,8 @@ describe("instruction environment disclosures", () => {
 
     expect(cursor).toEqual({
       note: "Cursor account-level User Rules inject into headless sessions regardless of CURSOR_CONFIG_DIR; this is an environment input, not a panel-state isolation breaker.",
-      summary: "cursor=account User Rules inject regardless of CURSOR_CONFIG_DIR",
+      summary:
+        "cursor=account User Rules inject regardless of CURSOR_CONFIG_DIR",
     });
   });
 
