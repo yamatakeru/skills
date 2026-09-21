@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. OpenCode-specific startup profiles and disclosures are superseded by
+[ADR 0046](0046-opencode-v2-only-sdk-transport.md). Other harness profiles remain.
 
 Decided 2026-08-07 from a grilled session plus the instruction-environment
 probe round (P2-1, issue #17), run under the ADR 0034 mandatory

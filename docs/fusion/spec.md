@@ -65,6 +65,14 @@ instructs the parent agent to run it through the harness shell tool. Bun is the
 required runtime; the runtime keeps zero npm runtime dependencies so the
 installed skill directory is self-contained.
 
+The current OpenCode reference adapter is v2-only and uses SDK transport
+(ADR 0046). It authenticates its owned run-scoped server, verifies server
+identity and ordered effective permission rules, subscribes before prompt
+admission, and waits for terminal execution events. Neither OpenCode v1 nor
+OpenCode CLI transport is retained. CLI transport is an explicit Claude Code
+opt-in only; unsupported worker or judge selections fail without fallback.
+Concrete supported versions and smoke commands live in the skill and runbook.
+
 The CLI prints a Markdown panel report to stdout by default: status,
 compliance tier, and warnings first, then each worker's full output, then the
 judge analysis rendered from its structured JSON (or, when the judge did not
@@ -136,7 +144,10 @@ guards, context manifest) and exits before any worker or judge invocation,
 reporting resolved typed entries, judge resolution, manifest identity, and
 warnings. The task prompt remains required; with `--json` the output is a
 `DryRunReport` discriminated by `mode: "dry-run"`; exit code is 0 only
-when the full composition resolves cleanly. Entry-list validation and a
+when the full composition resolves cleanly. This does not prove server version
+or effective runtime permissions; those are checked when the adapter starts.
+OpenCode catalog discovery may start a shared background service even during
+dry-run; that service is not the owned worker server. Entry-list validation and a
 harness-grouped model listing were considered and deferred; the listing's
 grammar is deliberately unlocked (ADR 0036).
 
@@ -235,9 +246,13 @@ judge compliance and deduplicated by harness/transport in the report header;
 they do not affect isolation claims or compliance tiers (ADR 0043).
 Claude Code blocks user/project/local memory with an empty `--setting-sources`
 list and auto memory with `--settings '{"autoMemoryEnabled":false}'`, and the
-OpenCode SDK redirects `XDG_CONFIG_HOME` to block user/global instruction layers
-while leaving project `AGENTS.md` active. OpenCode CLI has no blocking profile
-(`--pure` is plugins-only); Cursor User Rules remain injected (ADR 0045).
+OpenCode SDK redirects both `OPENCODE_CONFIG_DIR` and `XDG_CONFIG_HOME` and
+unsets `OPENCODE_CONFIG` to block user/global instruction layers, while leaving
+project and ancestor `AGENTS.md` active. Cursor User Rules remain injected
+(ADR 0045/0046). An explicitly injected external server cannot claim the owned
+server's startup isolation. OpenCode's web-search provider is an explicit
+run-scoped owner decision, not interactive consent or a persisted user-config
+change; failures never trigger an undisclosed provider switch (ADR 0046).
 
 The workspace watchdog compares `git status --porcelain` and
 `git for-each-ref` snapshots before and after the run, including

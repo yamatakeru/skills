@@ -1,10 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildClaudeCodeArgs,
-  buildOpenCodeArgs,
   ClaudeCodeHeadlessCliAdapter,
   instructionEnvironmentDisclosures,
-  OpenCodeHeadlessCliAdapter,
   type CommandExecution,
 } from "../lib/protocol";
 import { withFusionPanelDepth, workerRequest } from "./fixtures";
@@ -37,46 +35,16 @@ describe("Fusion headless CLI adapters", () => {
             durationMs: 1,
           };
         };
-        const openCode = new OpenCodeHeadlessCliAdapter({ executor });
         const claudeCode = new ClaudeCodeHeadlessCliAdapter({ executor });
-
-        await openCode.runWorker(workerRequest());
         await claudeCode.runWorker(workerRequest());
 
-        expect(executions).toHaveLength(2);
+        expect(executions).toHaveLength(1);
         for (const execution of executions) {
           expect(execution.env?.FUSION_PANEL_DEPTH).toBe(expectedDepth);
         }
       });
     });
   }
-
-  test("builds OpenCode headless run arguments", () => {
-    const request = workerRequest();
-    const args = buildOpenCodeArgs(request);
-
-    expect(args.slice(0, 5)).toEqual([
-      "run",
-      "--format",
-      "json",
-      "--pure",
-      "--model",
-    ]);
-    expect(args).toContain("openai/gpt-5.5");
-    expect(args[args.length - 1]).toBe(request.prompt);
-  });
-
-  test("maps OpenCode reasoning effort through model variant", () => {
-    const request = {
-      ...workerRequest(),
-      reasoning: { effort: "xhigh" as const },
-    };
-    const args = buildOpenCodeArgs(request);
-
-    expect(args).toContain("--variant");
-    expect(args).toContain("max");
-    expect(args[args.length - 1]).toBe(request.prompt);
-  });
 
   test("builds Claude Code non-interactive stream-json arguments", () => {
     const request = {
@@ -151,8 +119,12 @@ describe("Fusion headless CLI adapters", () => {
     });
 
     expect(args).toContain("--disallowedTools=Bash");
-    expect(args.find((arg) => arg.startsWith("--tools="))).not.toContain("Bash");
-    expect(args.find((arg) => arg.startsWith("--allowedTools="))).not.toContain("Bash(");
+    expect(args.find((arg) => arg.startsWith("--tools="))).not.toContain(
+      "Bash",
+    );
+    expect(args.find((arg) => arg.startsWith("--allowedTools="))).not.toContain(
+      "Bash(",
+    );
   });
 
   test("separates Claude Code read roots from the positional prompt", () => {
@@ -227,103 +199,6 @@ describe("Fusion headless CLI adapters", () => {
     expect(args).not.toContain("--reasoning-max-tokens");
   });
 
-  test("maps OpenCode CLI output to a degraded worker result", async () => {
-    const executions: CommandExecution[] = [];
-    const adapter = new OpenCodeHeadlessCliAdapter({
-      executor: async (execution) => {
-        executions.push(execution);
-        return {
-          exitCode: 0,
-          stdout: '{"message":"adapter output"}\n',
-          stderr: "",
-          durationMs: 12,
-        };
-      },
-    });
-
-    const result = await adapter.runWorker(workerRequest());
-
-    expect(executions[0]?.command).toBe("opencode");
-    expect(result.status).toBe("ok");
-    expect(result.output).toBe("adapter output");
-    expect(result.complianceEvidence?.enforcement).toBeUndefined();
-    expect(result.complianceEvidence?.containment).toBeUndefined();
-    expect(result.complianceEvidence?.notes?.join("\n")).toContain(
-      "does not enforce or prove",
-    );
-    expect(result.complianceEvidence?.notes).toContain(
-      instructionEnvironmentDisclosures({
-        kind: "opencode",
-        transport: "cli",
-      })[0]?.note,
-    );
-    expect(result.warnings?.[0]).toContain("degraded");
-  });
-
-  test("warns when OpenCode cannot map reasoning max tokens or turn caps", async () => {
-    const adapter = new OpenCodeHeadlessCliAdapter({
-      executor: async () => ({
-        exitCode: 0,
-        stdout: '{"message":"adapter output"}\n',
-        stderr: "",
-        durationMs: 12,
-      }),
-    });
-
-    const result = await adapter.runWorker({
-      ...workerRequest(),
-      reasoning: { effort: "medium", maxTokens: 3000 },
-      budget: { maxTurns: 3 },
-    });
-
-    expect(result.status).toBe("ok");
-    expect(result.warnings?.join("\n")).toContain("reasoning.maxTokens");
-    expect(result.warnings?.join("\n")).toContain("maxTurns=3");
-    expect(result.complianceEvidence?.notes?.join("\n")).toContain(
-      "opencode --variant medium",
-    );
-  });
-
-  test("warns when OpenCode CLI cannot map read roots", async () => {
-    const adapter = new OpenCodeHeadlessCliAdapter({
-      executor: async () => ({
-        exitCode: 0,
-        stdout: '{"message":"adapter output"}\n',
-        stderr: "",
-        durationMs: 12,
-      }),
-    });
-
-    const result = await adapter.runWorker({
-      ...workerRequest(),
-      environment: {
-        workspaceRoot: "/workspace",
-        readRoots: ["/external/context"],
-      },
-    });
-
-    expect(result.status).toBe("ok");
-    expect(result.warnings?.join("\n")).toContain("environment.readRoots");
-    expect(result.warnings?.join("\n")).toContain("/external/context");
-  });
-
-  test("maps OpenCode observed text part events to worker output", async () => {
-    const adapter = new OpenCodeHeadlessCliAdapter({
-      executor: async () => ({
-        exitCode: 0,
-        stdout:
-          '{"type":"text","part":{"type":"text","text":"fusion-smoke-ok"}}\n',
-        stderr: "",
-        durationMs: 7,
-      }),
-    });
-
-    const result = await adapter.runWorker(workerRequest());
-
-    expect(result.status).toBe("ok");
-    expect(result.output).toBe("fusion-smoke-ok");
-  });
-
   test("does not claim runtime enforcement evidence for Claude Code CLI", async () => {
     const adapter = new ClaudeCodeHeadlessCliAdapter({
       executor: async () => ({
@@ -378,9 +253,13 @@ describe("Fusion headless CLI adapters", () => {
         stdout: [
           JSON.stringify({
             type: "assistant",
-            part: {
-              type: "text",
-              text: "十分な証拠が揃いました。回答をまとめます。",
+            message: {
+              content: [
+                {
+                  type: "text",
+                  text: "十分な証拠が揃いました。回答をまとめます。",
+                },
+              ],
             },
           }),
           JSON.stringify({

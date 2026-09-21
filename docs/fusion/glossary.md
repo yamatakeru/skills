@@ -246,20 +246,21 @@ actually used is recorded in the harness evidence (ADR 0028).
 ## SDK Transport
 
 The default transport: the adapter consumes the harness's structured machine
-protocol — the OpenCode server API (REST + SSE against a self-spawned,
-run-scoped `opencode serve`), the Claude Code stream-json agent protocol, or
+protocol — the OpenCode v2 server API (authenticated REST + SSE against an
+owned, run-scoped `opencode serve --stdio`), the Claude Code stream-json agent
+protocol, or
 the Cursor stream-json agent protocol — implemented with zero npm runtime
 dependencies. It provides observed model, session id, usage, tool events,
 permission outcomes, and effective tool policy evidence that plain CLI stdout
-cannot (ADR 0028/0032).
+cannot (ADR 0028/0032/0046). The OpenCode v2 client package is type-only;
+`SDK Transport` does not imply loading an npm SDK at runtime.
 
 ## CLI Transport
 
-The legacy plain-stdout adapters, retained only under an explicit
-`--transport cli` opt-in. On OpenCode this path cannot enforce or prove tool
-policy and remains degraded-compliance; there is no silent fallback onto it
-(ADR 0022/0028/0037). The SDK transport's verified-effective enforcement does
-not change this CLI-transport limitation.
+The legacy plain-stdout path, retained for Claude Code only under an explicit
+`--transport cli` opt-in with degraded evidence. OpenCode's former CLI adapter
+was removed during v2 migration (ADR 0046); OpenCode and Cursor CLI selections
+are usage errors, never fallback paths.
 
 ## Read Root
 

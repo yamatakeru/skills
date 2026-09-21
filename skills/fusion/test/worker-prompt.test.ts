@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildClaudeCodeArgs,
-  buildOpenCodeArgs,
   buildWorkerRequests,
   createContextManifest,
   defaultPolicies,
@@ -211,9 +210,7 @@ use this project context`);
         sharedContext,
       }),
     );
-    const openCodeArgs = buildOpenCodeArgs(workerRequestFrom(worker));
     const claudeArgs = buildClaudeCodeArgs(workerRequestFrom(worker));
-    expect(openCodeArgs[openCodeArgs.length - 1]).toBe(worker?.prompt);
     expect(claudeArgs[claudeArgs.length - 1]).toBe(worker?.prompt);
   });
 

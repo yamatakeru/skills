@@ -10,9 +10,10 @@ license: MIT
 compatibility: >-
   SKILL.md-compatible agents with shell access and Bun installed. Uses the
   bundled self-contained TypeScript CLI; no node_modules are required inside the
-  skill directory.
+  skill directory. OpenCode requires stable 2.0.x >= 2.0.12 and SDK transport;
+  OpenCode v1 and its former CLI transport are unsupported.
 metadata:
-  version: "0.13.0"
+  version: "0.14.0"
   kind: "blind-panel synthesis"
   mode: "blind"
   canonical-runtime: "bun-cli"
@@ -118,7 +119,11 @@ Model entry routing:
   never selected by aliases, bare model patterns, or default composition.
 - Unknown entries are errors, not guesses.
 
-OpenCode-backed entries are checked against `opencode models`. Claude Code has
+OpenCode-backed entries are checked against `opencode models`. On v2 this may
+start a shared background catalog service, including during dry-run; Fusion
+executes workers on a separate owned server and does not stop that shared service.
+An initially empty successful catalog is retried within a bounded window.
+Claude Code has
 no model enumeration command; Claude-backed entries use latest aliases and
 `--fallback-model`, then are validated by the worker attempt. Cursor-backed
 entries are checked against `cursor-agent models`.
@@ -151,10 +156,9 @@ compatibility path.
 - `--dry-run`: preflight this exact invocation without running workers or
   judge.
 - `--transport <sdk|cli>`: worker and judge transport; default is `sdk`.
-  `cli` is an explicit opt-in to the legacy CLI adapters with degraded
-  compliance evidence; the runtime never falls back to it silently. Cursor is
-  implemented only on `sdk`, so `cursor:` entries under `--transport cli` are
-  usage errors.
+  `cli` is an explicit opt-in for Claude Code only, with degraded compliance
+  evidence. OpenCode and Cursor entries (workers or judge) under `cli` are
+  usage errors; there is no silent transport fallback.
 - `--read-root <dir>`: declare a directory outside the workspace as readable
   (recursive) for every worker in the run; repeatable.
 - `--record`: write split artifacts under `.fusion-runs/<panelRunId>/` when
@@ -210,12 +214,21 @@ its answer instead of being dropped from the panel.
 The Instruction Environment is a standing harness input: Claude Code blocks
 user, project, and local memory via an empty `--setting-sources` list and auto
 memory via `--settings '{"autoMemoryEnabled":false}'`; OpenCode SDK
-blocks user/global instruction layers through a run-scoped config-directory
-redirect while project `AGENTS.md` still injects; OpenCode CLI blocks nothing
-and `--pure` is verified plugins-only; and Cursor account-level User Rules
-remain injected regardless of `CURSOR_CONFIG_DIR`. Worker and judge prompts
+blocks user/global instruction layers by redirecting both `OPENCODE_CONFIG_DIR`
+and `XDG_CONFIG_HOME` and unsetting `OPENCODE_CONFIG`, while project and ancestor
+`AGENTS.md` still inject. Cursor account-level User Rules remain injected
+regardless of `CURSOR_CONFIG_DIR`. Worker and judge prompts
 carry injection-subordination clauses, and runs disclose these facts in
 compliance notes and the report's Instruction environment header line.
+
+OpenCode uses an authenticated, run-scoped v2 server, native ordered permission
+rules, and a fresh session for each worker and judge. It verifies the actual
+server version and effective rules before invoking models, waits for terminal
+execution events, and interrupts sessions before disconnecting. Unknown release
+lines fail explicitly; no v1 compatibility path remains. Web search uses the
+owner-approved **Exa** provider in the run-scoped config, without changing user
+settings or automatically switching providers. A provider failure stays visible
+as a tool failure. The judge remains no-tools.
 
 Cursor workers use a run-scoped scratch cwd with project hooks to enforce the
 read-only bash allowlist, recursive delegation denial, and declared read-root

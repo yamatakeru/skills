@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. OpenCode v1 protocol details and the retained OpenCode CLI option are
+superseded by [ADR 0046](0046-opencode-v2-only-sdk-transport.md).
 
 Implements reserved milestone 1 together with ADR 0029. Fulfills ADR 0012's
 SDK/API preference and its predicted `InvocationMode` axis split. Preserves

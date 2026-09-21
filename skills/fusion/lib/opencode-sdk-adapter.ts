@@ -1,10 +1,14 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { AssistantMessage, Permission } from "@opencode-ai/sdk/client";
+import { join, resolve } from "node:path";
+import type {
+  AgentInfo,
+  OpenCodeEvent,
+  PermissionRule,
+} from "@opencode/client";
 import { deriveContainment } from "./containment";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import {
@@ -18,9 +22,9 @@ import {
 import {
   executeCommand,
   modelPreferenceToModel,
-  snippet,
   type CommandExecutor,
 } from "./headless-cli-adapters";
+import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
 import type {
   ToolsPolicy,
   WorkerAbortOutcome,
@@ -29,159 +33,109 @@ import type {
   WorkerResult,
   WorkerRunner,
 } from "./types";
-import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
 
-type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-type PermissionDecision = "ask" | "allow" | "deny";
-type PermissionMap = Record<string, PermissionDecision>;
-
+type Fetch = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+export type OpenCodePermissionConfig = PermissionRule[];
+export interface OpenCodeAgentConfig {
+  description: string;
+  mode: "primary";
+  permissions: OpenCodePermissionConfig;
+}
+export interface OpenCodeConfigContent {
+  agents: Record<string, OpenCodeAgentConfig>;
+  warming: false;
+  share: "disabled";
+  websearch: { provider: "exa" };
+}
 export interface OpenCodeSdkAdapterOptions {
   command?: string;
+  /** Externally owned server; requires serverPassword. It is never shut down. */
   baseUrl?: string;
+  serverPassword?: string;
   fetch?: Fetch;
   serverFactory?: OpenCodeServerFactory;
   versionExecutor?: CommandExecutor;
   agentName?: string;
 }
-
 export interface OpenCodeServerHandle {
   baseUrl: string;
   dispose(): Promise<void> | void;
 }
-
 export interface OpenCodeServerFactoryInput {
   command: string;
   configContent: OpenCodeConfigContent;
   cwd?: string;
   env: Record<string, string | undefined>;
+  /** Authenticated fetch; do not log its credentials or input.env. */
   fetch: Fetch;
 }
-
 export type OpenCodeServerFactory = (
   input: OpenCodeServerFactoryInput,
 ) => Promise<OpenCodeServerHandle>;
 
-export interface OpenCodeConfigContent {
-  agent: Record<string, OpenCodeAgentConfig>;
-  experimental: {
-    continue_loop_on_deny: true;
-  };
-}
-
-export interface OpenCodeAgentConfig {
-  description: string;
-  mode: "primary";
-  permission: OpenCodePermissionConfig;
-}
-
-export type OpenCodePermissionConfig = Record<
-  string,
-  PermissionDecision | PermissionMap
->;
-
-interface OpenCodeObservation {
+type ToolObservation = {
+  tool: string;
+  status: "started" | "succeeded" | "denied" | "failed";
+  command?: string;
+  callId: string;
+};
+type PermissionRejection = { title: string; callId?: string };
+interface Observation {
   output: string;
   modelUsed?: string;
   usage?: WorkerResult["usage"];
-  tools: OpenCodeToolObservation[];
-  permissionRejects: OpenCodePermissionRejectObservation[];
-  warnings: string[];
+  tools: Map<string, ToolObservation>;
+  rejections: PermissionRejection[];
 }
-
-interface OpenCodeToolObservation {
-  tool: string;
-  status: string;
-  command?: string;
-  callId?: string;
-}
-
-interface OpenCodePermissionRejectObservation {
-  title: string;
-  callId?: string;
-}
-
-interface OpenCodePermissionRule {
-  permission: string;
-  pattern: string;
-  action: PermissionDecision;
-}
-
-interface OpenCodeAgentInfo {
-  name: string;
-  permission: OpenCodePermissionRule[];
-}
-
-class OpenCodeEffectiveRulesError extends Error {}
-class OpenCodeSharedServerPolicyError extends Error {}
-
-interface SseMessage {
-  event?: string;
-  data: string;
-}
-
-const defaultAgentName = "fusion-worker";
-const judgeAgentName = "fusion-judge";
-// OpenCode v1.17.20 PermissionV1.DeniedError, RejectedError, and
-// CorrectedError messages from packages/core/src/v1/permission.ts.
-const openCodePermissionDenialErrorPrefixes = [
-  "The user has specified a rule which prevents you from using this specific tool call",
-  "The user rejected permission to use this specific tool call",
-] as const;
-const sessionAbortTimeoutMs = 5_000;
-const knownOpenCodeTools = [
+const workerAgent = "fusion-worker";
+const judgeAgent = "fusion-judge";
+const cleanupTimeoutMs = 5_000;
+const startupTimeoutMs = 30_000;
+const hardDeniedTools = new Set([
+  "write",
+  "patch",
+  "task",
+  "subagent",
+  "todowrite",
+  "skill",
+  "lsp",
+  "doom_loop",
+  "execute",
+]);
+const knownTools = [
   "read",
   "grep",
   "glob",
   "list",
   "webfetch",
   "websearch",
-  "bash",
   "edit",
-  "write",
-  "patch",
-  "task",
-  "todowrite",
-  "skill",
-  "lsp",
-  "doom_loop",
 ];
-const hardDeniedOpenCodeTools = new Set([
-  "write",
-  "patch",
-  "task",
-  "todowrite",
-  "skill",
-  "lsp",
-  "doom_loop",
-]);
 
-function openCodeAgentName(
-  request: WorkerRequest,
-  workerAgentName: string,
-): string {
-  return request.toolsPolicy?.mode === "none"
-    ? judgeAgentName
-    : workerAgentName;
+function agentFor(request: WorkerRequest, workerName: string): string {
+  return request.toolsPolicy?.mode === "none" ? judgeAgent : workerName;
 }
-
-function canonicalOpenCodePolicyFingerprint(
-  toolsPolicy: ToolsPolicy | undefined,
-  environment: WorkerEnvironment | undefined,
-): string {
+function directoryFor(environment?: WorkerEnvironment): string {
+  return resolve(
+    environment?.workingDirectory ??
+      environment?.workspaceRoot ??
+      process.cwd(),
+  );
+}
+function policyFingerprint(request: WorkerRequest): string {
   return JSON.stringify({
-    toolsPolicy:
-      toolsPolicy === undefined
-        ? null
-        : {
-            mode: toolsPolicy.mode,
-            allow: toolsPolicy.allow,
-            deny: toolsPolicy.deny,
-            readOnlyBashCommands: toolsPolicy.readOnlyBashCommands,
-          },
-    readRoots: environment?.readRoots ?? null,
+    directory: directoryFor(request.environment),
+    rules: buildOpenCodePermissionRules(
+      request.toolsPolicy,
+      request.environment,
+    ),
   });
 }
 
+/** OpenCode 2.0.12+ machine protocol. There is deliberately no v1/CLI fallback. */
 export class OpenCodeSdkAdapter implements WorkerRunner {
   private readonly command: string;
   private readonly fetch: Fetch;
@@ -189,566 +143,424 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
   private readonly versionExecutor: CommandExecutor;
   private readonly agentName: string;
   private readonly injectedBaseUrl?: string;
+  private readonly password: string;
+  private readonly authorization: string;
+  private readonly injectedPasswordMissing: boolean;
   private serverPromise?: Promise<OpenCodeServerHandle>;
-  private serverVerificationPromise?: Promise<
-    Map<string, OpenCodePermissionRule[]>
-  >;
-  private serverEffectiveRules?: {
-    baseUrl: string;
-    rulesByAgent: Map<string, OpenCodePermissionRule[]>;
-  };
-  private serverPolicyFingerprint?: string;
-  private versionPromise?: Promise<string | undefined>;
+  private fingerprint?: string;
+  private serverDirectory?: string;
+  private version?: string;
+  private disposed = false;
 
   constructor(options: OpenCodeSdkAdapterOptions = {}) {
     this.command = options.command ?? "opencode";
-    this.fetch = options.fetch ?? fetch;
     this.serverFactory = options.serverFactory ?? spawnOpenCodeServer;
     this.versionExecutor = options.versionExecutor ?? executeCommand;
-    this.agentName = options.agentName ?? defaultAgentName;
+    this.agentName = options.agentName ?? workerAgent;
     this.injectedBaseUrl = options.baseUrl;
+    this.injectedPasswordMissing =
+      options.baseUrl !== undefined && !options.serverPassword;
+    this.password =
+      options.serverPassword ?? randomBytes(32).toString("base64url");
+    this.authorization = `Basic ${Buffer.from(`opencode:${this.password}`).toString("base64")}`;
+    const fetchImpl = options.fetch ?? fetch;
+    this.fetch = (input, init = {}) => {
+      const headers = new Headers(init.headers);
+      headers.set("Authorization", this.authorization);
+      return fetchImpl(input, { ...init, headers, redirect: "error" });
+    };
   }
 
   async runWorker(request: WorkerRequest): Promise<WorkerResult> {
-    const startedAt = Date.now();
-    let sessionId: string | undefined;
-    let effectiveRules: OpenCodePermissionRule[] | undefined;
+    const start = Date.now();
+    const warnings = toolPolicyWarnings(request.toolsPolicy);
+    const observation: Observation = {
+      output: "",
+      tools: new Map(),
+      rejections: [],
+    };
     const abortOutcome: WorkerAbortOutcome = { attempted: false };
-    const warnings: string[] = toolPolicyWarnings(request.toolsPolicy);
-
+    let sessionId: string | undefined;
+    let effectiveRules: PermissionRule[] | undefined;
+    let server: OpenCodeServerHandle | undefined;
+    let status: WorkerResult["status"] = "error";
+    let errors: string[] | undefined;
+    const controller = new AbortController();
+    const streamController = new AbortController();
+    const timeoutMs = request.budget?.timeoutMs ?? 300_000;
+    const timer = setTimeout(
+      () =>
+        controller.abort(
+          new WorkerTimeoutError("OpenCode SDK worker timed out."),
+        ),
+      timeoutMs,
+    );
     try {
-      assertNoStrictToolPolicyGap(
-        request.toolsPolicy,
-        "opencode-sdk",
-        (tool) => hardDeniedOpenCodeTools.has(tool),
+      if (this.disposed) throw new Error("OpenCode adapter has been disposed.");
+      if (request.session.mode !== "fresh")
+        throw new Error("OpenCode v2 supports fresh sessions only.");
+      if (this.injectedPasswordMissing)
+        throw new Error(
+          "An injected OpenCode baseUrl requires serverPassword.",
+        );
+      assertNoStrictToolPolicyGap(request.toolsPolicy, "opencode-sdk", (tool) =>
+        hardDeniedTools.has(tool),
       );
-      const server = await this.ensureServer(request);
-      const selectedAgentName = openCodeAgentName(request, this.agentName);
-      effectiveRules =
-        this.serverEffectiveRules?.baseUrl === server.baseUrl
-          ? this.serverEffectiveRules.rulesByAgent.get(selectedAgentName)
-          : undefined;
-      const version = await this.opencodeVersion();
-      const session = await this.createSession(server.baseUrl, request);
-      sessionId = session.id;
-      const observation = await this.sendPromptAndObserve(
+      preferenceWarnings(request, warnings);
+      server = await abortable(this.ensureServer(request), controller.signal);
+      // Reinspect on every invocation: v2 can reload agent/config state while alive.
+      const rulesByAgent = await verifyEffectiveRules(
+        this.fetch,
+        server.baseUrl,
+        this.agentName,
+        request,
+        controller.signal,
+      );
+      effectiveRules = rulesByAgent.get(agentFor(request, this.agentName));
+      const created = await requestJson(
+        this.fetch,
+        server.baseUrl,
+        "/api/session",
+        {
+          method: "POST",
+          signal: controller.signal,
+          body: {
+            title: `Fusion ${request.workerId}`,
+            agent: agentFor(request, this.agentName),
+            model: splitOpenCodeModel(
+              modelPreferenceToModel(request.modelPreference),
+            ),
+            location: { directory: directoryFor(request.environment) },
+          },
+        },
+      );
+      const session = recordField(created, "data");
+      sessionId = requiredString(session, "id");
+      if (
+        session?.agent !== agentFor(request, this.agentName) ||
+        recordField(session, "location")?.directory !==
+          directoryFor(request.environment)
+      ) {
+        throw new Error(
+          "OpenCode session agent/location differs from the requested session.",
+        );
+      }
+      // A fresh session must not introduce a higher-precedence policy override.
+      if (Array.isArray(session.permissions) && session.permissions.length > 0)
+        throw new Error(
+          "OpenCode fresh session unexpectedly overrides agent permissions.",
+        );
+      await this.promptAndObserve(
         server.baseUrl,
         request,
-        session.id,
+        sessionId,
+        observation,
         warnings,
-        abortOutcome,
+        controller.signal,
+        streamController.signal,
       );
-      warnings.push(...observation.warnings);
-      return openCodeWorkerResult({
-        request,
-        status: observation.output.trim().length === 0 ? "error" : "ok",
-        output: observation.output.trim(),
-        sessionId,
-        modelUsed: observation.modelUsed,
-        usage: {
-          durationMs: Date.now() - startedAt,
-          ...withoutDuration(observation.usage),
-        },
-        warnings,
-        version,
-        tools: observation.tools,
-        permissionRejects: observation.permissionRejects,
-        effectiveRules,
-        abortOutcome,
-        errors:
-          observation.output.trim().length === 0
-            ? ["opencode SDK worker returned no final assistant text."]
-            : undefined,
-      });
+      if (!observation.output.trim())
+        throw new Error(
+          "OpenCode v2 execution succeeded without final assistant text.",
+        );
+      status = "ok";
     } catch (error) {
-      const message =
-        error instanceof WorkerTimeoutError ||
-        error instanceof OpenCodeEffectiveRulesError ||
-        error instanceof OpenCodeSharedServerPolicyError
-          ? error.message
-          : snippet(String(error));
-      return openCodeWorkerResult({
-        request,
-        status: error instanceof WorkerTimeoutError ? "timeout" : "error",
-        output: "",
-        sessionId,
-        usage: { durationMs: Date.now() - startedAt },
-        warnings,
-        version: await this.opencodeVersion().catch(() => undefined),
-        tools: [],
-        permissionRejects: [],
-        effectiveRules,
-        abortOutcome,
-        errors: [message],
-      });
+      status =
+        controller.signal.reason instanceof WorkerTimeoutError
+          ? "timeout"
+          : "error";
+      errors = [
+        this.redact(
+          String(controller.signal.aborted ? controller.signal.reason : error),
+        ),
+      ];
+    } finally {
+      clearTimeout(timer);
+      // Keep the event reader attached until remote interrupt is attempted.
+      if (server !== undefined && sessionId !== undefined) {
+        Object.assign(
+          abortOutcome,
+          await this.interruptSession(server.baseUrl, sessionId, warnings),
+        );
+      }
+      streamController.abort();
+      controller.abort();
     }
+    const tools = [...observation.tools.values()];
+    const denied = new Map<string, string>();
+    observation.rejections.forEach((item, index) =>
+      denied.set(item.callId ?? `ask:${index}`, item.title),
+    );
+    tools
+      .filter((tool) => tool.status === "denied")
+      .forEach((tool) =>
+        denied.set(
+          tool.callId,
+          tool.command ? `${tool.tool}: ${tool.command}` : tool.tool,
+        ),
+      );
+    const enforcement = {
+      permissionDenialCount: denied.size,
+      abortOutcome,
+      toolEvents: tools.map(({ tool, command, status: outcome }) => ({
+        tool,
+        command,
+        outcome,
+      })),
+    };
+    return {
+      panelRunId: request.panelRunId,
+      workerId: request.workerId,
+      status,
+      output: observation.output.trim(),
+      sessionId,
+      modelUsed: observation.modelUsed,
+      harnessUsed: {
+        kind: "opencode",
+        invocation: "headless",
+        transport: "sdk",
+        version: this.version,
+      },
+      usage: { ...observation.usage, durationMs: Date.now() - start },
+      toolUseSummary:
+        tools.length || denied.size
+          ? {
+              toolsUsed: [
+                ...new Set(
+                  tools
+                    .filter((tool) => tool.status !== "denied")
+                    .map((tool) => tool.tool),
+                ),
+              ],
+              deniedRequests: [...denied.values()],
+            }
+          : undefined,
+      complianceEvidence: {
+        adapterClaimsIndependentInvocation: sessionId !== undefined,
+        adapterClaimsIsolatedContext: sessionId !== undefined,
+        adapterClaimsBlindness: true,
+        observedSessionMode: "fresh",
+        containment: deriveContainment(request.toolsPolicy),
+        enforcement:
+          effectiveRules === undefined
+            ? { source: "harness-declared", ...enforcement }
+            : {
+                source: "verified-effective",
+                effectiveRules: { rules: effectiveRules },
+                ...enforcement,
+              },
+        notes: [
+          effectiveRules
+            ? "OpenCode v2 native agent permissions were inspected before prompting; unknown tools and recursive delegation are denied."
+            : "OpenCode effective permission verification did not complete; no prompt was authorized.",
+          ...(sessionId
+            ? [`OpenCode fresh session id observed: ${sessionId}.`]
+            : []),
+          ...(this.injectedBaseUrl
+            ? [
+                "Externally owned OpenCode server: Fusion does not control its startup instruction environment.",
+              ]
+            : instructionEnvironmentDisclosures({
+                kind: "opencode",
+                transport: "sdk",
+              }).map((item) => item.note)),
+          ...warnings.map((warning) => this.redact(warning)),
+        ],
+      },
+      warnings: warnings.length
+        ? warnings.map((item) => this.redact(item))
+        : undefined,
+      errors,
+    };
   }
 
   async dispose(): Promise<void> {
-    const server = await this.serverPromise?.catch(() => undefined);
-    await server?.dispose();
+    this.disposed = true;
+    await (await this.serverPromise?.catch(() => undefined))?.dispose();
+  }
+
+  private async interruptSession(
+    baseUrl: string,
+    sessionId: string,
+    warnings: string[],
+  ): Promise<WorkerAbortOutcome> {
+    try {
+      const value = await requestJson(
+        this.fetch,
+        baseUrl,
+        `/api/session/${encodeURIComponent(sessionId)}/interrupt`,
+        { method: "POST", signal: AbortSignal.timeout(cleanupTimeoutMs) },
+      );
+      if (typeof value?.interrupted !== "boolean")
+        throw new Error("Invalid OpenCode interrupt response.");
+      // interrupted:false is the documented idle no-op, not cleanup failure.
+      return { attempted: true, succeeded: true };
+    } catch (error) {
+      const message = this.redact(String(error));
+      warnings.push(
+        `OpenCode session interrupt failed; owned server shutdown is the final backstop: ${message}`,
+      );
+      return { attempted: true, succeeded: false, error: message };
+    }
+  }
+
+  private redact(text: string): string {
+    return text
+      .replaceAll(this.password, "[REDACTED]")
+      .replaceAll(this.authorization, "[REDACTED]")
+      .replaceAll(this.authorization.slice(6), "[REDACTED]")
+      .slice(0, 2000);
   }
 
   private async ensureServer(
     request: WorkerRequest,
   ): Promise<OpenCodeServerHandle> {
-    const requestPolicyFingerprint = canonicalOpenCodePolicyFingerprint(
-      request.toolsPolicy,
-      request.environment,
-    );
-    if (this.serverPromise === undefined) {
-      this.serverPolicyFingerprint = requestPolicyFingerprint;
-      const promise =
-        this.injectedBaseUrl === undefined
-          ? (async () => {
-              const configDirectory = await mkdtemp(
-                join(tmpdir(), "fusion-opencode-config-"),
-              );
+    const fingerprint = policyFingerprint(request);
+    const directory = directoryFor(request.environment);
+    if (this.serverPromise) {
+      if (
+        this.serverDirectory !== directory ||
+        (request.toolsPolicy?.mode !== "none" &&
+          this.fingerprint !== fingerprint)
+      )
+        throw new Error(
+          "OPENCODE_SHARED_SERVER_POLICY_MISMATCH: worker policy or location differs from the shared server.",
+        );
+      return this.serverPromise;
+    }
+    this.fingerprint = fingerprint;
+    this.serverDirectory = directory;
+    this.serverPromise = (async () => {
+      let server: OpenCodeServerHandle;
+      if (this.injectedBaseUrl !== undefined) {
+        server = { baseUrl: this.injectedBaseUrl, dispose() {} };
+      } else {
+        const result = await this.versionExecutor({
+          command: this.command,
+          args: ["--version"],
+          timeoutMs: startupTimeoutMs,
+        });
+        const localVersion = /^(?:opencode\s+v?)?(\d+\.\d+\.\d+)\s*$/mu.exec(
+          result.stdout,
+        )?.[1];
+        assertSupportedVersion(localVersion);
+        const configDirectory = await mkdtemp(
+          join(tmpdir(), "fusion-opencode-config-"),
+        );
+        try {
+          const owned = await this.serverFactory({
+            command: this.command,
+            cwd: directory,
+            fetch: this.fetch,
+            configContent: buildOpenCodeConfigContent({
+              toolsPolicy: request.toolsPolicy,
+              environment: request.environment,
+              agentName: this.agentName,
+            }),
+            env: {
+              [fusionPanelDepthEnv]: nextFusionPanelDepth(),
+              OPENCODE_CONFIG: undefined,
+              OPENCODE_CONFIG_DIR: configDirectory,
+              XDG_CONFIG_HOME: configDirectory,
+              OPENCODE_PASSWORD: this.password,
+              OPENCODE_SERVER_PASSWORD: undefined,
+              OPENCODE_PTY_HANDOFF: undefined,
+              OPENCODE_SIMULATE: undefined,
+            },
+          });
+          server = {
+            baseUrl: owned.baseUrl,
+            async dispose() {
               try {
-                const server = await this.serverFactory({
-                  command: this.command,
-                  configContent: buildOpenCodeConfigContent({
-                    toolsPolicy: request.toolsPolicy,
-                    environment: request.environment,
-                    agentName: this.agentName,
-                  }),
-                  cwd:
-                    request.environment?.workingDirectory ??
-                    request.environment?.workspaceRoot,
-                  env: {
-                    [fusionPanelDepthEnv]: nextFusionPanelDepth(),
-                    OPENCODE_CONFIG: undefined,
-                    XDG_CONFIG_HOME: configDirectory,
-                  },
-                  fetch: this.fetch,
-                });
-                return {
-                  baseUrl: server.baseUrl,
-                  async dispose() {
-                    try {
-                      await server.dispose();
-                    } finally {
-                      await rm(configDirectory, {
-                        recursive: true,
-                        force: true,
-                      }).catch(() => undefined);
-                    }
-                  },
-                };
-              } catch (error) {
-                await rm(configDirectory, { recursive: true, force: true }).catch(
-                  () => undefined,
-                );
-                throw error;
+                await owned.dispose();
+              } finally {
+                await rm(configDirectory, { recursive: true, force: true });
               }
-            })()
-          : Promise.resolve({
-              baseUrl: this.injectedBaseUrl,
-              dispose() {},
-            });
-      promise.catch(() => {
-        if (this.serverPromise === promise) {
-          this.serverPromise = undefined;
-          this.serverVerificationPromise = undefined;
-          this.serverEffectiveRules = undefined;
-          this.serverPolicyFingerprint = undefined;
+            },
+          };
+        } catch (error) {
+          await rm(configDirectory, { recursive: true, force: true });
+          throw error;
         }
-      });
-      this.serverPromise = promise;
-    } else if (
-      request.toolsPolicy?.mode !== "none" &&
-      this.serverPolicyFingerprint !== requestPolicyFingerprint
-    ) {
-      throw new OpenCodeSharedServerPolicyError(
-        `OpenCode shared-server tools policy mismatch: ${JSON.stringify({
-          code: "OPENCODE_SHARED_SERVER_POLICY_MISMATCH",
-          configuredPolicy: JSON.parse(
-            this.serverPolicyFingerprint ?? "null",
-          ),
-          requestPolicy: JSON.parse(requestPolicyFingerprint),
-        })}`,
-      );
-    }
-    const server = await this.serverPromise;
-    // Fingerprint equality preserves expected environment rules; judge rules are invariant.
-    this.serverVerificationPromise ??= verifyOpenCodeEffectiveRules({
-      fetch: this.fetch,
-      baseUrl: server.baseUrl,
-      agentName: this.agentName,
-      toolsPolicy: request.toolsPolicy,
-      environment: request.environment,
-    });
-    const rulesByAgent = await this.serverVerificationPromise;
-    this.serverEffectiveRules = { baseUrl: server.baseUrl, rulesByAgent };
-    return server;
-  }
-
-  private async opencodeVersion(): Promise<string | undefined> {
-    this.versionPromise ??= this.versionExecutor({
-      command: this.command,
-      args: ["--version"],
-    }).then((result) => versionFromOutput(`${result.stdout}\n${result.stderr}`));
-    return this.versionPromise;
-  }
-
-  private async createSession(
-    baseUrl: string,
-    request: WorkerRequest,
-  ): Promise<{ id: string }> {
-    const value = await requestJson<Record<string, unknown>>(
-      this.fetch,
-      baseUrl,
-      "/session",
-      {
-        method: "POST",
-        body: {
-          title: `Fusion ${request.workerId}`,
-        },
-      },
-      request.environment,
-    );
-    const id = stringField(value, "id") ?? stringField(value, "sessionID");
-    if (id === undefined) {
-      throw new Error("opencode session creation returned no session id.");
-    }
-    return { id };
-  }
-
-  private async sendPromptAndObserve(
-    baseUrl: string,
-    request: WorkerRequest,
-    sessionId: string,
-    warnings: string[],
-    abortOutcome: WorkerAbortOutcome,
-  ): Promise<OpenCodeObservation> {
-    const timeoutMs = request.budget?.timeoutMs;
-    const deadline =
-      timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
-    const messageId = `msg_${randomUUID().replace(/-/gu, "")}`;
-    const controller = new AbortController();
-    const observer = observeOpenCodeEvents({
-      fetch: this.fetch,
-      baseUrl,
-      request,
-      sessionId,
-      messageId,
-      signal: controller.signal,
-      warnings,
-    });
-    try {
-      await withTimeout(
-        observer.ready,
-        remainingTimeoutMs(deadline),
-        "opencode SDK worker timed out opening SSE stream.",
-      );
-      const promptPromise = this.promptAsyncOrSync(
-        baseUrl,
-        request,
-        sessionId,
-        messageId,
-        warnings,
-        controller.signal,
-      );
-      promptPromise.catch(() => undefined);
-      const syncObservation = await withTimeout(
-        promptPromise,
-        remainingTimeoutMs(deadline),
-        "opencode SDK worker timed out sending the prompt.",
-      );
-      if (syncObservation !== undefined) {
-        return syncObservation;
       }
-      return await withTimeout(
-        observer.observation,
-        remainingTimeoutMs(deadline),
-        "opencode SDK worker timed out waiting for SSE completion.",
-      );
-    } finally {
-      await this.abortSession(
-        baseUrl,
-        request,
-        sessionId,
-        warnings,
-        abortOutcome,
-      );
-      controller.abort();
-      observer.observation.catch(() => undefined);
-    }
-  }
-
-  private async abortSession(
-    baseUrl: string,
-    request: WorkerRequest,
-    sessionId: string,
-    warnings: string[],
-    abortOutcome: WorkerAbortOutcome,
-  ): Promise<void> {
-    const controller = new AbortController();
-    abortOutcome.attempted = true;
-    try {
-      await withTimeout(
-        requestJson<boolean>(
+      try {
+        const info = await requestJson(
           this.fetch,
-          baseUrl,
-          `/session/${encodeURIComponent(sessionId)}/abort`,
-          { method: "POST", signal: controller.signal },
-          request.environment,
-        ),
-        sessionAbortTimeoutMs,
-        "opencode SDK session abort timed out.",
-      );
-      abortOutcome.succeeded = true;
-    } catch (error) {
-      const errorSnippet = snippet(String(error));
-      abortOutcome.succeeded = false;
-      abortOutcome.error = errorSnippet;
-      warnings.push(
-        `OpenCode session abort failed; session may linger until server shutdown: ${errorSnippet}`,
-      );
-    } finally {
-      controller.abort();
-    }
-  }
-
-  private async promptAsyncOrSync(
-    baseUrl: string,
-    request: WorkerRequest,
-    sessionId: string,
-    messageId: string,
-    warnings: string[],
-    signal?: AbortSignal,
-  ): Promise<OpenCodeObservation | undefined> {
-    const body = openCodePromptBody(
-      request,
-      messageId,
-      openCodeAgentName(request, this.agentName),
-      warnings,
-    );
-    try {
-      await requestJson<void>(
-        this.fetch,
-        baseUrl,
-        `/session/${encodeURIComponent(sessionId)}/prompt_async`,
-        {
-          method: "POST",
-          body,
-          signal,
-        },
-        request.environment,
-      );
-      return undefined;
-    } catch (error) {
-      if (!(error instanceof HttpError) || (error.status !== 404 && error.status !== 405)) {
+          server.baseUrl,
+          "/api/info",
+          { signal: AbortSignal.timeout(startupTimeoutMs) },
+        );
+        assertServerInfo(info);
+        this.version = info.version as string;
+        return server;
+      } catch (error) {
+        await server.dispose();
         throw error;
       }
-    }
+    })();
+    return this.serverPromise;
+  }
 
-    const value = await requestJson<Record<string, unknown>>(
+  private async promptAndObserve(
+    baseUrl: string,
+    request: WorkerRequest,
+    sessionId: string,
+    observation: Observation,
+    warnings: string[],
+    signal: AbortSignal,
+    streamSignal: AbortSignal,
+  ): Promise<void> {
+    let readyResolve!: () => void;
+    let readyReject!: (reason: unknown) => void;
+    const ready = new Promise<void>((resolve, reject) => {
+      readyResolve = resolve;
+      readyReject = reject;
+    });
+    const collected = collectEvents({
+      fetch: this.fetch,
+      baseUrl,
+      sessionId,
+      observation,
+      warnings,
+      signal: streamSignal,
+      ready: readyResolve,
+    });
+    collected.catch(readyReject);
+    await abortable(ready, signal);
+    const id = `msg_${randomUUID().replaceAll("-", "")}`;
+    const admission = await requestJson(
       this.fetch,
       baseUrl,
-      `/session/${encodeURIComponent(sessionId)}/message`,
-      {
-        method: "POST",
-        body,
-        signal,
-      },
-      request.environment,
+      `/api/session/${encodeURIComponent(sessionId)}/prompt`,
+      { method: "POST", body: { id, text: request.prompt }, signal },
     );
-    return observationFromPromptResponse(value);
+    const data = recordField(admission, "data");
+    if (data?.id !== id || data.sessionID !== sessionId || data.type !== "user")
+      throw new Error("Invalid OpenCode prompt admission response.");
+    await abortable(collected, signal);
   }
 }
 
-function openCodeWorkerResult(input: {
-  request: WorkerRequest;
-  status: WorkerResult["status"];
-  output: string;
-  sessionId?: string;
-  modelUsed?: string;
-  usage?: WorkerResult["usage"];
-  warnings: string[];
-  version?: string;
-  tools: OpenCodeToolObservation[];
-  permissionRejects: OpenCodePermissionRejectObservation[];
-  effectiveRules?: OpenCodePermissionRule[];
-  abortOutcome: WorkerAbortOutcome;
-  errors?: string[];
-}): WorkerResult {
-  const enforcement = {
-    permissionDenialCount: openCodePermissionDenialCount(
-      input.tools,
-      input.permissionRejects,
-    ),
-    abortOutcome: input.abortOutcome,
-    toolEvents: input.tools.map((tool) => ({
-      tool: tool.tool,
-      command: tool.command,
-      outcome: openCodeRuntimeToolOutcome(tool.status),
-    })),
-  };
-  return {
-    panelRunId: input.request.panelRunId,
-    workerId: input.request.workerId,
-    status: input.status,
-    output: input.output,
-    modelUsed: input.modelUsed,
-    harnessUsed: {
-      kind: "opencode",
-      invocation: "headless",
-      transport: "sdk",
-      version: input.version,
-    },
-    sessionId: input.sessionId,
-    toolUseSummary: toolUseSummary(input.tools, input.permissionRejects),
-    usage: input.usage,
-    complianceEvidence: {
-      adapterClaimsIndependentInvocation:
-        input.request.session.mode === "fresh" && input.sessionId !== undefined,
-      adapterClaimsIsolatedContext:
-        input.request.session.mode === "fresh" && input.sessionId !== undefined,
-      adapterClaimsBlindness: true,
-      observedSessionMode: input.request.session.mode,
-      enforcement:
-        input.effectiveRules === undefined
-          ? { source: "harness-declared", ...enforcement }
-          : {
-              source: "verified-effective",
-              effectiveRules: { rules: input.effectiveRules },
-              ...enforcement,
-            },
-      containment: deriveContainment(input.request.toolsPolicy),
-      notes: openCodeComplianceNotes(input),
-    },
-    warnings: input.warnings.length === 0 ? undefined : input.warnings,
-    errors: input.errors,
-  };
+function assertServerInfo(
+  info: Record<string, unknown> | undefined,
+): asserts info is Record<string, unknown> {
+  assertSupportedVersion(info?.version);
+  if (
+    !Number.isInteger(info?.pid) ||
+    (info!.pid as number) < 0 ||
+    !Array.isArray(info?.urls) ||
+    !info.urls.every((url) => typeof url === "string") ||
+    typeof recordField(info, "paths")?.tmp !== "string"
+  )
+    throw new Error("Invalid OpenCode server identity response.");
 }
 
-function openCodeRuntimeToolOutcome(
-  status: string,
-): "started" | "succeeded" | "denied" | "failed" | "unknown" {
-  if (status === "pending" || status === "running") {
-    return "started";
-  }
-  if (status === "completed") {
-    return "succeeded";
-  }
-  if (status === "denied" || status === "rejected") {
-    return "denied";
-  }
-  if (status === "error" || status === "failed") {
-    return "failed";
-  }
-  return "unknown";
-}
-
-function openCodePermissionDenialCount(
-  tools: OpenCodeToolObservation[],
-  permissionRejects: OpenCodePermissionRejectObservation[],
-): number {
-  const denials = new Set<string>();
-  for (const [index, reject] of permissionRejects.entries()) {
-    denials.add(openCodeDenialKey("permission", index, reject.callId));
-  }
-  for (const [index, tool] of tools.entries()) {
-    if (openCodeRuntimeToolOutcome(tool.status) !== "denied") {
-      continue;
-    }
-    denials.add(openCodeDenialKey("tool", index, tool.callId));
-  }
-  return denials.size;
-}
-
-function openCodeDenialKey(
-  source: "permission" | "tool",
-  index: number,
-  callId: string | undefined,
-): string {
-  return callId === undefined ? `${source}:${index}` : `call:${callId}`;
-}
-
-function openCodeComplianceNotes(input: {
-  request: WorkerRequest;
-  sessionId?: string;
-  version?: string;
-  tools: OpenCodeToolObservation[];
-  permissionRejects: OpenCodePermissionRejectObservation[];
-  warnings: string[];
-}): string[] {
-  const notes = [
-    "OpenCode SDK adapter applied tool policy through OPENCODE_CONFIG_CONTENT and per-session permission pre-decision.",
-    "OpenCode merges the injected policy with user-level config; effective permissions can be wider than the declared policy.",
-  ];
-  if (input.version !== undefined) {
-    notes.push(`OpenCode binary version: ${input.version}.`);
-  }
-  if (input.sessionId !== undefined) {
-    notes.push(`OpenCode fresh session id observed: ${input.sessionId}.`);
-  }
-  for (const tool of input.tools) {
-    notes.push(`OpenCode tool ${tool.tool} ended with status ${tool.status}.`);
-  }
-  for (const reject of input.permissionRejects) {
-    notes.push(
-      `OpenCode unexpected permission ask auto-rejected: ${reject.title}.`,
+function assertSupportedVersion(value: unknown): asserts value is string {
+  const match = typeof value === "string" ? /^2\.0\.(\d+)$/u.exec(value) : null;
+  if (!match || Number(match[1]) < 12)
+    throw new Error(
+      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires OpenCode 2.0.12+ in the 2.0 release line. No v1 or CLI fallback is available.`,
     );
-  }
-  notes.push(...input.warnings);
-  notes.push(
-    ...instructionEnvironmentDisclosures({
-      kind: "opencode",
-      transport: "sdk",
-    }).map((disclosure) => disclosure.note),
-  );
-  return notes;
-}
-
-function toolUseSummary(
-  tools: OpenCodeToolObservation[],
-  permissionRejects: OpenCodePermissionRejectObservation[],
-): WorkerResult["toolUseSummary"] {
-  if (tools.length === 0 && permissionRejects.length === 0) {
-    return undefined;
-  }
-  const toolsUsed = new Set<string>();
-  const deniedRequests: string[] = [];
-  const denials = new Set<string>();
-  for (const [index, reject] of permissionRejects.entries()) {
-    const key = openCodeDenialKey("permission", index, reject.callId);
-    if (!denials.has(key)) {
-      denials.add(key);
-      deniedRequests.push(reject.title);
-    }
-  }
-  for (const [index, tool] of tools.entries()) {
-    if (openCodeRuntimeToolOutcome(tool.status) !== "denied") {
-      toolsUsed.add(tool.tool);
-      continue;
-    }
-    const key = openCodeDenialKey("tool", index, tool.callId);
-    if (!denials.has(key)) {
-      denials.add(key);
-      deniedRequests.push(
-        tool.command === undefined
-          ? tool.tool
-          : `${tool.tool}: ${tool.command}`,
-      );
-    }
-  }
-  return {
-    toolsUsed: toolsUsed.size === 0 ? undefined : [...toolsUsed],
-    deniedRequests:
-      deniedRequests.length === 0 ? undefined : deniedRequests,
-  };
-}
-
-function withoutDuration(
-  usage: WorkerResult["usage"] | undefined,
-): Omit<NonNullable<WorkerResult["usage"]>, "durationMs"> {
-  if (usage === undefined) {
-    return {};
-  }
-  const { durationMs: _durationMs, ...rest } = usage;
-  return rest;
 }
 
 export function buildOpenCodeConfigContent(input: {
@@ -756,1167 +568,606 @@ export function buildOpenCodeConfigContent(input: {
   environment: WorkerEnvironment | undefined;
   agentName?: string;
 }): OpenCodeConfigContent {
-  const agentName = input.agentName ?? defaultAgentName;
   return {
-    agent: {
-      [agentName]: {
+    warming: false,
+    share: "disabled",
+    websearch: { provider: "exa" },
+    agents: {
+      [input.agentName ?? workerAgent]: {
         description: "Fusion read-only worker",
         mode: "primary",
-        permission: buildOpenCodePermissionMap(
+        permissions: buildOpenCodePermissionRules(
           input.toolsPolicy,
           input.environment,
         ),
       },
-      [judgeAgentName]: {
+      [judgeAgent]: {
         description: "Fusion no-tools judge",
         mode: "primary",
-        permission: buildOpenCodePermissionMap({ mode: "none" }, undefined),
+        permissions: buildOpenCodePermissionRules({ mode: "none" }, undefined),
       },
-    },
-    experimental: {
-      continue_loop_on_deny: true,
     },
   };
 }
 
-export function buildOpenCodePermissionMap(
-  toolsPolicy: ToolsPolicy | undefined,
+export function buildOpenCodePermissionRules(
+  policy: ToolsPolicy | undefined,
   environment: WorkerEnvironment | undefined,
-): OpenCodePermissionConfig {
-  const allowedTools = allowedOpenCodeTools(toolsPolicy);
-  return {
-    // OpenCode permission evaluation is last-match-wins, so specific rules
-    // must retain insertion order after this deny-by-default rule.
-    "*": "deny",
-    read: allowedTools.has("read") ? "allow" : "deny",
-    grep: allowedTools.has("grep") ? "allow" : "deny",
-    glob: allowedTools.has("glob") ? "allow" : "deny",
-    list: allowedTools.has("list") ? "allow" : "deny",
-    edit: allowedTools.has("edit") ? "allow" : "deny",
-    write: "deny",
-    patch: "deny",
-    task: "deny",
-    todowrite: "deny",
-    skill: "deny",
-    lsp: "deny",
-    doom_loop: "deny",
-    webfetch: allowedTools.has("webfetch") ? "allow" : "deny",
-    websearch: allowedTools.has("websearch") ? "allow" : "deny",
-    bash: bashPermissionMap(toolsPolicy),
-    external_directory: externalDirectoryPermissionMap(environment?.readRoots),
-  };
-}
-
-async function verifyOpenCodeEffectiveRules(input: {
-  fetch: Fetch;
-  baseUrl: string;
-  agentName: string;
-  toolsPolicy: ToolsPolicy | undefined;
-  environment: WorkerEnvironment | undefined;
-}): Promise<Map<string, OpenCodePermissionRule[]>> {
-  const value = await requestJson<unknown>(
-    input.fetch,
-    input.baseUrl,
-    "/agent",
-    { method: "GET" },
-    input.environment,
-  );
-  const agents = openCodeAgentInfos(value);
-  const policies = new Map<string, ToolsPolicy | undefined>([
-    [input.agentName, input.toolsPolicy],
-    [judgeAgentName, { mode: "none" }],
-  ]);
-  const expected = [...policies].map(([agentName, toolsPolicy]) => ({
-    agent: agentName,
-    decisions: openCodeProbeDecisions(
-      expectedOpenCodePermissionRules(toolsPolicy),
-      toolsPolicy,
-    ),
-  }));
-  const observed = [...policies].map(([agentName, toolsPolicy]) => {
-    const agent = agents.find((candidate) => candidate.name === agentName);
-    return agent === undefined
-      ? { agent: agentName, availableAgents: agents.map(({ name }) => name) }
-      : {
-          agent: agentName,
-          decisions: openCodeProbeDecisions(agent.permission, toolsPolicy),
-        };
-  });
-  const mismatches = expected.flatMap((expectedAgent) => {
-    const observedAgent = observed.find(
-      (candidate) => candidate.agent === expectedAgent.agent,
-    );
-    if (observedAgent?.decisions === undefined) {
-      return expectedAgent.decisions.map((expectedDecision) => ({
-        agent: expectedAgent.agent,
-        probe: {
-          permission: expectedDecision.permission,
-          pattern: expectedDecision.pattern,
-        },
-        expected: expectedDecision.action,
-        observed: undefined,
-      }));
-    }
-    const observedDecisions = observedAgent.decisions;
-    return expectedAgent.decisions.flatMap((expectedDecision) => {
-      const observedDecision = observedDecisions.find(
-        (candidate) =>
-          candidate.permission === expectedDecision.permission &&
-          candidate.pattern === expectedDecision.pattern,
-      );
-      return observedDecision?.action === expectedDecision.action
-        ? []
-        : [
-            {
-              agent: expectedAgent.agent,
-              probe: {
-                permission: expectedDecision.permission,
-                pattern: expectedDecision.pattern,
-              },
-              expected: expectedDecision.action,
-              observed: observedDecision?.action,
-            },
-          ];
-    });
-  });
-  if (mismatches.length === 0) {
-    return new Map(
-      [...policies.keys()].map((agentName) => [
-        agentName,
-        agents.find((candidate) => candidate.name === agentName)!.permission,
-      ]),
-    );
-  }
-
-  throw new OpenCodeEffectiveRulesError(
-    `OpenCode effective permission verification failed: ${JSON.stringify({
-      code: "OPENCODE_EFFECTIVE_RULES_MISMATCH",
-      expected,
-      observed,
-      mismatches,
-    })}`,
-  );
-}
-
-function expectedOpenCodePermissionRules(
-  toolsPolicy: ToolsPolicy | undefined,
-): OpenCodePermissionRule[] {
-  const permission = buildOpenCodePermissionMap(toolsPolicy, undefined);
-  return Object.entries(permission).flatMap(([permissionId, decision]) =>
-    typeof decision === "string"
-      ? [{ permission: permissionId, pattern: "*", action: decision }]
-      : Object.entries(decision).map(([pattern, action]) => ({
-          permission: permissionId,
-          pattern,
-          action,
-        })),
-  );
-}
-
-function openCodeProbeDecisions(
-  rules: OpenCodePermissionRule[],
-  toolsPolicy: ToolsPolicy | undefined,
-): Array<OpenCodePermissionRule> {
-  const bashCommands = [
-    "git status",
-    "git status --short",
-    "git commit -m x",
-    "pip install x",
-    "bun run x",
-    ...(toolsPolicy?.readOnlyBashCommands ?? []).flatMap((command) => [
-      command,
-      `${command} x`,
-    ]),
+): PermissionRule[] {
+  const rules: PermissionRule[] = [
+    { action: "*", resource: "*", effect: "deny" },
   ];
-  const probes = [
-    ...[...new Set(bashCommands)].map((pattern) => ({
-      permission: "bash",
-      pattern,
-    })),
-    ...[
-      "edit",
-      "write",
-      "read",
-      "grep",
-      "glob",
-      "webfetch",
-      "websearch",
-      "skill",
-      "mcp_some_tool",
-    ].map((permission) => ({ permission, pattern: "*" })),
-    ...enforceableOpenCodeDeniedToolNames(toolsPolicy)
-      .flatMap(openCodeToolIds)
-      .map((permission) => ({ permission, pattern: "*" })),
-  ];
-  return uniqueOpenCodeProbes(probes).map((probe) => ({
-    ...probe,
-    action: openCodeEffectiveDecision(rules, probe.permission, probe.pattern),
-  }));
-}
-
-function enforceableOpenCodeDeniedToolNames(
-  toolsPolicy: ToolsPolicy | undefined,
-): string[] {
-  const unsupported = new Set(unsupportedCommandPatternDenies(toolsPolicy));
-  return [
-    ...new Set(
-      (toolsPolicy?.deny ?? [])
-        .filter((tool) => !unsupported.has(tool))
-        .map(normalizeToolName),
-    ),
-  ];
-}
-
-function uniqueOpenCodeProbes<T extends { permission: string; pattern: string }>(
-  probes: T[],
-): T[] {
-  const seen = new Set<string>();
-  return probes.filter((probe) => {
-    const key = `${probe.permission}\u0000${probe.pattern}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function openCodeEffectiveDecision(
-  rules: OpenCodePermissionRule[],
-  permission: string,
-  pattern: string,
-): PermissionDecision {
-  return rules.findLast(
-    (rule) =>
-      openCodeGlobMatches(rule.permission, permission) &&
-      openCodeGlobMatches(rule.pattern, pattern),
-  )?.action ?? "ask";
-}
-
-function openCodeGlobMatches(glob: string, value: string): boolean {
-  if (glob.endsWith(" *") && value === glob.slice(0, -2)) {
-    return true;
-  }
-  const pattern = glob
-    .split("*")
-    .map((part) => part.replace(/[\\^$+?.()|[\]{}]/gu, "\\$&"))
-    .join(".*");
-  return new RegExp(`^${pattern}$`, "u").test(value);
-}
-
-function openCodeAgentInfos(value: unknown): OpenCodeAgentInfo[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((candidate) => {
-    const record = objectValue(candidate);
-    const name = record === undefined ? undefined : stringField(record, "name");
+  if (policy?.mode === "none") return rules;
+  const unsupported = new Set(unsupportedCommandPatternDenies(policy));
+  const denied = new Set(
+    (policy?.deny ?? [])
+      .filter((tool) => !unsupported.has(tool))
+      .map(normalizeToolName),
+  );
+  const allowed = new Set(
+    (policy?.mode === "full"
+      ? knownTools
+      : (policy?.allow ??
+        (policy?.mode === "limited" ? [] : readOnlyDefaultAllowedTools))
+    ).map(normalizeToolName),
+  );
+  for (const action of knownTools) {
     if (
-      record === undefined ||
-      name === undefined ||
-      !Array.isArray(record.permission)
-    ) {
-      return [];
-    }
-    const permission: OpenCodePermissionRule[] = record.permission.flatMap(
-      (candidateRule) => {
-        const rule = objectValue(candidateRule);
-        const permissionId =
-          rule === undefined ? undefined : stringField(rule, "permission");
-        const pattern =
-          rule === undefined ? undefined : stringField(rule, "pattern");
-        const action =
-          rule === undefined ? undefined : stringField(rule, "action");
-        if (
-          permissionId === undefined ||
-          pattern === undefined ||
-          (action !== "ask" && action !== "allow" && action !== "deny")
-        ) {
-          return [];
-        }
-        return [
-          {
-            permission: permissionId,
-            pattern,
-            action: action as PermissionDecision,
-          },
-        ];
+      allowed.has(action) &&
+      !denied.has(action) &&
+      !(action === "edit" && (denied.has("write") || denied.has("patch")))
+    )
+      rules.push({ action, resource: "*", effect: "allow" });
+  }
+  // Resource matching remains the harness allowlist, not an OS sandbox.
+  rules.push({ action: "shell", resource: "*", effect: "deny" });
+  if (!isBashDenied(policy)) {
+    if (policy?.mode === "full")
+      rules.push({ action: "shell", resource: "*", effect: "allow" });
+    else
+      for (const command of policy?.readOnlyBashCommands ?? []) {
+        rules.push(
+          { action: "shell", resource: command, effect: "allow" },
+          { action: "shell", resource: `${command} *`, effect: "allow" },
+        );
+      }
+  }
+  rules.push({ action: "external_directory", resource: "*", effect: "deny" });
+  for (const root of environment?.readRoots ?? []) {
+    const path = resolve(root);
+    rules.push(
+      { action: "external_directory", resource: path, effect: "allow" },
+      {
+        action: "external_directory",
+        resource: `${path === "/" ? "" : path}/**`,
+        effect: "allow",
       },
     );
-    return [{ name, permission }];
-  });
+  }
+  return rules;
 }
 
-function allowedOpenCodeTools(
-  toolsPolicy: ToolsPolicy | undefined,
-): Set<string> {
-  let allowed: Set<string>;
-  switch (toolsPolicy?.mode) {
-    case "none":
-      allowed = new Set();
-      break;
-    case "read-only":
-      allowed = new Set(
-        (toolsPolicy.allow ?? readOnlyDefaultAllowedTools).flatMap(
-          openCodeToolIds,
-        ),
-      );
-      break;
-    case "limited":
-      allowed = new Set((toolsPolicy.allow ?? []).flatMap(openCodeToolIds));
-      break;
-    case "full":
-      allowed = new Set(knownOpenCodeTools);
-      break;
-    case undefined:
-      allowed = new Set(readOnlyDefaultAllowedTools.flatMap(openCodeToolIds));
-      break;
-  }
-  for (const denied of enforceableOpenCodeDeniedToolNames(toolsPolicy)) {
-    for (const permissionId of openCodeToolIds(denied)) {
-      allowed.delete(permissionId);
-    }
-  }
-  return allowed;
-}
-
-function openCodeToolIds(tool: string): string[] {
-  const normalized = normalizeToolName(tool);
-  switch (normalized) {
-    case "read":
-      return ["read"];
-    case "grep":
-      return ["grep"];
-    case "glob":
-      return ["glob"];
-    case "list":
-      return ["list"];
-    case "webfetch":
-      return ["webfetch"];
-    case "websearch":
-      return ["websearch"];
-    case "bash":
-      return ["bash"];
-    case "write":
-      return ["write"];
-    case "edit":
-      return ["edit"];
-    case "task":
-      return ["task"];
-    case "todowrite":
-      return ["todowrite"];
-    default:
-      return [normalized];
-  }
-}
-
-function bashPermissionMap(
-  toolsPolicy: ToolsPolicy | undefined,
-): PermissionMap {
-  if (isBashDenied(toolsPolicy)) {
-    return { "*": "deny" };
-  }
-  if (toolsPolicy?.mode === "full") {
-    return { "*": "allow" };
-  }
-  const map: PermissionMap = { "*": "deny" };
-  if (toolsPolicy?.mode === "none") {
-    return map;
-  }
-  for (const command of toolsPolicy?.readOnlyBashCommands ?? []) {
-    map[command] = "allow";
-    map[`${command} *`] = "allow";
-  }
-  return map;
-}
-
-function externalDirectoryPermissionMap(
-  readRoots: string[] | undefined,
-): PermissionMap {
-  const map: PermissionMap = { "*": "deny" };
-  for (const root of readRoots ?? []) {
-    const normalized = normalizeReadRoot(root);
-    map[normalized] = "allow";
-    map[`${normalized === "/" ? "" : normalized}/**`] = "allow";
-  }
-  return map;
-}
-
-function normalizeReadRoot(root: string): string {
-  const trimmed = root.replace(/\/+$/u, "");
-  return trimmed.length === 0 ? "/" : trimmed;
-}
-
-function openCodePromptBody(
-  request: WorkerRequest,
-  messageId: string,
+async function verifyEffectiveRules(
+  fetchImpl: Fetch,
+  baseUrl: string,
   agentName: string,
-  warnings: string[],
-): Record<string, unknown> {
-  return {
-    messageID: messageId,
-    model: splitOpenCodeModelPreference(request, warnings),
-    agent: agentName,
-    parts: [{ type: "text", text: request.prompt }],
-  };
+  request: WorkerRequest,
+  signal: AbortSignal,
+): Promise<Map<string, PermissionRule[]>> {
+  const expected = new Map([
+    [
+      agentName,
+      buildOpenCodePermissionRules(request.toolsPolicy, request.environment),
+    ],
+    [judgeAgent, buildOpenCodePermissionRules({ mode: "none" }, undefined)],
+  ]);
+  // The no-tools judge may reuse a worker server, but must not reclassify its
+  // worker rules as no-tools. Only inspect the selected judge in that case.
+  if (request.toolsPolicy?.mode === "none") expected.delete(agentName);
+  const deadline = Date.now() + startupTimeoutMs;
+  while (true) {
+    const url = new URL("/api/agent", baseUrl);
+    url.searchParams.set(
+      "location[directory]",
+      directoryFor(request.environment),
+    );
+    const value = await requestJson(fetchImpl, baseUrl, url.toString(), {
+      signal,
+    });
+    if (!Array.isArray(value?.data))
+      throw new Error("Invalid OpenCode agent list response.");
+    const agents = value.data as unknown[];
+    const result = new Map<string, PermissionRule[]>();
+    let missing = false;
+    for (const [id, rules] of expected) {
+      const agent = agents.map(objectValue).find((item) => item?.id === id);
+      if (!agent) {
+        missing = true;
+        continue;
+      }
+      const permissions = parseRules(agent.permissions);
+      // Everything preceding our catch-all reset is shadowed. Requiring the
+      // exact suffix rejects extra permissions, reordered rules and missing
+      // read roots, rather than merely sampling a few known tool names.
+      if (
+        JSON.stringify(permissions.slice(-rules.length)) !==
+        JSON.stringify(rules)
+      )
+        throw new Error(
+          `OPENCODE_EFFECTIVE_RULES_MISMATCH: ${id} does not end with the expected ordered deny-by-default policy.`,
+        );
+      result.set(id, permissions);
+    }
+    if (!missing) return result;
+    // v2.0.12 initially returns [] while location plugins are still loading.
+    // This is readiness, not permission to run behind missing enforcement.
+    if (Date.now() >= deadline)
+      throw new Error(
+        "OPENCODE_EFFECTIVE_RULES_MISMATCH: required Fusion agents did not become available.",
+      );
+    await abortable(new Promise((resolve) => setTimeout(resolve, 50)), signal);
+  }
 }
 
-function splitOpenCodeModelPreference(
-  request: WorkerRequest,
-  warnings: string[],
-): { providerID: string; modelID: string } | undefined {
-  const model = modelPreferenceToModel(request.modelPreference);
-  const split = splitOpenCodeModel(model);
-  if (model !== undefined && split === undefined) {
-    warnings.push(
-      `OpenCode SDK adapter ignored model preference "${model}" because it must use provider/model format.`,
-    );
-  }
-  return split;
+function parseRules(value: unknown): AgentInfo["permissions"] {
+  if (!Array.isArray(value))
+    throw new Error("Invalid OpenCode effective permissions.");
+  return value.map((item) => {
+    const record = objectValue(item);
+    const action = requiredString(record, "action");
+    const resource = requiredString(record, "resource");
+    const effect = record?.effect;
+    if (effect !== "allow" && effect !== "deny" && effect !== "ask")
+      throw new Error("Invalid OpenCode permission effect.");
+    return { action, resource, effect };
+  });
 }
 
 export function splitOpenCodeModel(
   model: string | undefined,
-): { providerID: string; modelID: string } | undefined {
-  if (model === undefined) {
-    return undefined;
-  }
-  const slashIndex = model.indexOf("/");
-  if (slashIndex === -1) {
-    return undefined;
-  }
+): { providerID: string; id: string; variant?: string } | undefined {
+  if (model === undefined) return undefined;
+  const match = /^([^/]+)\/(.+?)(?:#([^#]+))?$/u.exec(model);
+  if (!match) throw new Error("OpenCode model must use provider/model format.");
   return {
-    providerID: model.slice(0, slashIndex),
-    modelID: model.slice(slashIndex + 1),
+    providerID: match[1]!,
+    id: match[2]!,
+    ...(match[3] ? { variant: match[3] } : {}),
   };
 }
 
-function observationFromPromptResponse(
-  value: Record<string, unknown>,
-): OpenCodeObservation {
-  const info = objectField(value, "info");
-  const parts = Array.isArray(value.parts) ? value.parts : [];
-  return {
-    output: textFromParts(parts),
-    modelUsed: modelFromAssistantInfo(info),
-    usage: usageFromAssistantInfo(info),
-    tools: toolObservationsFromParts(parts),
-    permissionRejects: [],
-    warnings: [],
-  };
+function preferenceWarnings(request: WorkerRequest, warnings: string[]): void {
+  if (request.reasoning?.effort !== undefined)
+    warnings.push(
+      "OpenCode SDK reasoning.effort is not mapped; the provider default is retained.",
+    );
+  if (request.reasoning?.maxTokens !== undefined)
+    warnings.push("OpenCode SDK reasoning.maxTokens is not mapped.");
+  for (const key of [
+    "maxTurns",
+    "maxToolCalls",
+    "maxInputTokens",
+    "maxOutputTokens",
+  ] as const)
+    if (request.budget?.[key] !== undefined)
+      warnings.push(`OpenCode SDK budget.${key} is not mapped.`);
 }
 
-function observeOpenCodeEvents(input: {
+type EventInput = {
   fetch: Fetch;
   baseUrl: string;
-  request: WorkerRequest;
   sessionId: string;
-  messageId: string;
-  signal: AbortSignal;
+  observation: Observation;
   warnings: string[];
-}): {
-  ready: Promise<void>;
-  observation: Promise<OpenCodeObservation>;
-} {
-  let resolveReady!: () => void;
-  let rejectReady!: (error: unknown) => void;
-  const ready = new Promise<void>((resolve, reject) => {
-    resolveReady = resolve;
-    rejectReady = reject;
+  signal: AbortSignal;
+  ready: () => void;
+};
+async function collectEvents(input: EventInput): Promise<void> {
+  const response = await input.fetch(new URL("/api/event", input.baseUrl), {
+    headers: { Accept: "text/event-stream" },
+    signal: input.signal,
   });
-  const observation = collectOpenCodeEvents(input, resolveReady, rejectReady);
-  return { ready, observation };
-}
-
-async function collectOpenCodeEvents(
-  input: {
-    fetch: Fetch;
-    baseUrl: string;
-    request: WorkerRequest;
-    sessionId: string;
-    messageId: string;
-    signal: AbortSignal;
-    warnings: string[];
-  },
-  resolveReady: () => void,
-  rejectReady: (error: unknown) => void,
-): Promise<OpenCodeObservation> {
-  const observation: OpenCodeObservation = {
-    output: "",
-    tools: [],
-    permissionRejects: [],
-    warnings: [],
-  };
-  const textParts = new Map<string, string>();
-  let response: Response;
-  try {
-    response = await input.fetch(serverUrl(input.baseUrl, "/event"), {
-      headers: { Accept: "text/event-stream" },
-      signal: input.signal,
-    });
-    if (!response.ok || response.body === null) {
-      throw new Error(`opencode event stream failed with HTTP ${response.status}.`);
+  if (
+    !response.ok ||
+    !response.body ||
+    !response.headers.get("content-type")?.includes("text/event-stream")
+  )
+    throw new Error(`OpenCode event stream failed: HTTP ${response.status}.`);
+  let connected = false;
+  let latestMessage: string | undefined;
+  let latestFinish: string | undefined;
+  const texts = new Map<string, Map<number, string>>();
+  const usage = new Map<string, NonNullable<WorkerResult["usage"]>>();
+  for await (const json of readSse(response.body)) {
+    let event: Record<string, unknown> | undefined;
+    try {
+      event = objectValue(JSON.parse(json));
+    } catch {
+      throw new Error(
+        "Malformed OpenCode SSE JSON; completion cannot be proven.",
+      );
     }
-    resolveReady();
-  } catch (error) {
-    rejectReady(error);
-    throw error;
-  }
-
-  for await (const message of readSseMessages(response.body)) {
-    const record = parseSseJson(message, observation.warnings);
-    if (record === undefined) {
+    if (!event || typeof event.type !== "string" || !objectValue(event.data))
+      throw new Error("Malformed OpenCode event envelope.");
+    const type = event.type as OpenCodeEvent["type"];
+    const data = objectValue(event.data)!;
+    if (type === "server.connected") {
+      connected = true;
+      input.ready();
       continue;
     }
-    const outcome = await applyOpenCodeEvent({
-      record,
-      eventName: message.event,
-      observation,
-      textParts,
-      input,
-    });
-    observation.output = [...textParts.values()].join("\n");
-    if (outcome === "session-idle") {
-      return observation;
-    }
-    if (outcome === "assistant-final" && observation.output.trim().length > 0) {
-      return observation;
-    }
-  }
-
-  observation.output = [...textParts.values()].join("\n");
-  return observation;
-}
-
-type OpenCodeEventOutcome = "continue" | "assistant-final" | "session-idle";
-
-async function applyOpenCodeEvent(input: {
-  record: Record<string, unknown>;
-  eventName?: string;
-  observation: OpenCodeObservation;
-  textParts: Map<string, string>;
-  input: {
-    fetch: Fetch;
-    baseUrl: string;
-    request: WorkerRequest;
-    sessionId: string;
-    messageId: string;
-    signal: AbortSignal;
-    warnings: string[];
-  };
-}): Promise<OpenCodeEventOutcome> {
-  const type = stringField(input.record, "type") ?? input.eventName;
-  const properties = objectField(input.record, "properties") ?? input.record;
-  switch (type) {
-    case "message.part.updated":
-      applyMessagePart(
-        properties,
-        input.textParts,
-        input.observation,
-        input.input.sessionId,
-        input.input.messageId,
+    if (!connected)
+      throw new Error(
+        "OpenCode emitted events before the subscription handshake.",
       );
-      return "continue";
-    case "message.updated":
-      return applyMessageUpdated(properties, input.observation, input.input)
-        ? "assistant-final"
-        : "continue";
-    case "session.idle":
-      return stringField(properties, "sessionID") === input.input.sessionId
-        ? "session-idle"
-        : "continue";
-    case "permission.updated":
-      await rejectPermissionAsk(properties, input.observation, input.input);
-      return "continue";
-    case "session.status":
-      applySessionStatus(properties, input.input.warnings, input.input.sessionId);
-      return "continue";
-    case "session.error":
-      input.observation.warnings.push("OpenCode session emitted an error event.");
-      return "continue";
-    default:
-      return "continue";
-  }
-}
-
-function applyMessagePart(
-  properties: Record<string, unknown>,
-  textParts: Map<string, string>,
-  observation: OpenCodeObservation,
-  sessionId: string,
-  promptMessageId: string,
-): void {
-  const part = objectField(properties, "part");
-  if (part === undefined) {
-    return;
-  }
-  if (stringField(part, "sessionID") !== sessionId) {
-    return;
-  }
-  if (stringField(part, "messageID") === promptMessageId) {
-    return;
-  }
-  const partType = stringField(part, "type");
-  if (partType === "text") {
-    const id = stringField(part, "id");
-    const text = stringField(part, "text");
-    if (id !== undefined && text !== undefined) {
-      textParts.set(id, text);
-    }
-  }
-  if (partType === "tool") {
-    const tool = toolObservationFromPart(part);
-    if (
-      tool !== undefined &&
-      tool.status !== "pending" &&
-      tool.status !== "running"
-    ) {
-      observation.tools.push(tool);
-      if (tool.status === "denied") {
-        observation.warnings.push(
-          `OpenCode tool ${tool.tool} was denied by permission controls.`,
+    if (data.sessionID !== input.sessionId) continue;
+    switch (type) {
+      case "session.step.started": {
+        latestMessage = requiredString(data, "assistantMessageID");
+        latestFinish = undefined;
+        const model = recordField(data, "model");
+        input.observation.modelUsed = `${requiredString(model, "providerID")}/${requiredString(model, "id")}`;
+        break;
+      }
+      case "session.text.ended": {
+        const id = requiredString(data, "assistantMessageID");
+        if (
+          !Number.isInteger(data.ordinal) ||
+          (data.ordinal as number) < 0 ||
+          typeof data.text !== "string"
+        )
+          throw new Error("Invalid OpenCode text boundary.");
+        const parts = texts.get(id) ?? new Map<number, string>();
+        parts.set(data.ordinal as number, data.text);
+        texts.set(id, parts);
+        break;
+      }
+      case "session.step.ended":
+      case "session.step.failed": {
+        const id = requiredString(data, "assistantMessageID");
+        if (id === latestMessage)
+          latestFinish =
+            typeof data.finish === "string" ? data.finish : "error";
+        const tokens = recordField(data, "tokens");
+        usage.set(id, {
+          inputTokens: numberField(tokens, "input"),
+          outputTokens: numberField(tokens, "output"),
+          costUsd: numberField(data, "cost"),
+        });
+        input.observation.usage = sumUsage([...usage.values()]);
+        if (type === "session.step.failed")
+          input.warnings.push(
+            `OpenCode step failed: ${errorMessage(data.error)}.`,
+          );
+        break;
+      }
+      case "session.tool.input.started": {
+        const id = requiredString(data, "id");
+        input.observation.tools.set(id, {
+          callId: id,
+          tool: requiredString(data, "name"),
+          status: "started",
+        });
+        break;
+      }
+      case "session.tool.called":
+      case "session.tool.success":
+      case "session.tool.failed": {
+        const id = requiredString(data, "id");
+        const tool = input.observation.tools.get(id);
+        if (!tool)
+          throw new Error(
+            "OpenCode tool event is missing its name/start boundary.",
+          );
+        if (type === "session.tool.called")
+          tool.command = stringField(recordField(data, "input"), "command");
+        else if (type === "session.tool.success") tool.status = "succeeded";
+        else {
+          tool.status =
+            recordField(data, "error")?.type === "permission.rejected" ||
+            input.observation.rejections.some(
+              (rejection) => rejection.callId === id,
+            )
+              ? "denied"
+              : "failed";
+          input.warnings.push(`OpenCode tool ${tool.tool} ${tool.status}.`);
+        }
+        break;
+      }
+      case "permission.asked": {
+        const id = requiredString(data, "id");
+        const action = requiredString(data, "action");
+        const source = recordField(data, "source");
+        input.observation.rejections.push({
+          title: action,
+          callId: stringField(source, "id"),
+        });
+        input.warnings.push(
+          `OpenCode unexpected permission ask auto-rejected: ${action}.`,
         );
-      } else if (tool.status === "error") {
-        observation.warnings.push(
-          `OpenCode tool ${tool.tool} ended with error.`,
+        await requestJson(
+          input.fetch,
+          input.baseUrl,
+          `/api/session/${encodeURIComponent(input.sessionId)}/permission/${encodeURIComponent(id)}/reply`,
+          {
+            method: "POST",
+            body: {
+              decision: "reject",
+              message:
+                "Fusion policy denies this operation. Continue with permitted tools and disclose the limitation.",
+            },
+            signal: input.signal,
+          },
         );
+        break;
+      }
+      case "session.retry.scheduled":
+        input.warnings.push(
+          `OpenCode provider call is retrying: ${errorMessage(data.error)}.`,
+        );
+        break;
+      case "session.execution.failed":
+        throw new Error(
+          `OpenCode execution failed: ${errorMessage(data.error)}`,
+        );
+      case "session.execution.interrupted":
+        throw new Error(
+          `OpenCode execution interrupted: ${stringField(data, "reason") ?? "unknown"}`,
+        );
+      case "session.execution.succeeded": {
+        if (
+          !latestMessage ||
+          !latestFinish ||
+          latestFinish === "tool-calls" ||
+          latestFinish === "error"
+        )
+          throw new Error(
+            "OpenCode execution has no completed final assistant step.",
+          );
+        const parts = texts.get(latestMessage);
+        input.observation.output = parts
+          ? [...parts]
+              .sort(([a], [b]) => a - b)
+              .map(([, text]) => text)
+              .join("\n")
+          : "";
+        return;
       }
     }
   }
-  if (partType === "step-finish") {
-    const tokens = objectField(part, "tokens");
-    observation.usage = {
-      inputTokens: tokens === undefined ? undefined : numberField(tokens, "input"),
-      outputTokens:
-        tokens === undefined ? undefined : numberField(tokens, "output"),
-      costUsd: numberField(part, "cost"),
-    };
-  }
-}
-
-function applySessionStatus(
-  properties: Record<string, unknown>,
-  warnings: string[],
-  sessionId: string,
-): void {
-  if (stringField(properties, "sessionID") !== sessionId) {
-    return;
-  }
-  const status = objectField(properties, "status");
-  if (status === undefined || stringField(status, "type") !== "retry") {
-    return;
-  }
-  const warning = `OpenCode provider call is retrying: ${stringField(status, "message") ?? "unknown error"}.`;
-  if (!warnings.includes(warning)) {
-    warnings.push(warning);
-  }
-}
-
-function applyMessageUpdated(
-  properties: Record<string, unknown>,
-  observation: OpenCodeObservation,
-  input: {
-    sessionId: string;
-    messageId: string;
-  },
-): boolean {
-  const info = objectField(properties, "info") as AssistantMessage | undefined;
-  if (info === undefined || info.role !== "assistant") {
-    return false;
-  }
-  if (info.sessionID !== input.sessionId) {
-    return false;
-  }
-  observation.modelUsed = modelFromAssistantInfo(info);
-  observation.usage = usageFromAssistantInfo(info) ?? observation.usage;
-  // Steps end with finish "tool-calls" (and a completed time); only a
-  // finish of "stop" marks the assistant's final message of the turn.
-  return info.finish === "stop";
-}
-
-async function rejectPermissionAsk(
-  properties: Record<string, unknown>,
-  observation: OpenCodeObservation,
-  input: {
-    fetch: Fetch;
-    baseUrl: string;
-    request: WorkerRequest;
-    sessionId: string;
-  },
-): Promise<void> {
-  const permission = permissionFromProperties(properties);
-  if (permission === undefined) {
-    observation.warnings.push("OpenCode emitted a permission event without an id.");
-    return;
-  }
-  const sessionId = permission.sessionID || input.sessionId;
-  observation.permissionRejects.push({
-    title: permission.title || permission.type,
-    callId: permission.callID,
-  });
-  observation.warnings.push(
-    `OpenCode emitted an unexpected permission ask and Fusion rejected it: ${permission.title || permission.type}.`,
+  throw new Error(
+    "OpenCode event stream ended before execution completion; live streams cannot replay missing events.",
   );
-  await requestJson<void>(
-    input.fetch,
-    input.baseUrl,
-    `/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permission.id)}`,
-    {
-      method: "POST",
-      body: { response: "reject" },
-    },
-    input.request.environment,
-  ).catch((error) => {
-    observation.warnings.push(
-      `OpenCode permission auto-reject failed: ${snippet(String(error))}`,
-    );
-  });
 }
 
-function permissionFromProperties(
-  properties: Record<string, unknown>,
-): Permission | undefined {
-  const permission = objectField(properties, "permission") ?? properties;
-  const id = stringField(permission, "id") ?? stringField(permission, "permissionID");
-  if (id === undefined) {
-    return undefined;
+function sumUsage(
+  values: NonNullable<WorkerResult["usage"]>[],
+): NonNullable<WorkerResult["usage"]> {
+  const result: NonNullable<WorkerResult["usage"]> = {};
+  for (const key of ["inputTokens", "outputTokens", "costUsd"] as const) {
+    const numbers = values
+      .map((value) => value[key])
+      .filter((value): value is number => value !== undefined);
+    if (numbers.length) result[key] = numbers.reduce((a, b) => a + b, 0);
   }
-  return {
-    id,
-    type: stringField(permission, "type") ?? "unknown",
-    pattern: stringField(permission, "pattern"),
-    sessionID: stringField(permission, "sessionID") ?? "",
-    messageID: stringField(permission, "messageID") ?? "",
-    callID: stringField(permission, "callID"),
-    title: stringField(permission, "title") ?? id,
-    metadata: objectField(permission, "metadata") ?? {},
-    time: (objectField(permission, "time") as Permission["time"]) ?? {
-      created: Date.now(),
-    },
-  };
+  return result;
 }
 
-async function* readSseMessages(
+async function* readSse(
   body: ReadableStream<Uint8Array>,
-): AsyncGenerator<SseMessage> {
+): AsyncGenerator<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
+      if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      yield* drainSseBuffer(buffer, (rest) => {
-        buffer = rest;
-      });
-    }
-    buffer += decoder.decode();
-    if (buffer.trim().length > 0) {
-      const message = parseSseBlock(buffer);
-      if (message !== undefined) {
-        yield message;
+      if (buffer.length > 4_000_000)
+        throw new Error("OpenCode SSE frame exceeds the size limit.");
+      let match: RegExpExecArray | null;
+      while ((match = /\r?\n\r?\n/u.exec(buffer)) !== null) {
+        const block = buffer.slice(0, match.index);
+        buffer = buffer.slice(match.index + match[0].length);
+        const lines = block
+          .split(/\r?\n/u)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart());
+        if (lines.length) yield lines.join("\n");
       }
     }
+    if (buffer.trim()) throw new Error("Truncated OpenCode SSE frame.");
   } finally {
+    // The owner aborts the stream only after remote interrupt, including on
+    // successful collection. Releasing a reader lock does not disconnect SSE.
     reader.releaseLock();
   }
 }
 
-function* drainSseBuffer(
-  buffer: string,
-  update: (rest: string) => void,
-): Generator<SseMessage> {
-  let rest = buffer;
-  while (true) {
-    const normalized = rest.replace(/\r\n/gu, "\n");
-    const separatorIndex = normalized.indexOf("\n\n");
-    if (separatorIndex === -1) {
-      update(rest);
-      return;
-    }
-    const block = normalized.slice(0, separatorIndex);
-    rest = normalized.slice(separatorIndex + 2);
-    const message = parseSseBlock(block);
-    if (message !== undefined) {
-      yield message;
-    }
-  }
-}
-
-function parseSseBlock(block: string): SseMessage | undefined {
-  const data: string[] = [];
-  let event: string | undefined;
-  for (const line of block.split(/\r?\n/u)) {
-    if (line.startsWith("event:")) {
-      event = line.slice("event:".length).trim();
-    }
-    if (line.startsWith("data:")) {
-      data.push(line.slice("data:".length).trimStart());
-    }
-  }
-  return data.length === 0 ? undefined : { event, data: data.join("\n") };
-}
-
-function parseSseJson(
-  message: SseMessage,
-  warnings: string[],
-): Record<string, unknown> | undefined {
-  if (message.data === "[DONE]") {
-    return undefined;
-  }
-  try {
-    const value = JSON.parse(message.data) as unknown;
-    return objectValue(value);
-  } catch {
-    warnings.push("OpenCode SSE event could not be parsed as JSON.");
-    return undefined;
-  }
-}
-
-async function requestJson<T>(
+async function requestJson(
   fetchImpl: Fetch,
   baseUrl: string,
   path: string,
-  init: {
-    method: "GET" | "POST" | "PATCH" | "DELETE";
-    body?: unknown;
-    signal?: AbortSignal;
-  },
-  environment?: WorkerEnvironment,
-): Promise<T> {
-  const response = await fetchImpl(serverUrl(baseUrl, path, environment), {
-    method: init.method,
-    headers:
-      init.body === undefined
-        ? undefined
-        : { "Content-Type": "application/json" },
+  init: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal } = {},
+): Promise<Record<string, unknown> | undefined> {
+  const pending = fetchImpl(new URL(path, baseUrl), {
+    method: init.method ?? "GET",
+    headers: { "Content-Type": "application/json" },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
     signal: init.signal,
   });
+  const response = await (init.signal
+    ? abortable(pending, init.signal)
+    : pending);
+  // Do not echo untrusted HTTP bodies or credentials into recorded errors.
   if (!response.ok) {
-    throw new HttpError(
-      response.status,
-      `${init.method} ${path} failed with HTTP ${response.status}: ${snippet(await response.text())}`,
+    await response.body?.cancel();
+    throw new Error(
+      `OpenCode ${init.method ?? "GET"} ${new URL(path, baseUrl).pathname} failed with HTTP ${response.status}.`,
     );
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  const text = await response.text();
-  return (text.length === 0 ? undefined : JSON.parse(text)) as T;
+  if (response.status === 204) return undefined;
+  const decoded = response.json();
+  const value: unknown = await (init.signal
+    ? abortable(decoded, init.signal)
+    : decoded);
+  const record = objectValue(value);
+  if (!record) throw new Error("Invalid OpenCode JSON response.");
+  return record;
 }
 
-function serverUrl(
-  baseUrl: string,
-  path: string,
-  environment?: WorkerEnvironment,
-): string {
-  const url = new URL(path, baseUrl);
-  const directory = environment?.workingDirectory ?? environment?.workspaceRoot;
-  if (directory !== undefined) {
-    url.searchParams.set("directory", directory);
-  }
-  return url.toString();
-}
+class RetryableStartupError extends Error {}
 
 async function spawnOpenCodeServer(
   input: OpenCodeServerFactoryInput,
 ): Promise<OpenCodeServerHandle> {
   try {
-    return await spawnOpenCodeServerOnce(input);
-  } catch {
-    return spawnOpenCodeServerOnce(input);
+    return await startOpenCodeServerOnce(input);
+  } catch (error) {
+    if (!(error instanceof RetryableStartupError)) throw error;
+    // The failed child has been reaped. Allocate a fresh port for one retry;
+    // authentication, version and identity failures must never take this path.
+    return startOpenCodeServerOnce(input);
   }
 }
 
-async function spawnOpenCodeServerOnce(
+async function startOpenCodeServerOnce(
   input: OpenCodeServerFactoryInput,
 ): Promise<OpenCodeServerHandle> {
-  const port = await pickFreePort();
-  const child = spawn(input.command, [
-    "serve",
-    "--hostname=127.0.0.1",
-    `--port=${port}`,
-  ], {
-    cwd: input.cwd,
-    env: {
-      ...process.env,
-      ...input.env,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(input.configContent),
+  const port = await freePort();
+  // --stdio removes server credentials from the tool environment and makes
+  // stdin lifetime an additional parent-death cleanup boundary (v2.0.12).
+  const child = spawn(
+    input.command,
+    ["serve", "--stdio", "--hostname", "127.0.0.1", "--port", String(port)],
+    {
+      cwd: input.cwd,
+      env: {
+        ...process.env,
+        ...input.env,
+        OPENCODE_CONFIG_CONTENT: JSON.stringify(input.configContent),
+      },
+      stdio: ["pipe", "ignore", "ignore"],
     },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const output: Buffer[] = [];
-  child.stdout.on("data", (chunk: Buffer) => output.push(chunk));
-  child.stderr.on("data", (chunk: Buffer) => output.push(chunk));
-  const baseUrl = `http://127.0.0.1:${port}`;
-
-  // Without an "error" listener, a failed spawn (e.g. missing binary) is an
-  // unhandled EventEmitter error that crashes the whole process.
-  const spawnFailure = new Promise<never>((_, reject) => {
-    child.once("error", (error) => {
-      reject(
-        new Error(`opencode serve failed to spawn: ${error.message}`),
-      );
-    });
-  });
-  spawnFailure.catch(() => undefined);
-
-  await Promise.race([
-    waitForOpenCodeServer(child, baseUrl, input.fetch, output),
-    spawnFailure,
-  ]);
-  return {
-    baseUrl,
-    dispose: () => terminateChild(child),
-  };
-}
-
-async function pickFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        server.close();
-        reject(new Error("Could not allocate a localhost port."));
-        return;
-      }
-      const port = address.port;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-async function waitForOpenCodeServer(
-  child: ChildProcess,
-  baseUrl: string,
-  fetchImpl: Fetch,
-  output: Buffer[],
-): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `opencode serve exited before becoming ready: ${snippet(Buffer.concat(output).toString("utf8"))}`,
-      );
-    }
-    try {
-      const response = await fetchImpl(serverUrl(baseUrl, "/session"), {
-        method: "GET",
-      });
-      if (response.status < 500) {
-        return;
-      }
-    } catch {
-    }
-    await sleep(100);
-  }
-  await terminateChild(child);
-  throw new Error("opencode serve did not become ready within 30000ms.");
-}
-
-async function terminateChild(
-  child: ChildProcess,
-): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return;
-  }
-  const closed = new Promise<void>((resolve) => {
-    child.once("close", () => resolve());
-  });
-  child.kill("SIGTERM");
-  const terminated = await settleWithin(closed, 1_000);
-  if (!terminated && child.exitCode === null) {
-    child.kill("SIGKILL");
-    await settleWithin(closed, 1_000);
-  }
-}
-
-async function settleWithin<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<boolean>((resolve) => {
-    timer = setTimeout(() => resolve(false), timeoutMs);
-  });
-  try {
-    return await Promise.race([promise.then(() => true), timeout]);
-  } finally {
-    if (timer !== undefined) {
-      clearTimeout(timer);
-    }
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function modelFromAssistantInfo(
-  info: Record<string, unknown> | AssistantMessage | undefined,
-): string | undefined {
-  if (info === undefined) {
-    return undefined;
-  }
-  const record = objectValue(info);
-  if (record === undefined) {
-    return undefined;
-  }
-  const providerID = stringField(record, "providerID");
-  const modelID = stringField(record, "modelID");
-  return providerID !== undefined && modelID !== undefined
-    ? `${providerID}/${modelID}`
-    : undefined;
-}
-
-function usageFromAssistantInfo(
-  info: Record<string, unknown> | AssistantMessage | undefined,
-): WorkerResult["usage"] {
-  if (info === undefined) {
-    return undefined;
-  }
-  const record = objectValue(info);
-  if (record === undefined) {
-    return undefined;
-  }
-  const tokens = objectField(record, "tokens");
-  return {
-    inputTokens: tokens === undefined ? undefined : numberField(tokens, "input"),
-    outputTokens:
-      tokens === undefined ? undefined : numberField(tokens, "output"),
-    costUsd: numberField(record, "cost"),
-  };
-}
-
-function textFromParts(parts: unknown[]): string {
-  return parts
-    .map((part) => {
-      const record = objectValue(part);
-      return record?.type === "text" ? stringField(record, "text") : undefined;
-    })
-    .filter((text): text is string => text !== undefined)
-    .join("\n");
-}
-
-function toolObservationsFromParts(parts: unknown[]): OpenCodeToolObservation[] {
-  return parts
-    .map((part): OpenCodeToolObservation | undefined => {
-      const record = objectValue(part);
-      return record === undefined ? undefined : toolObservationFromPart(record);
-    })
-    .filter((tool): tool is OpenCodeToolObservation => tool !== undefined);
-}
-
-function toolObservationFromPart(
-  part: Record<string, unknown>,
-): OpenCodeToolObservation | undefined {
-  if (part.type !== "tool") {
-    return undefined;
-  }
-  const state = objectField(part, "state");
-  const status = state === undefined ? undefined : stringField(state, "status");
-  const error = state === undefined ? undefined : stringField(state, "error");
-  const tool = stringField(part, "tool");
-  const toolInput = state === undefined ? undefined : objectField(state, "input");
-  const command =
-    toolInput === undefined ? undefined : stringField(toolInput, "command");
-  if (tool === undefined || status === undefined) {
-    return undefined;
-  }
-  return {
-    tool,
-    status:
-      status === "error" && isOpenCodePermissionDenialError(error)
-        ? "denied"
-        : status,
-    command,
-    callId: stringField(part, "callID"),
-  };
-}
-
-function isOpenCodePermissionDenialError(error: string | undefined): boolean {
-  return (
-    error !== undefined &&
-    openCodePermissionDenialErrorPrefixes.some((prefix) =>
-      error.startsWith(prefix),
-    )
   );
-}
-
-function versionFromOutput(output: string): string | undefined {
-  return output
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .find((line) => /^\d+\.\d+\.\d+(?:[-+].*)?$/u.test(line));
-}
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number | undefined,
-  message: string,
-): Promise<T> {
-  if (timeoutMs === undefined) {
-    return promise;
-  }
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new WorkerTimeoutError(message)), timeoutMs);
+  let spawnError: Error | undefined;
+  child.once("error", (error) => {
+    spawnError = error;
   });
+  const baseUrl = `http://127.0.0.1:${port}`;
   try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer !== undefined) {
-      clearTimeout(timer);
+    const deadline = Date.now() + startupTimeoutMs;
+    while (Date.now() < deadline) {
+      if (spawnError)
+        throw new Error(
+          `OpenCode serve failed to spawn: ${spawnError.message}`,
+        );
+      if (child.exitCode !== null || child.signalCode !== null)
+        throw new RetryableStartupError(
+          `OpenCode serve exited before readiness (${child.exitCode ?? child.signalCode}).`,
+        );
+      try {
+        const info = await requestJson(input.fetch, baseUrl, "/api/info", {
+          signal: AbortSignal.timeout(1_000),
+        });
+        assertServerInfo(info);
+        return { baseUrl, dispose: () => stopChild(child) };
+      } catch (error) {
+        if (
+          /Unsupported OpenCode|Invalid OpenCode server identity|HTTP (?:401|403|404)/u.test(
+            String(error),
+          )
+        )
+          throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
+    throw new RetryableStartupError(
+      "OpenCode authenticated readiness timed out (expected /api/info, not 401/404).",
+    );
+  } catch (error) {
+    await stopChild(child);
+    throw error;
   }
 }
 
-function remainingTimeoutMs(deadline: number | undefined): number | undefined {
-  return deadline === undefined ? undefined : Math.max(0, deadline - Date.now());
+async function freePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string")
+    throw new Error("Could not allocate localhost port.");
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+  return address.port;
 }
-
-function stringField(
-  record: Record<string, unknown>,
-  key: string,
-): string | undefined {
-  const value = record[key];
-  return typeof value === "string" ? value : undefined;
+async function stopChild(child: ChildProcess): Promise<void> {
+  if (
+    child.exitCode !== null ||
+    child.signalCode !== null ||
+    child.pid === undefined
+  )
+    return;
+  const closed = new Promise<void>((resolve) =>
+    child.once("close", () => resolve()),
+  );
+  child.stdin?.end();
+  child.kill("SIGTERM");
+  const timer = setTimeout(() => child.kill("SIGKILL"), 1_000);
+  try {
+    await closed;
+  } finally {
+    clearTimeout(timer);
+  }
 }
-
-function numberField(
-  record: Record<string, unknown>,
-  key: string,
-): number | undefined {
-  const value = record[key];
-  return typeof value === "number" ? value : undefined;
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () =>
+      reject(signal.reason ?? new Error("OpenCode request aborted."));
+    if (signal.aborted) {
+      promise.catch(() => undefined);
+      abort();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    promise
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener("abort", abort));
+  });
 }
-
-function objectField(
-  record: Record<string, unknown>,
-  key: string,
-): Record<string, unknown> | undefined {
-  return objectValue(record[key]);
-}
-
 function objectValue(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
 }
-
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
+function recordField(
+  value: unknown,
+  key: string,
+): Record<string, unknown> | undefined {
+  return objectValue(objectValue(value)?.[key]);
 }
-
+function stringField(value: unknown, key: string): string | undefined {
+  const field = objectValue(value)?.[key];
+  return typeof field === "string" ? field : undefined;
+}
+function requiredString(value: unknown, key: string): string {
+  const result = stringField(value, key);
+  if (result === undefined || !result.length)
+    throw new Error(`OpenCode protocol field ${key} is missing.`);
+  return result;
+}
+function numberField(value: unknown, key: string): number | undefined {
+  const field = objectValue(value)?.[key];
+  return typeof field === "number" && Number.isFinite(field)
+    ? field
+    : undefined;
+}
+function errorMessage(value: unknown): string {
+  return stringField(value, "message")?.slice(0, 500) ?? "unknown error";
+}
 class WorkerTimeoutError extends Error {}

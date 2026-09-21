@@ -17,7 +17,6 @@ import {
   HarnessBackedJudgeSynthesizer,
   NoopRunRecorder,
   OpenCodeSdkAdapter,
-  OpenCodeHeadlessCliAdapter,
   modelAliasTable,
   modelPreferenceToModel,
   resolveModelEntry,
@@ -161,7 +160,7 @@ export async function preparePanelRequest(
   input: { cwd?: string; panelRunId?: string } = {},
 ): Promise<PreparedPanelRequest> {
   const cwd = input.cwd ?? process.cwd();
-  rejectCursorWithCliTransport(options);
+  rejectUnsupportedCliTransport(options);
   const composition = await resolvePanelComposition({
     parentModel: options.parentModel,
     models: options.models,
@@ -169,6 +168,14 @@ export async function preparePanelRequest(
     panelistsExplicit: options.panelistsExplicit,
     cwd,
   });
+  if (
+    options.transport === "cli" &&
+    composition.resolvedModels.some((model) => model.harness === "opencode")
+  ) {
+    throw new UsageError(
+      "OpenCode requires --transport sdk; the legacy OpenCode CLI transport has been removed.",
+    );
+  }
   const contextResult = await buildSharedContext(options, cwd);
   const workerBudget = buildWorkerBudget(options);
   const panelRunId = input.panelRunId ?? `fusion-${randomUUID()}`;
@@ -177,6 +184,14 @@ export async function preparePanelRequest(
     composition,
     cwd,
   );
+  if (
+    options.transport === "cli" &&
+    synthesizerResult.preference.strategy === "opencode"
+  ) {
+    throw new UsageError(
+      "The OpenCode judge requires --transport sdk; the legacy OpenCode CLI transport has been removed.",
+    );
+  }
   const requestWithoutManifest = {
     panelRunId,
     prompt: options.prompt,
@@ -615,7 +630,7 @@ export interface FusionRuntime {
   transport: TransportMode;
   registry: AdapterRegistry;
   runners: {
-    opencode: WorkerRunner;
+    opencode?: WorkerRunner;
     claudeCode: WorkerRunner;
     cursor?: WorkerRunner;
   };
@@ -631,9 +646,8 @@ export function createFusionRuntime(transport: TransportMode): FusionRuntime {
       return runtimeFromRunners(transport, opencode, claudeCode, cursor);
     }
     case "cli": {
-      const opencode = new OpenCodeHeadlessCliAdapter();
       const claudeCode = new ClaudeCodeHeadlessCliAdapter();
-      return runtimeFromRunners(transport, opencode, claudeCode);
+      return runtimeFromRunners(transport, undefined, claudeCode);
     }
   }
 }
@@ -665,13 +679,15 @@ export function registerRuntimeSignalCleanup(
 
 function runtimeFromRunners(
   transport: TransportMode,
-  opencode: WorkerRunner,
+  opencode: WorkerRunner | undefined,
   claudeCode: WorkerRunner,
   cursor?: WorkerRunner,
 ): FusionRuntime {
-  const registry = new AdapterRegistry({ transport })
-    .register("opencode", opencode)
-    .register("claude-code", claudeCode);
+  const registry = new AdapterRegistry({ transport }).register(
+    "claude-code",
+    claudeCode,
+  );
+  if (opencode !== undefined) registry.register("opencode", opencode);
   if (cursor !== undefined) {
     registry.register("cursor", cursor);
   }
@@ -682,7 +698,7 @@ function runtimeFromRunners(
     runners: { opencode, claudeCode, cursor },
     async dispose() {
       disposePromise ??= (async () => {
-        await disposeRunner(opencode);
+        if (opencode !== undefined) await disposeRunner(opencode);
         await disposeRunner(claudeCode);
         if (cursor !== undefined) {
           await disposeRunner(cursor);
@@ -871,9 +887,22 @@ function knownCursorModels(
     : composition.cursorModels;
 }
 
-function rejectCursorWithCliTransport(options: CliOptions): void {
+function rejectUnsupportedCliTransport(options: CliOptions): void {
   if (options.transport !== "cli") {
     return;
+  }
+  const entries = [
+    options.parentModel,
+    options.judgeModel,
+    ...(options.models ?? []),
+  ];
+  if (
+    options.synthesizer === "opencode" ||
+    entries.some((entry) => /^(?:opencode:|[^:]+\/)/u.test(entry ?? ""))
+  ) {
+    throw new UsageError(
+      "OpenCode requires --transport sdk; the legacy OpenCode CLI transport has been removed.",
+    );
   }
   const cursorEntry = [
     options.parentModel,
@@ -922,18 +951,23 @@ export function renderMarkdownReport(
   if (watchdog.refDiffs !== undefined) {
     lines.push(
       `- Watchdog ref diffs: ${watchdog.refDiffs
-        .map((diff) =>
-          `${diff.refName} (${diff.before ?? "absent"} -> ${diff.after ?? "absent"})`
+        .map(
+          (diff) =>
+            `${diff.refName} (${diff.before ?? "absent"} -> ${diff.after ?? "absent"})`,
         )
         .join(", ")}`,
     );
   }
-  const enforcementSources = result.workerResults.map((worker) =>
-    `${worker.workerId}=${worker.complianceEvidence?.enforcement?.source ?? "not-recorded"}`
+  const enforcementSources = result.workerResults.map(
+    (worker) =>
+      `${worker.workerId}=${worker.complianceEvidence?.enforcement?.source ?? "not-recorded"}`,
   );
-  lines.push(`- Enforcement sources: ${enforcementSources.join(", ") || "none"}`);
-  const containments = result.workerResults.map((worker) =>
-    `${worker.workerId}=${worker.complianceEvidence?.containment ?? "not-recorded"}`
+  lines.push(
+    `- Enforcement sources: ${enforcementSources.join(", ") || "none"}`,
+  );
+  const containments = result.workerResults.map(
+    (worker) =>
+      `${worker.workerId}=${worker.complianceEvidence?.containment ?? "not-recorded"}`,
   );
   lines.push(`- Containment: ${containments.join(", ") || "none"}`);
   const judgeCompliance = result.complianceSummary.judgeCompliance;
@@ -1066,7 +1100,7 @@ export function usage(): string {
     "  --dry-run                 Preflight this exact invocation without running workers or judge.",
     "  --record                  Write .fusion-runs/<panelRunId>/ artifacts.",
     "  --json                    Print structured JSON for this invocation.",
-    "  --transport <mode>        Worker transport: sdk or cli (default: sdk).",
+    "  --transport <mode>        sdk (default) or cli (Claude Code only).",
     "  --judge-model <entry>     Override the default parent-model judge.",
     "  --synthesizer <strategy>  parent-agent, deterministic, opencode, cursor, or claude-code.",
     "  --timeout-ms <n>          Per-worker timeout.",
