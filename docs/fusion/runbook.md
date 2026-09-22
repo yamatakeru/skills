@@ -162,6 +162,27 @@ confirm the new ID; Go lists no training use and ZDR through September 30, 2026
 (monthly renewal). No live Fusion quality comparison was performed, so this
 refresh does not establish superiority over Qwen or change selection policy.
 
+## GPT-6 Sol/Luna candidate refresh (2026-09-23)
+
+Under ADR 0015/0041, refresh the runtime alias table using the
+[OpenAI announcement](https://openai.com/index/introducing-gpt-6-sol-and-luna/)
+and model specifications for
+[Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) and
+[Luna](https://developers.openai.com/api/docs/models/gpt-6-luna). Standard input /
+output prices per million tokens are $2 / $10 for Sol and $0.10 / $0.50 for Luna.
+These are provider-published capabilities and prices, not a Fusion benchmark.
+
+- Replace GPT-5.6 Sol/Luna with GPT-6 Sol/Luna. Remove older OpenAI candidates
+  from automatic pools and the compatibility flagship alias: the owner uses
+  the current catalog and does not need previous-generation fallbacks.
+- Retain the existing Astra/GLM/DeepSeek and Qwen priorities. The announcement
+  does not establish a Fusion quality or latency win over the other families.
+- Correct both pools' DeepSeek entry to `opencode-go/deepseek-v4.1-flash`:
+  `opencode models` lists this ID, not the former `deepseek-flash` alias.
+- The local catalog and explicit Sol/Luna dry-run resolve both new models.
+  No live quality comparison was performed. Explicit older model IDs remain
+  usable when the harness lists them.
+
 ## OpenCode v2 migration validation (2026-09-21–22)
 
 The owner authorized at most ten live sessions. Exactly ten were used, all on

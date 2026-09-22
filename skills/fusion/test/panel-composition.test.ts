@@ -32,7 +32,7 @@ describe("Fusion panel composition", () => {
     const composition = await resolvePanelComposition({
       parentModel: "fable",
       executor: opencodeModelsExecutor([
-        "openai/gpt-5.6-sol",
+        "openai/gpt-6-sol",
         "opencode-go/deepseek-v4-flash",
         "openai/gpt-6-astra",
         "opencode-go/qwen3.8-flash",
@@ -68,7 +68,7 @@ describe("Fusion panel composition", () => {
       parentModel: "openai/gpt-6-astra",
       executor: opencodeModelsExecutor([
         "openai/gpt-6-astra",
-        "openai/gpt-5.6-sol",
+        "openai/gpt-6-sol",
         "opencode-go/glm-5.2",
         "opencode-go/qwen3.8-flash",
       ]),
@@ -89,7 +89,7 @@ describe("Fusion panel composition", () => {
       executor: opencodeModelsExecutor([
         "opencode-go/qwen3.8-flash",
         "openai/gpt-6-astra",
-        "opencode-go/deepseek-flash",
+        "opencode-go/deepseek-v4.1-flash",
         "opencode-go/mimo-v2.5",
       ]),
     });
@@ -99,7 +99,7 @@ describe("Fusion panel composition", () => {
     ).toEqual([
       "opencode-go/qwen3.8-flash",
       "openai/gpt-6-astra",
-      "opencode-go/deepseek-flash",
+      "opencode-go/deepseek-v4.1-flash",
     ]);
   });
 
@@ -107,15 +107,15 @@ describe("Fusion panel composition", () => {
     const composition = await resolvePanelComposition({
       parentModel: "fable",
       opencodeModels: [
-        "openai/gpt-5.6-sol",
+        "openai/gpt-6-sol",
         "opencode-go/glm-5.2",
-        "opencode-go/deepseek-flash",
+        "opencode-go/deepseek-v4.1-flash",
       ],
     });
 
     expect(
       composition.resolvedModels.map((model) => model.resolvedModelId),
-    ).toEqual(["fable", "opencode-go/glm-5.2", "opencode-go/deepseek-flash"]);
+    ).toEqual(["fable", "opencode-go/glm-5.2", "opencode-go/deepseek-v4.1-flash"]);
     expect(
       composition.resolvedModels.slice(1).every((model) => model.fallbackUsed),
     ).toBe(true);
@@ -126,14 +126,14 @@ describe("Fusion panel composition", () => {
     const composition = await resolvePanelComposition({
       parentModel: "fable",
       executor: opencodeModelsExecutor([
-        "openai/gpt-5.6-sol",
-        "openai/gpt-5.6-luna",
+        "openai/gpt-6-sol",
+        "openai/gpt-6-luna",
       ]),
     });
 
     expect(
       composition.resolvedModels.map((model) => model.resolvedModelId),
-    ).toEqual(["fable", "openai/gpt-5.6-sol", "openai/gpt-5.6-luna"]);
+    ).toEqual(["fable", "openai/gpt-6-sol", "openai/gpt-6-luna"]);
   });
 
   test("repeats only the resolved parent for exhausted panels up to size 3", async () => {
@@ -220,15 +220,15 @@ describe("Fusion panel composition", () => {
   test("resolves compatibility aliases through their privacy-eligible chains", async () => {
     const primary = await resolveModelEntry("openai-flagship", {
       executor: opencodeModelsExecutor([
-        "openai/gpt-5.6-sol",
+        "openai/gpt-6-sol",
         "openai/gpt-6-astra",
       ]),
     });
     const fallback = await resolveModelEntry("openai-flagship", {
-      executor: opencodeModelsExecutor(["openai/gpt-5.4"]),
+      executor: opencodeModelsExecutor(["openai/gpt-6-luna"]),
     });
     const compatibility = await resolveModelEntry("budget-smart", {
-      executor: opencodeModelsExecutor(["openai/gpt-5.6-luna"]),
+      executor: opencodeModelsExecutor(["openai/gpt-6-luna"]),
     });
 
     expect(primary).toMatchObject({
@@ -241,14 +241,14 @@ describe("Fusion panel composition", () => {
     expect(fallback).toMatchObject({
       entry: "openai-flagship",
       kind: "fusion-alias",
-      resolvedModelId: "openai/gpt-5.4",
+      resolvedModelId: "openai/gpt-6-luna",
       validatedBy: "harness-list",
       fallbackUsed: true,
     });
     expect(fallback.modelPreference.fallbacks).toEqual([]);
     expect(compatibility).toMatchObject({
       entry: "budget-smart",
-      resolvedModelId: "openai/gpt-5.6-luna",
+      resolvedModelId: "openai/gpt-6-luna",
       fallbackUsed: true,
     });
     expect(
@@ -259,28 +259,24 @@ describe("Fusion panel composition", () => {
     expect(aliasCandidates("strong-generalist")).toEqual([
       "openai/gpt-6-astra",
       "opencode-go/glm-5.2",
-      "opencode-go/deepseek-flash",
-      "openai/gpt-5.6-sol",
-      "openai/gpt-5.6-terra",
+      "opencode-go/deepseek-v4.1-flash",
+      "openai/gpt-6-sol",
     ]);
     expect(aliasCandidates("efficient-generalist")).toEqual([
       "opencode-go/qwen3.8-flash",
-      "opencode-go/deepseek-flash",
+      "opencode-go/deepseek-v4.1-flash",
       "opencode-go/mimo-v2.5",
       "opencode-go/qwen3.7-plus",
       "opencode-go/minimax-m3",
-      "openai/gpt-5.6-luna",
+      "openai/gpt-6-luna",
     ]);
     expect(aliasCandidates("budget-smart")).toEqual(
       aliasCandidates("efficient-generalist"),
     );
     expect(aliasCandidates("openai-flagship")).toEqual([
       "openai/gpt-6-astra",
-      "openai/gpt-5.6-sol",
-      "openai/gpt-5.6-terra",
-      "openai/gpt-5.6-luna",
-      "openai/gpt-5.5",
-      "openai/gpt-5.4",
+      "openai/gpt-6-sol",
+      "openai/gpt-6-luna",
     ]);
     expect(
       aliasCandidates("openai-flagship").some((model) =>
@@ -346,7 +342,7 @@ describe("Fusion panel composition", () => {
 
   test("discloses kind and validation authority for forced prefixes", async () => {
     const forcedAlias = await resolveModelEntry("opencode:openai-flagship", {
-      executor: opencodeModelsExecutor(["openai/gpt-5.6-sol"]),
+      executor: opencodeModelsExecutor(["openai/gpt-6-sol"]),
     });
     const forcedOpenCode = await resolveModelEntry("opencode:openai/gpt-5.5", {
       executor: opencodeModelsExecutor(["openai/gpt-5.5"]),
