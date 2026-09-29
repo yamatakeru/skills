@@ -47,7 +47,7 @@ return `Web search cancelled` even though permissions allow the tool.
 
 ```bash
 # Default panel from a Claude Code parent, with recording.
-# The parent agent passes its own model id as --parent-model.
+# By default the parent agent passes its own model; explicit substitutes are allowed.
 bun skills/fusion/bin/fusion-run.ts --parent-model fable --record \
   --timeout-ms 240000 \
   "Return exactly the string: fusion-smoke-ok. Do not add any other text."
@@ -182,6 +182,43 @@ These are provider-published capabilities and prices, not a Fusion benchmark.
 - The local catalog and explicit Sol/Luna dry-run resolve both new models.
   No live quality comparison was performed. Explicit older model IDs remain
   usable when the harness lists them.
+
+## GPT-6.1 Sol candidate refresh (2026-09-30)
+
+Under ADR 0015/0041, provisionally promote GPT-6.1 Sol to the primary strong
+candidate. Retain GLM-5.2 and DeepSeek V4.1 Flash ahead of Astra as fallbacks;
+keep Astra as the primary compatibility flagship candidate. Replace GPT-6 Sol
+with GPT-6.1 Sol in that alias too, and leave the efficient/budget-smart pool
+unchanged. Concrete older IDs remain available through explicit selection when
+listed by the harness. No provider route or free model is added.
+
+The [OpenAI announcement](https://openai.com/index/introducing-gpt-6-1-sol) reports
+near-Astra coding and professional capabilities. The model specifications for
+[GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
+[GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol), and
+[Astra](https://developers.openai.com/api/docs/models/gpt-6-astra) list Standard
+input/output prices per million tokens of $2/$10 for both Sol versions versus
+$10/$50 for Astra. GPT-6.1 Sol's cached input is $0.10 versus GPT-6 Sol's $0.20.
+These are API token prices, not measured per-task costs or subscription quota
+equivalents. The [system card](https://deploymentsafety.openai.com/gpt-6-1-sol)
+reports research-debugging scores of 75.52% for GPT-6.1 Sol, 64.20% for GPT-6 Sol,
+and 78.05% for Astra, while showing remaining capability and reliability gaps.
+
+The catalog and default-pool dry-run resolve `openai/gpt-6.1-sol`, GLM-5.2,
+and Qwen3.8 Flash with GPT-6.1 Sol as judge. An explicit Haiku panel with
+`--parent-model openai/gpt-6-astra --judge-model openai/gpt-6.1-sol` resolves only
+the explicit worker and the explicitly selected judge. Neither dry-run invokes
+models. A Fable-parent dry-run also selects `openai/gpt-6.1-sol` for the strong
+seat with no warnings, verifying the ID against the live catalog after a local
+review questioned its availability. This refresh is based on provider-published
+evidence, not a live Fusion quality/latency comparison.
+With a GPT-6.1 Sol parent, exact-ID deduplication normally advances strong to
+GLM; with an Astra parent it may select GPT-6.1 Sol, yielding two OpenAI-family
+seats. Use explicit models when cross-family coverage matters. Candidate order
+also changes refill and fallback preference order, not just the strong seat.
+Parent-entry override semantics are separately recorded in ADR 0047. Reasoning
+effort mapping, family-aware selection, and resolver/adapter changes are out of
+scope.
 
 ## OpenCode v2 migration validation (2026-09-21–22)
 

@@ -43,9 +43,14 @@ bun <skill-dir>/bin/fusion-run.ts --parent-model <its own model id> "task"
 ```
 
 `<skill-dir>` is the installed Fusion skill directory. Pass the parent agent's
-own model as `--parent-model` whenever it can be expressed as a supported model
-entry. If the parent model is unavailable, omit it; the CLI will warn and
-refill the slot from fallback lists.
+own model as `--parent-model` by default whenever it can be expressed as a
+supported model entry. You may explicitly select a different supported model
+for this entry: it selects the default panel's parent slot and the default judge
+model preference, not the calling agent's model or the author of the final
+answer. The CLI does not discover the calling agent's model automatically.
+If the intended model is unavailable, omit the entry; the CLI will warn and
+refill the slot from fallback lists. Without `--parent-model` or `--judge-model`,
+the judge uses the selected harness's default model with a warning.
 
 Pass the background the panel needs through `--context` (a short brief you
 author) and `--context-file` (repeatable, embeds file contents). Workers only
@@ -86,7 +91,8 @@ deterministic` remain escape hatches.
 The default panel has three workers. Same-harness panels are allowed. Default
 slots are filled in this priority order:
 
-1. Parent model slot from `--parent-model`.
+1. Parent model slot from `--parent-model` (the caller's own model by default;
+   explicit overrides are allowed).
 2. Strong generalist slot through the `strong-generalist` alias.
 3. Efficient generalist slot through the `efficient-generalist` alias.
 
@@ -105,6 +111,8 @@ available solely through explicit `--models` entries.
 ## Model Selection
 
 `--models <comma-list>` replaces the default composition entirely.
+It removes the default parent slot but does not override the judge preference
+derived from `--parent-model`.
 
 Model entry routing:
 
@@ -132,10 +140,12 @@ Use `--help` to inspect the complete runtime alias table and ordered candidate
 chains. Use `--dry-run` on the intended invocation to see the candidates that
 actually resolve, their slot names, and any fallback or degraded warnings.
 
-The judge model defaults to the parent model. Use `--judge-model <entry>` to
-override it; judge model entries use the same routing rules as panel model
-entries. Cursor can be used for judging with `--judge-model cursor:<model-id>`
-or `--synthesizer cursor` on the SDK transport.
+The judge model preference defaults to the resolved `--parent-model` entry,
+even when `--models` replaces the panel. Use `--judge-model <entry>` to override
+it; judge model entries use the same routing rules as panel model entries.
+This is a preference, not a guarantee that worker and judge invocation-time
+fallbacks use the same observed model. Cursor can be used for judging with
+`--judge-model cursor:<model-id>` or `--synthesizer cursor` on the SDK transport.
 
 In the library contract, `PanelSpec.workers` is the per-slot preference list:
 each slot may carry `{ model, harness }`. There is no legacy parallel-array
@@ -143,7 +153,9 @@ compatibility path.
 
 ## CLI Options
 
-- `--parent-model <id>`: parent model for the default panel slot.
+- `--parent-model <entry>`: model entry for the default parent slot and judge;
+  normally the calling agent's own model, but explicit overrides are allowed.
+  Does not change the calling agent's model.
 - `--models <comma-list>`: explicit model list; replaces default composition.
 - `--panelists <n>`: panel size for default composition; default is 3,
   maximum is 20.

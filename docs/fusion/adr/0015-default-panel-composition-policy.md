@@ -4,6 +4,9 @@
 
 Accepted
 
+Own-model self-reporting instruction clarified and extended by ADR 0047:
+explicit substitute entries are allowed; the usual caller default is unchanged.
+
 ## Context
 
 With the CLI as the canonical path (ADR 0014), an invocation without explicit

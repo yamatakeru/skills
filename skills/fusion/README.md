@@ -90,6 +90,16 @@ The CLI composes a default three-worker panel from the parent slot
 the alias fallback chains), the `strong-generalist` alias, and the
 `efficient-generalist` alias. Use `--models` to replace that default
 composition with explicit model entries.
+
+By default, the calling agent passes its own model as `--parent-model`; it may
+explicitly select another supported entry instead. This selects the default
+parent seat and judge preference, not the calling agent's model or the author
+of the final answer. The CLI does not detect the calling model automatically.
+With `--models`, only the judge preference still uses `--parent-model`;
+`--judge-model` takes precedence. Omitting both `--parent-model` and
+`--judge-model` makes the judge use the selected harness's default model with
+a warning.
+
 Use `--help` to inspect the runtime alias chains, or this command to inspect
 OpenCode-backed model IDs:
 

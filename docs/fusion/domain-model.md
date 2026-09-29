@@ -105,7 +105,10 @@ ahead of pattern-based selection (ADR 0031).
 Identifies who authors the synthesis: a harness kind for the harness-backed
 judge (default), or the explicit-only `parent-agent` and `deterministic`
 strategies. Its `model` field carries the judge model preference, defaulting
-to the parent model.
+to the resolved `--parent-model` entry unless `--judge-model` overrides it.
+The caller normally supplies its own model, but may explicitly select a
+substitute; neither selection changes the actual calling parent or final-answer
+authorship (ADR 0047).
 
 ### ReasoningPreference
 
