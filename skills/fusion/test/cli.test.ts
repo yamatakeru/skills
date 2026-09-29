@@ -57,6 +57,8 @@ describe("Fusion CLI parsing", () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(help).toBe(usage());
+    expect(help).toContain("normally the caller's own model");
+    expect(help).toContain("do not change the calling agent's model");
 
     for (const [alias, preference] of Object.entries(modelAliasTable)) {
       const primary = modelPreferenceToModel(preference);
@@ -226,12 +228,12 @@ describe("Fusion CLI parsing", () => {
     }
   });
 
-  test("maps default judge preference to the parent model", async () => {
+  test("uses --parent-model for the default judge without replacing explicit workers", async () => {
     const options = parseArgs([
       "--parent-model",
       "sonnet",
       "--models",
-      "claude-code:sonnet",
+      "claude-code:haiku",
       "Use the parent model for judging.",
     ]);
 
@@ -244,10 +246,19 @@ describe("Fusion CLI parsing", () => {
       strategy: "claude-code",
       model: { model: "sonnet", fallbacks: ["haiku"] },
     });
+    expect(
+      prepared.composition.resolvedModels.map((model) => model.slot),
+    ).toEqual(["explicit"]);
+    expect(prepared.workerRequests[0]?.modelPreference).toEqual({
+      model: "haiku",
+      fallbacks: [],
+    });
   });
 
-  test("maps --judge-model through model-entry routing", async () => {
+  test("gives --judge-model precedence over --parent-model", async () => {
     const options = parseArgs([
+      "--parent-model",
+      "fable",
       "--models",
       "claude-code:sonnet",
       "--judge-model",

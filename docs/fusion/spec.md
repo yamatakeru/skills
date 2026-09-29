@@ -91,13 +91,19 @@ and are scheduled for removal consideration once the skill matures.
 The default panel is three workers; same-harness panels are allowed
 (ADR 0041). Default slots, in priority order:
 
-1. the parent agent's own model (a default, not a requirement), conveyed via
-   `--parent-model` on the CLI as instructed by `SKILL.md`;
+1. the model entry conveyed via `--parent-model`: by default the parent agent
+   passes its own model as instructed by `SKILL.md`, but it may explicitly
+   select a different supported entry (ADR 0047);
 2. a strong generalist selected through the `strong-generalist` alias;
 3. an efficient generalist selected through the `efficient-generalist` alias.
 
-Explicit model selection replaces the default composition entirely. Model
-staleness is absorbed by a bundled alias table with ordered fallback lists,
+Explicit model selection replaces the default composition entirely. This does
+not change the calling parent agent or final-answer authorship.
+The CLI does not discover the calling model; using it as the default is a caller
+convention, not automatic inference. `--models` removes the default parent seat
+but leaves the judge preference derived from `--parent-model` intact.
+
+Model staleness is absorbed by a bundled alias table with ordered fallback lists,
 using `ModelPreference.fallbacks`. The refill pool is the strong candidates
 followed by the efficient candidates, deduplicated in that order. Automatic
 default candidates are privacy-eligible and exclude free models; free models
@@ -317,12 +323,17 @@ parallel, a separate judge invocation compares all worker outputs without
 merging them, and the parent agent (upstream's outer model) writes the final
 answer grounded in the judge analysis.
 
-The judge model defaults to the parent model, matching upstream's
-judge-defaults-to-outer-model behavior. `--judge-model <model-entry>`
-overrides it and resolves through the same model-entry routing as panel
-composition; it maps to `SynthesizerPreference.model`. `--synthesizer
-parent-agent` and `--synthesizer deterministic` remain implemented but are
-explicit-only escapes, never a silent default. `cursor` is also a valid
+The judge model preference defaults to the resolved `--parent-model` entry,
+including an explicitly selected substitute and when `--models` replaces the
+panel (ADR 0047). The usual caller convention matches upstream's
+judge-defaults-to-outer-model behavior; an explicit substitute does not change
+the outer model. `--judge-model <model-entry>` takes precedence and resolves
+through the same model-entry routing as panel composition; it maps to
+`SynthesizerPreference.model`. With neither model option, the judge uses the
+selected harness's default model with a warning. These preferences do not
+guarantee identical observed models after invocation-time fallbacks.
+`--synthesizer parent-agent` and `--synthesizer deterministic` remain implemented
+but are explicit-only escapes, never a silent default. `cursor` is also a valid
 harness-backed judge strategy on the SDK transport. The panel-wide timeout
 and `ReasoningPreference` apply to the judge invocation.
 

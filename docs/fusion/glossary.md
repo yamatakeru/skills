@@ -323,8 +323,10 @@ also the behavior a run degrades to when the judge fails (ADR 0023).
 The default synthesis strategy (also called the harness-backed synthesizer):
 a separate judge invocation through a concrete harness, reusing the worker
 adapter path, that compares completed worker outputs without merging them and
-returns the structured judge analysis. The judge model defaults to the parent
-model and is overridable via `--judge-model`. It is not subject to worker
+returns the structured judge analysis. The judge preference defaults to the
+resolved `--parent-model` entry, even with explicit panel models; `--judge-model`
+takes precedence. Usually this is the calling parent's model, but the entry
+may explicitly select a substitute (ADR 0047). It is not subject to worker
 blindness because synthesis occurs after worker results are returned, but
 recursion denial still applies, it runs with no tools — a deliberate,
 provisional divergence from upstream's web-tools judge, with a mandatory
@@ -376,11 +378,16 @@ complete `PanelResult`.
 ## Default Panel Slots
 
 The three-slot default composition used when no explicit model selection is
-given: the parent model slot (the parent agent's own model, passed via
-`--parent-model`), the strong slot (the `strong-generalist` pool), and the
-efficient slot (the `efficient-generalist` pool). Slots resolve through the
-model alias table, deduplicate by resolved model ID, and use the `refill` slot
+given: the parent model slot (the entry passed via `--parent-model`, normally
+the calling agent's own model but explicitly overridable), the strong slot
+(the `strong-generalist` pool), and the efficient slot (the `efficient-generalist`
+pool). Slots resolve through the model alias table, deduplicate by resolved model
+ID, and use the `refill` slot
 for unused entries from the strong-then-efficient candidate pools.
+
+The CLI does not discover or change the calling agent's model. The calling
+parent remains the author of the final answer, regardless of the selected
+parent seat or judge (ADR 0047).
 
 ## Parent Repeat
 
