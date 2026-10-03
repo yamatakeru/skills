@@ -181,8 +181,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     };
     const abortOutcome: WorkerAbortOutcome = { attempted: false };
     let sessionId: string | undefined;
-    let effectiveRules: PermissionRule[] | undefined;
-    let appendedDenies: PermissionRule[] = [];
+    let verified: VerifiedRules | undefined;
     let server: OpenCodeServerHandle | undefined;
     let status: WorkerResult["status"] = "error";
     let errors: string[] | undefined;
@@ -217,9 +216,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         request,
         controller.signal,
       );
-      const verified = rulesByAgent.get(agentFor(request, this.agentName));
-      effectiveRules = verified?.rules;
-      appendedDenies = verified?.appendedDenies ?? [];
+      verified = rulesByAgent.get(agentFor(request, this.agentName));
       const created = await requestJson(
         this.fetch,
         server.baseUrl,
@@ -345,20 +342,20 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         observedSessionMode: "fresh",
         containment: deriveContainment(request.toolsPolicy),
         enforcement:
-          effectiveRules === undefined
+          verified === undefined
             ? { source: "harness-declared", ...enforcement }
             : {
                 source: "verified-effective",
-                effectiveRules: { rules: effectiveRules },
+                effectiveRules: { rules: verified.rules },
                 ...enforcement,
               },
         notes: [
-          effectiveRules
+          verified
             ? "OpenCode v2 native agent permissions were inspected before prompting; unknown tools and recursive delegation are denied."
             : "OpenCode effective permission verification did not complete; no prompt was authorized.",
-          ...(appendedDenies.length
+          ...(verified?.appendedDenies.length
             ? [
-                `OpenCode appended deny rules after Fusion's policy (accepted; they only narrow it): ${appendedDenies.map((rule) => `${rule.action}:${rule.resource}`).join(", ")}.`,
+                `OpenCode appended deny rules after Fusion's policy (accepted; they only narrow it): ${verified.appendedDenies.map((rule) => `${rule.action}:${rule.resource}`).join(", ")}.`,
               ]
             : []),
           ...(sessionId
@@ -730,12 +727,13 @@ function findAppendedDenies(
   rules: PermissionRule[],
 ): PermissionRule[] | undefined {
   const expected = JSON.stringify(rules);
-  for (let end = permissions.length; end >= rules.length; end--) {
-    const tail = permissions.slice(end);
-    if (tail.some((rule) => rule.effect !== "deny")) return undefined;
+  const minEnd = Math.max(
+    permissions.findLastIndex((rule) => rule.effect !== "deny") + 1,
+    rules.length,
+  );
+  for (let end = permissions.length; end >= minEnd; end--)
     if (JSON.stringify(permissions.slice(end - rules.length, end)) === expected)
-      return tail;
-  }
+      return permissions.slice(end);
   return undefined;
 }
 

@@ -53,6 +53,10 @@ const versionExecutor = async () => ({
   durationMs: 1,
 });
 
+function agentDataFrom(config: ReturnType<typeof buildOpenCodeConfigContent>) {
+  return Object.entries(config.agents).map(([id, agent]) => ({ id, ...agent }));
+}
+
 function fixture(
   options: {
     request?: WorkerRequest;
@@ -117,12 +121,7 @@ function fixture(
       });
       return Response.json({
         location: { directory: "/workspace" },
-        data:
-          options.agentData ??
-          Object.entries(config.agents).map(([id, agent]) => ({
-            id,
-            ...agent,
-          })),
+        data: options.agentData ?? agentDataFrom(config),
       });
     }
     if (url.pathname === "/api/session") {
@@ -590,10 +589,7 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
       );
     const f = fixture({
       request,
-      agentData: Object.entries(config.agents).map(([id, agent]) => ({
-        id,
-        ...agent,
-      })),
+      agentData: agentDataFrom(config),
     });
     const result = await f.adapter.runWorker(request);
     expect(result.errors?.join()).toContain(
@@ -618,20 +614,13 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
       agent.permissions.push(browserDeny);
     const f = fixture({
       request,
-      agentData: Object.entries(config.agents).map(([id, agent]) => ({
-        id,
-        ...agent,
-      })),
+      agentData: agentDataFrom(config),
     });
     const result = await f.adapter.runWorker(request);
     expect(result.status).toBe("ok");
     const enforcement = result.complianceEvidence?.enforcement;
     expect(enforcement?.source).toBe("verified-effective");
-    expect(
-      (
-        enforcement as { effectiveRules?: { rules?: unknown[] } }
-      )?.effectiveRules?.rules?.at(-1),
-    ).toEqual(browserDeny);
+    expect(enforcement?.effectiveRules?.rules).toContainEqual(browserDeny);
     expect(result.complianceEvidence?.notes?.join("\n")).toContain(
       "OpenCode appended deny rules after Fusion's policy (accepted; they only narrow it): browser:*.",
     );
@@ -660,10 +649,7 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
       effect: "allow",
     });
     const f = fixture({
-      agentData: Object.entries(config.agents).map(([id, agent]) => ({
-        id,
-        ...agent,
-      })),
+      agentData: agentDataFrom(config),
     });
     expect((await f.adapter.runWorker(f.request)).status).toBe("error");
     expect(f.counts().promptCount).toBe(0);
