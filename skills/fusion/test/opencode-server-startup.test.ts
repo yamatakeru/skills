@@ -40,7 +40,7 @@ Bun.serve({
     if (new URL(request.url).pathname !== "/api/info") return new Response(null, {status:500});
     if (scenario.startsWith("http-")) return new Response(null, {status:Number(scenario.slice(5))});
     return Response.json({
-      version: scenario === "unsupported-version" ? "2.1.0" : "2.0.12",
+      version: scenario === "unsupported-version" ? "2.1.0" : "2.0.22",
       pid: scenario === "invalid-identity" ? "invalid" : process.pid,
       urls: [], paths: {tmp: ${JSON.stringify(workspace)}}
     });
@@ -53,7 +53,7 @@ Bun.serve({
     command,
     versionExecutor: async () => ({
       exitCode: 0,
-      stdout: "opencode v2.0.12\n",
+      stdout: "opencode v2.0.22\n",
       stderr: "",
       durationMs: 0,
     }),

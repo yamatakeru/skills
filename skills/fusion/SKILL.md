@@ -10,10 +10,10 @@ license: MIT
 compatibility: >-
   SKILL.md-compatible agents with shell access and Bun installed. Uses the
   bundled self-contained TypeScript CLI; no node_modules are required inside the
-  skill directory. OpenCode requires stable 2.0.x >= 2.0.12 and SDK transport;
+  skill directory. OpenCode requires stable 2.0.x >= 2.0.22 and SDK transport;
   OpenCode v1 and its former CLI transport are unsupported.
 metadata:
-  version: "0.14.0"
+  version: "0.14.1"
   kind: "blind-panel synthesis"
   mode: "blind"
   canonical-runtime: "bun-cli"

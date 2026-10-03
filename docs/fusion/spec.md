@@ -67,7 +67,8 @@ installed skill directory is self-contained.
 
 The current OpenCode reference adapter is v2-only and uses SDK transport
 (ADR 0046). It authenticates its owned run-scoped server, verifies server
-identity and ordered effective permission rules, subscribes before prompt
+identity and ordered effective permission rules (tolerating only appended
+denies, ADR 0048), subscribes before prompt
 admission, and waits for terminal execution events. Neither OpenCode v1 nor
 OpenCode CLI transport is retained. CLI transport is an explicit Claude Code
 opt-in only; unsupported worker or judge selections fail without fallback.

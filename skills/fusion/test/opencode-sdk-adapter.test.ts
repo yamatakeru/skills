@@ -48,10 +48,14 @@ const finalEvents = () => [
 ];
 const versionExecutor = async () => ({
   exitCode: 0,
-  stdout: "opencode v2.0.12\n",
+  stdout: "opencode v2.0.22\n",
   stderr: "",
   durationMs: 1,
 });
+
+function agentDataFrom(config: ReturnType<typeof buildOpenCodeConfigContent>) {
+  return Object.entries(config.agents).map(([id, agent]) => ({ id, ...agent }));
+}
 
 function fixture(
   options: {
@@ -99,7 +103,7 @@ function fixture(
     if (override !== undefined) return override;
     if (url.pathname === "/api/info")
       return Response.json({
-        version: options.version ?? "2.0.12",
+        version: options.version ?? "2.0.22",
         pid: 10,
         urls: [],
         paths: { tmp: "/tmp" },
@@ -117,12 +121,7 @@ function fixture(
       });
       return Response.json({
         location: { directory: "/workspace" },
-        data:
-          options.agentData ??
-          Object.entries(config.agents).map(([id, agent]) => ({
-            id,
-            ...agent,
-          })),
+        data: options.agentData ?? agentDataFrom(config),
       });
     }
     if (url.pathname === "/api/session") {
@@ -219,7 +218,7 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
     expect(result.status).toBe("ok");
     expect(result.output).toBe("final answer");
     expect(result.modelUsed).toBe("observed/actual-model");
-    expect(result.harnessUsed?.version).toBe("2.0.12");
+    expect(result.harnessUsed?.version).toBe("2.0.22");
     expect(result.sessionId).toBe("ses_1");
     expect(result.usage).toMatchObject({
       inputTokens: 12,
@@ -516,7 +515,7 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
     expect(result.warnings?.join()).toContain("interrupt failed");
   });
 
-  test.each(["1.18.31", "2.0.11", "2.1.0", "3.0.0", "unknown"])(
+  test.each(["1.18.31", "2.0.21", "2.1.0", "3.0.0", "unknown"])(
     "rejects unsupported server version %s before sessions/models",
     async (version) => {
       const f = fixture({ version });
@@ -550,6 +549,8 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
     "extra-allow",
     "unknown-only-deny",
     "read-root",
+    "appended-ask",
+    "appended-allow-after-deny",
   ])("rejects %s effective policy before creating sessions", async (kind) => {
     const request = workerRequest();
     request.environment!.readRoots = ["/declared"];
@@ -575,18 +576,54 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
         effect: "allow",
       });
     if (kind === "read-root") worker.permissions.pop();
+    if (kind === "appended-ask")
+      worker.permissions.push({
+        action: "shell",
+        resource: "*",
+        effect: "ask",
+      });
+    if (kind === "appended-allow-after-deny")
+      worker.permissions.push(
+        { action: "browser", resource: "*", effect: "deny" },
+        { action: "edit", resource: "*", effect: "allow" },
+      );
     const f = fixture({
       request,
-      agentData: Object.entries(config.agents).map(([id, agent]) => ({
-        id,
-        ...agent,
-      })),
+      agentData: agentDataFrom(config),
     });
     const result = await f.adapter.runWorker(request);
     expect(result.errors?.join()).toContain(
       "OPENCODE_EFFECTIVE_RULES_MISMATCH",
     );
     expect(f.counts().sessionCount).toBe(0);
+  });
+
+  test("accepts and discloses deny-only rules appended after the policy", async () => {
+    const request = workerRequest();
+    const config = buildOpenCodeConfigContent({
+      toolsPolicy: request.toolsPolicy,
+      environment: request.environment,
+    });
+    // OpenCode v2.0.21+ BrowserPlugin appends this to every agent after config.
+    const browserDeny = {
+      action: "browser",
+      resource: "*",
+      effect: "deny",
+    } as const;
+    for (const agent of Object.values(config.agents))
+      agent.permissions.push(browserDeny);
+    const f = fixture({
+      request,
+      agentData: agentDataFrom(config),
+    });
+    const result = await f.adapter.runWorker(request);
+    expect(result.status).toBe("ok");
+    const enforcement = result.complianceEvidence?.enforcement;
+    expect(enforcement?.source).toBe("verified-effective");
+    expect(enforcement?.effectiveRules?.rules).toContainEqual(browserDeny);
+    expect(result.complianceEvidence?.notes?.join("\n")).toContain(
+      "OpenCode appended deny rules after Fusion's policy (accepted; they only narrow it): browser:*.",
+    );
   });
 
   test("waits for initially empty asynchronous agent registration, then verifies", async () => {
@@ -612,10 +649,7 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
       effect: "allow",
     });
     const f = fixture({
-      agentData: Object.entries(config.agents).map(([id, agent]) => ({
-        id,
-        ...agent,
-      })),
+      agentData: agentDataFrom(config),
     });
     expect((await f.adapter.runWorker(f.request)).status).toBe("error");
     expect(f.counts().promptCount).toBe(0);

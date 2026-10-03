@@ -5,7 +5,7 @@
     "": {
       "name": "skills",
       "devDependencies": {
-        "@opencode/client": "2.0.12",
+        "@opencode/client": "2.0.22",
         "@types/node": "26.1.0",
         "bun-types": "1.3.14",
         "ts-json-schema-generator": "^2.9.0",
@@ -26,11 +26,11 @@
 
     "@msgpackr-extract/msgpackr-extract-win32-x64": ["@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4", "", { "os": "win32", "cpu": "x64" }, "sha512-CmCXPQrkbwExx3j946/PtHWHbYJiCRBRDl4BlkRQcJB/YOwQxJRTpoo7aTsortjgoJ1x7opzTSxn7C+ASSLVjQ=="],
 
-    "@opencode/client": ["@opencode/client@2.0.12", "", { "dependencies": { "@opencode/protocol": "2.0.12", "@opencode/schema": "2.0.12" }, "peerDependencies": { "effect": "4.0.0-rc.112", "solid-js": ">=1.9.0" }, "optionalPeers": ["effect", "solid-js"] }, "sha512-WxZLWIv0Sx9NwoCDmkEqKPnn+NOpk3Kt9FWh5gMgrl1mDbCI+6EQtFOsgrhqJSrFZXMzFqgLMAiTTIYD7wZWpA=="],
+    "@opencode/client": ["@opencode/client@2.0.22", "", { "dependencies": { "@opencode/protocol": "2.0.22", "@opencode/schema": "2.0.22" }, "peerDependencies": { "effect": "4.0.0-rc.112", "solid-js": ">=1.9.0" }, "optionalPeers": ["effect", "solid-js"] }, "sha512-FJKugH301QHlV/rGL8TvgL3ly+toVlww+TP+YdVTKQWytQvjLoUdYtvvm+Iq5k6pN6Ki3ybE/08E8Cg+e6Opbg=="],
 
-    "@opencode/protocol": ["@opencode/protocol@2.0.12", "", { "dependencies": { "@opencode/schema": "2.0.12", "effect": "4.0.0-rc.112" } }, "sha512-YYp9ElZMW8UG7cV9kSd9j3svPTEt0sTP7G4tXeQ2icbCIwFki28x+fCiuF8wBGcpYMEcLg1GrF3aEqxPAZOpWA=="],
+    "@opencode/protocol": ["@opencode/protocol@2.0.22", "", { "dependencies": { "@opencode/schema": "2.0.22", "effect": "4.0.0-rc.112" } }, "sha512-Ws3DKQW/rlBDwNz2cPE9+nGwbw7pgnZ+5bzgoHWCWxgTZmxdFulmLP05lxR+PPwMklUwzOGoUXFIzODPZ27WfA=="],
 
-    "@opencode/schema": ["@opencode/schema@2.0.12", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.0-rc.112" } }, "sha512-T3RJb371gH813pdaWpAvXAgZ3GSHpPcHSkP8nRbPsSKYOlfmNId2s8Js9aLCJHeVfIKmW3+I9poa3Bx+aiiROQ=="],
+    "@opencode/schema": ["@opencode/schema@2.0.22", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.0-rc.112" } }, "sha512-PTqTrx3QHhlRL5ypfoMnSzXDU8XB2+vtKX8QKwIHP7B1F1yw90LN0XTmGP82k9rYoEcERq0TLuL+ykAsYJXJdA=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
