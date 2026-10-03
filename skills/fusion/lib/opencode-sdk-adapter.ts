@@ -135,7 +135,7 @@ function policyFingerprint(request: WorkerRequest): string {
   });
 }
 
-/** OpenCode 2.0.12+ machine protocol. There is deliberately no v1/CLI fallback. */
+/** OpenCode 2.0.22+ machine protocol. There is deliberately no v1/CLI fallback. */
 export class OpenCodeSdkAdapter implements WorkerRunner {
   private readonly command: string;
   private readonly fetch: Fetch;
@@ -182,6 +182,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     const abortOutcome: WorkerAbortOutcome = { attempted: false };
     let sessionId: string | undefined;
     let effectiveRules: PermissionRule[] | undefined;
+    let appendedDenies: PermissionRule[] = [];
     let server: OpenCodeServerHandle | undefined;
     let status: WorkerResult["status"] = "error";
     let errors: string[] | undefined;
@@ -216,7 +217,9 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         request,
         controller.signal,
       );
-      effectiveRules = rulesByAgent.get(agentFor(request, this.agentName));
+      const verified = rulesByAgent.get(agentFor(request, this.agentName));
+      effectiveRules = verified?.rules;
+      appendedDenies = verified?.appendedDenies ?? [];
       const created = await requestJson(
         this.fetch,
         server.baseUrl,
@@ -353,6 +356,11 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
           effectiveRules
             ? "OpenCode v2 native agent permissions were inspected before prompting; unknown tools and recursive delegation are denied."
             : "OpenCode effective permission verification did not complete; no prompt was authorized.",
+          ...(appendedDenies.length
+            ? [
+                `OpenCode appended deny rules after Fusion's policy (accepted; they only narrow it): ${appendedDenies.map((rule) => `${rule.action}:${rule.resource}`).join(", ")}.`,
+              ]
+            : []),
           ...(sessionId
             ? [`OpenCode fresh session id observed: ${sessionId}.`]
             : []),
@@ -557,9 +565,9 @@ function assertServerInfo(
 
 function assertSupportedVersion(value: unknown): asserts value is string {
   const match = typeof value === "string" ? /^2\.0\.(\d+)$/u.exec(value) : null;
-  if (!match || Number(match[1]) < 12)
+  if (!match || Number(match[1]) < 22)
     throw new Error(
-      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires OpenCode 2.0.12+ in the 2.0 release line. No v1 or CLI fallback is available.`,
+      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires OpenCode 2.0.22+ in the 2.0 release line. No v1 or CLI fallback is available.`,
     );
 }
 
@@ -647,13 +655,18 @@ export function buildOpenCodePermissionRules(
   return rules;
 }
 
+type VerifiedRules = {
+  rules: PermissionRule[];
+  appendedDenies: PermissionRule[];
+};
+
 async function verifyEffectiveRules(
   fetchImpl: Fetch,
   baseUrl: string,
   agentName: string,
   request: WorkerRequest,
   signal: AbortSignal,
-): Promise<Map<string, PermissionRule[]>> {
+): Promise<Map<string, VerifiedRules>> {
   const expected = new Map([
     [
       agentName,
@@ -677,7 +690,7 @@ async function verifyEffectiveRules(
     if (!Array.isArray(value?.data))
       throw new Error("Invalid OpenCode agent list response.");
     const agents = value.data as unknown[];
-    const result = new Map<string, PermissionRule[]>();
+    const result = new Map<string, VerifiedRules>();
     let missing = false;
     for (const [id, rules] of expected) {
       const agent = agents.map(objectValue).find((item) => item?.id === id);
@@ -686,20 +699,15 @@ async function verifyEffectiveRules(
         continue;
       }
       const permissions = parseRules(agent.permissions);
-      // Everything preceding our catch-all reset is shadowed. Requiring the
-      // exact suffix rejects extra permissions, reordered rules and missing
-      // read roots, rather than merely sampling a few known tool names.
-      if (
-        JSON.stringify(permissions.slice(-rules.length)) !==
-        JSON.stringify(rules)
-      )
+      const appendedDenies = findAppendedDenies(permissions, rules);
+      if (appendedDenies === undefined)
         throw new Error(
           `OPENCODE_EFFECTIVE_RULES_MISMATCH: ${id} does not end with the expected ordered deny-by-default policy.`,
         );
-      result.set(id, permissions);
+      result.set(id, { rules: permissions, appendedDenies });
     }
     if (!missing) return result;
-    // v2.0.12 initially returns [] while location plugins are still loading.
+    // v2 initially returns [] while location plugins are still loading.
     // This is readiness, not permission to run behind missing enforcement.
     if (Date.now() >= deadline)
       throw new Error(
@@ -707,6 +715,28 @@ async function verifyEffectiveRules(
       );
     await abortable(new Promise((resolve) => setTimeout(resolve, 50)), signal);
   }
+}
+
+/**
+ * Everything preceding our catch-all reset is shadowed, so the expected rules
+ * must appear as one exact ordered run, rejecting extra permissions, reordered
+ * rules and missing read roots. Plugins may append rules after config (v2.0.21+
+ * BrowserPlugin adds `browser:* deny`). Evaluation is last-match-wins, so a
+ * deny-only tail can only narrow the policy and is returned for disclosure.
+ * An appended ask or allow could reopen a denied action and fails closed.
+ */
+function findAppendedDenies(
+  permissions: PermissionRule[],
+  rules: PermissionRule[],
+): PermissionRule[] | undefined {
+  const expected = JSON.stringify(rules);
+  for (let end = permissions.length; end >= rules.length; end--) {
+    const tail = permissions.slice(end);
+    if (tail.some((rule) => rule.effect !== "deny")) return undefined;
+    if (JSON.stringify(permissions.slice(end - rules.length, end)) === expected)
+      return tail;
+  }
+  return undefined;
 }
 
 function parseRules(value: unknown): AgentInfo["permissions"] {

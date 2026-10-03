@@ -7,6 +7,8 @@ ADR 0028, the OpenCode implementation mechanisms in ADR 0029/0037, and the
 OpenCode-specific startup profile/disclosures in ADR 0045. Portable permission,
 isolation, cleanup, and evidence requirements remain unchanged; other harnesses
 are unchanged. Tracking: [issue #21](https://github.com/yamatakeru/skills/issues/21).
+The exact ordered suffix verification and the 2.0.12 target/boundary are
+partially superseded by [ADR 0048](0048-opencode-appended-deny-tolerance.md).
 
 ## Decision
 

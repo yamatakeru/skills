@@ -79,18 +79,21 @@ in gitignored areas, or remote API side effects.
 
 ## OpenCode Version Boundary
 
-The supported line is stable OpenCode 2.0.x from 2.0.12, with 2.0.12 as the
-measured target (ADR 0046). Older versions, prereleases and unknown release
+The supported line is stable OpenCode 2.0.x from 2.0.22, with 2.0.22 as the
+measured target (ADR 0046/0048). Older versions, prereleases and unknown release
 lines fail explicitly. There is no v1 adapter or OpenCode CLI transport.
 The `sdk` label denotes the structured REST/SSE machine protocol, not a runtime
 npm dependency; `@opencode/client` is pinned for type-only imports.
 
 The owned server runs authenticated `serve --stdio`; readiness and every
 request authenticate. Both the local binary and actual `/api/info` identity
-are checked. Before any prompt, Fusion verifies the exact ordered suffix of
-native agent rules beginning with its catch-all deny, including declared read
-roots and the no-tools judge. Earlier inherited defaults are shadowed by that
-reset. Asynchronous agent initialization is awaited, not treated as permission
+are checked. Before any prompt, Fusion verifies that native agent rules contain
+its exact ordered rules beginning with its catch-all deny, including declared
+read roots and the no-tools judge, followed by nothing or only deny rules.
+Earlier inherited defaults are shadowed by that reset. Appended denies (for
+example OpenCode 2.0.21+'s `browser:*` deny) can only narrow the last-match
+policy and are disclosed in notes; an appended allow or ask fails closed
+(ADR 0048). Asynchronous agent initialization is awaited, not treated as permission
 to skip verification. Native actions map portable `bash` to `shell` and
 recursive delegation to `subagent`.
 
