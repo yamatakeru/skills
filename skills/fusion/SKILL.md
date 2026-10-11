@@ -53,9 +53,10 @@ refill the slot from fallback lists. Without `--parent-model` or `--judge-model`
 the judge uses the selected harness's default model with a warning.
 
 A run can take about 15 minutes with default timeouts: each worker may use up
-to 10 minutes, then the judge up to 5. Start the command so that your own
-tool-call time limit cannot end it first, for example as a background job whose
-completion you wait for, because an interrupted run loses the panel report.
+to 10 minutes, then the judge up to 5. Always start the command so that your
+own tool-call time limit cannot end it first, regardless of how small the task
+looks, for example as a background job whose completion you wait for, because
+an interrupted run loses the panel report.
 Keep the Fusion timeouts as the limit that actually applies; raise
 `--worker-timeout-ms` for tasks that need long investigations instead of
 relying on the caller to stop the run.
