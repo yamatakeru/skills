@@ -69,7 +69,9 @@ function signalGroup(child: ChildProcess, signal: NodeJS.Signals): boolean {
     process.kill(-child.pid, signal);
     return true;
   } catch (error) {
-    if (isGoneOrUnreachable(error)) return false;
+    // EPERM: the remaining members cannot be signalled; cleanup is best-effort.
+    const code = errnoCode(error);
+    if (code === "ESRCH" || code === "EPERM") return false;
     throw error;
   }
 }
@@ -81,16 +83,15 @@ function groupAlive(child: ChildProcess): boolean {
     process.kill(-child.pid, 0);
     return true;
   } catch (error) {
-    if (isGoneOrUnreachable(error)) return false;
+    // EPERM means members still exist that this process may not signal.
+    if (errnoCode(error) === "ESRCH") return false;
+    if (errnoCode(error) === "EPERM") return true;
     throw error;
   }
 }
 
-// EPERM: the remaining members cannot be signalled by this process, so there is
-// nothing further to wait for or kill.
-function isGoneOrUnreachable(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException).code;
-  return code === "ESRCH" || code === "EPERM";
+function errnoCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException).code;
 }
 
 function isRunning(child: ChildProcess): boolean {

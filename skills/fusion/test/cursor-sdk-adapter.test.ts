@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,6 +41,40 @@ describe("Fusion Cursor SDK adapter", () => {
       });
     });
   }
+
+  test("counts per-invocation preparation toward the worker timeout", async () => {
+    let execution: CommandExecution | undefined;
+    const adapter = new CursorSdkAdapter({
+      executor: async (input) => {
+        execution = input;
+        return {
+          exitCode: 0,
+          stdout: streamJson([{ type: "result", is_error: false, result: "ok" }]),
+          stderr: "",
+          durationMs: 1,
+        };
+      },
+    });
+
+    await adapter.runWorker({ ...workerRequest(), budget: { timeoutMs: 60_000 } });
+    expect(execution?.timeoutMs).toBeGreaterThan(0);
+    expect(execution?.timeoutMs).toBeLessThanOrEqual(60_000);
+
+    // Preparation that outlasts the limit returns timeout without launching.
+    execution = undefined;
+    let now = 0;
+    const clock = spyOn(Date, "now").mockImplementation(() => (now += 10_000));
+    try {
+      const result = await adapter.runWorker({
+        ...workerRequest(),
+        budget: { timeoutMs: 5_000 },
+      });
+      expect(result.status).toBe("timeout");
+    } finally {
+      clock.mockRestore();
+    }
+    expect(execution).toBeUndefined();
+  });
 
   test("spawns cursor-agent with config injection and parses stream evidence", async () => {
     const executions: CommandExecution[] = [];
