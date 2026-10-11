@@ -93,6 +93,18 @@ need OS facilities such as cgroups or job objects. If Fusion itself is killed
 with SIGKILL, no cleanup runs; the OpenCode server still observes its closed
 stdin.
 
+### Live verification (2026-10-12)
+
+Each run used one worker and the CLI's JSON output; harness processes present
+after the run were compared with those present before it.
+
+| Harness | Limit | Result | Returned after | Leftover processes |
+| --- | --- | --- | --- | --- |
+| Claude Code worker | 5,000 ms | `timeout` | 6,042 ms | none |
+| Cursor worker (`composer-2.5-fast`) | 2,000 ms | `timeout` | 2,054 ms | none |
+| OpenCode v2.0.26 worker | 5,000 ms | `timeout` | 9 s run incl. server startup | none |
+| Claude Code judge, worker limit 120,000 ms | 3,000 ms | judge `timeout`, panel `ok` with parent-agent fallback warning | 3,975 ms | none |
+
 ## Consequences
 
 - A default run can take roughly 15 minutes plus preparation. `SKILL.md`
