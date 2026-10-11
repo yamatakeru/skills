@@ -188,14 +188,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     let errors: string[] | undefined;
     const controller = new AbortController();
     const streamController = new AbortController();
-    const timeoutMs = effectiveTimeoutMs(request.budget);
-    const timer = setTimeout(
-      () =>
-        controller.abort(
-          new WorkerTimeoutError("OpenCode SDK worker timed out."),
-        ),
-      timeoutMs,
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       if (this.disposed) throw new Error("OpenCode adapter has been disposed.");
       if (request.session.mode !== "fresh")
@@ -208,7 +201,16 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         hardDeniedTools.has(tool),
       );
       preferenceWarnings(request, warnings);
-      server = await abortable(this.ensureServer(request), controller.signal);
+      // Shared server startup has its own deadline and is excluded from the
+      // Worker/Judge Timeout, which starts once the server is ready (ADR 0049).
+      server = await this.ensureServer(request);
+      timer = setTimeout(
+        () =>
+          controller.abort(
+            new WorkerTimeoutError("OpenCode SDK worker timed out."),
+          ),
+        effectiveTimeoutMs(request.budget),
+      );
       // Reinspect on every invocation: v2 can reload agent/config state while alive.
       const rulesByAgent = await verifyEffectiveRules(
         this.fetch,
