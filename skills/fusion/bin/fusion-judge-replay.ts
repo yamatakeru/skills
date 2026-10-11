@@ -10,6 +10,7 @@ import {
   defaultJudgeTimeoutMs,
   errorMessage,
   resolveModelEntry,
+  terminateActiveProcessGroups,
   type HarnessKind,
   type WorkerRunner,
 } from "../lib/protocol";
@@ -21,6 +22,7 @@ import {
   writeReplayArtifacts,
   type ReplayArtifactPaths,
 } from "../lib/judge-replay";
+import { registerRuntimeSignalCleanup } from "./fusion-run";
 
 export interface JudgeReplayCliOptions {
   run: string;
@@ -48,6 +50,7 @@ export interface JudgeReplayReport {
 
 async function main(): Promise<number> {
   let runtime: ReplayRuntime | undefined;
+  let deregisterSignalCleanup: (() => void) | undefined;
   try {
     assertTopLevelFusionInvocation();
     assertBunRuntime();
@@ -77,6 +80,7 @@ async function main(): Promise<number> {
       timeoutMs: options.judgeTimeoutMs,
     });
     runtime = createReplayRuntime();
+    deregisterSignalCleanup = registerRuntimeSignalCleanup(runtime.dispose);
     const synthesizer = new HarnessBackedJudgeSynthesizer({
       runner: runtime.registry,
       harnessSelector: runtime.registry,
@@ -132,6 +136,7 @@ async function main(): Promise<number> {
     }
     return 1;
   } finally {
+    deregisterSignalCleanup?.();
     try {
       await runtime?.dispose();
     } catch (error) {
@@ -298,6 +303,7 @@ function createReplayRuntime(): ReplayRuntime {
           runner as WorkerRunner & { dispose?: () => Promise<void> | void }
         ).dispose?.();
       }
+      await terminateActiveProcessGroups();
     },
   };
 }

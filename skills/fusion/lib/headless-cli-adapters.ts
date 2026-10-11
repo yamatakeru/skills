@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { deriveContainment } from "./containment";
 import { resolveWorkerTimeoutMs } from "./defaults";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
@@ -19,6 +18,9 @@ import type {
   WorkerRunner,
 } from "./types";
 import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
+import { spawnProcessGroup, terminateProcessGroup } from "./process-group";
+
+const pipeReleaseMs = 1_000;
 
 export interface CommandExecution {
   command: string;
@@ -136,7 +138,7 @@ export async function executeCommand(
   const startedAt = Date.now();
   return new Promise((resolve, reject) => {
     let timedOut = false;
-    const child = spawn(execution.command, execution.args, {
+    const child = spawnProcessGroup(execution.command, execution.args, {
       cwd: execution.cwd,
       env:
         execution.env === undefined
@@ -146,26 +148,37 @@ export async function executeCommand(
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    // Whether the harness exits or times out, stop whatever it left behind,
+    // then release pipes a descendant outside the group may still hold.
+    let stopping: Promise<void> | undefined;
+    const stopGroup = (): Promise<void> =>
+      (stopping ??= terminateProcessGroup(child).then(() => {
+        const release = setTimeout(() => {
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+        }, pipeReleaseMs);
+        child.once("close", () => clearTimeout(release));
+      }));
     const timeout =
       execution.timeoutMs === undefined
         ? undefined
         : setTimeout(() => {
             timedOut = true;
-            child.kill("SIGTERM");
-            setTimeout(() => {
-              if (child.exitCode === null) {
-                child.kill("SIGKILL");
-              }
-            }, 1_000).unref();
+            void stopGroup();
           }, execution.timeoutMs);
 
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", reject);
-    child.on("close", (exitCode) => {
+    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.on("error", (error) => {
+      if (timeout !== undefined) clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("exit", () => void stopGroup());
+    child.on("close", async (exitCode) => {
       if (timeout !== undefined) {
         clearTimeout(timeout);
       }
+      await stopGroup();
       resolve({
         exitCode: exitCode ?? 1,
         stdout: Buffer.concat(stdout).toString("utf8"),

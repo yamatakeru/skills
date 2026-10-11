@@ -55,12 +55,51 @@ either 5 minutes or unbounded depending on the harness.
   transcripts and run records. `--judge-timeout-ms` with a non-judge
   synthesizer is a usage error, like `--judge-model`.
 
+### Stopping a harness process
+
+A limit is only real if reaching it stops the work and returns. Claude Code and
+Cursor run as CLI child processes, and previously a timeout sent SIGTERM and
+then SIGKILL to that child alone. Descendants it had started (shells, hooks)
+survived, and one that inherited the stdout pipe kept the invocation from
+returning until it exited on its own; a local probe with a 300 ms limit
+returned only after its 5-second descendant finished. OpenCode's interrupt API
+stops session execution, but the owned `serve` process was stopped the same
+way, and v2 servers do not trap SIGTERM, so their shell, LSP and MCP children
+can be orphaned
+([anomalyco/opencode#50780](https://github.com/anomalyco/opencode/issues/50780),
+open for v2.0.14).
+
+- Every harness process Fusion spawns (Claude Code and Cursor invocations, the
+  owned OpenCode server) runs as the leader of its own process group.
+- Stopping sends SIGTERM to the leader alone, giving a harness that cleans up
+  its own children the chance to do so, then SIGKILLs whatever remains in the
+  group after a 2-second grace period. The same sweep runs after a harness
+  exits normally, so background processes it left behind do not outlive the
+  invocation. After the sweep, pipes still held by a process outside the group
+  are released so the invocation returns.
+- For OpenCode, the session interrupt remains the first step; closing the
+  server's stdin and the group stop follow at disposal.
+- Because the groups no longer receive terminal-generated signals, runtime
+  disposal stops every group still running, `fusion-run` and
+  `fusion-judge-replay` run that disposal on SIGINT, SIGTERM and SIGHUP, and an
+  abrupt process exit SIGKILLs the remaining groups.
+
+Supervisor-side group cleanup stays correct once harnesses handle SIGTERM
+themselves: the leader-first SIGTERM respects their own shutdown, and the
+SIGKILL sweep still covers crashes, escalation and regressions. Two residuals
+remain: a descendant that calls `setsid()` leaves the group, and Windows has no
+process groups (the leader alone is signalled there). Full containment would
+need OS facilities such as cgroups or job objects. If Fusion itself is killed
+with SIGKILL, no cleanup runs; the OpenCode server still observes its closed
+stdin.
+
 ## Consequences
 
 - A default run can take roughly 15 minutes plus preparation. `SKILL.md`
   directs parent agents to start the CLI so that their own tool-call time
   limit cannot interrupt it before the panel report is written.
-- Claude Code, Cursor and headless CLI workers are now bounded by default.
-  OpenCode workers get twice the previous default.
+- Claude Code and Cursor workers are now bounded by default, and reaching the
+  limit returns even when the harness left descendants behind. OpenCode
+  workers get twice the previous default.
 - Recorded runs created before this decision lack `judgeTimeoutMs`; replaying
   them uses the replay CLI's Judge Timeout default.

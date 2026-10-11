@@ -39,7 +39,7 @@ export class FileRunRecorder implements RunRecorder {
   private startedAt: string | undefined;
   private nextTemporaryFileId = 0;
   private readonly signalHandlers = new Map<
-    "SIGINT" | "SIGTERM",
+    "SIGINT" | "SIGTERM" | "SIGHUP",
     () => Promise<void>
   >();
   private readonly runDirectory: string;
@@ -226,6 +226,7 @@ export class FileRunRecorder implements RunRecorder {
     const signals = [
       ["SIGINT", 130],
       ["SIGTERM", 143],
+      ["SIGHUP", 129],
     ] as const;
     for (const [signal, exitCode] of signals) {
       const handler = async (): Promise<void> => {

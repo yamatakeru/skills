@@ -27,6 +27,7 @@ import {
   resolvePanelComposition,
   runBoundedCleanup,
   runPanel,
+  terminateActiveProcessGroups,
   isImplementedJudgeHarness,
   isNonJudgeSynthesizerStrategy,
   instructionEnvironmentDisclosures,
@@ -678,7 +679,10 @@ export function createFusionRuntime(transport: TransportMode): FusionRuntime {
 export function registerRuntimeSignalCleanup(
   cleanup: () => Promise<void>,
 ): () => void {
-  const handlers = new Map<"SIGINT" | "SIGTERM", () => Promise<void>>();
+  const handlers = new Map<
+    "SIGINT" | "SIGTERM" | "SIGHUP",
+    () => Promise<void>
+  >();
   const deregister = (): void => {
     for (const [signal, handler] of handlers) {
       process.off(signal, handler);
@@ -688,6 +692,7 @@ export function registerRuntimeSignalCleanup(
   for (const [signal, exitCode] of [
     ["SIGINT", 130],
     ["SIGTERM", 143],
+    ["SIGHUP", 129],
   ] as const) {
     const handler = async (): Promise<void> => {
       deregister();
@@ -726,6 +731,9 @@ function runtimeFromRunners(
         if (cursor !== undefined) {
           await disposeRunner(cursor);
         }
+        // Harness groups are detached from the terminal, so interrupts and
+        // hangups reach them only through this cleanup (ADR 0049).
+        await terminateActiveProcessGroups();
       })();
       await disposePromise;
     },

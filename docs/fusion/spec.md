@@ -86,7 +86,11 @@ Timeout (default 5 minutes, `--judge-timeout-ms`). Both are wall-clock limits
 per invocation, excluding shared preparation such as starting a pooled server,
 and both are harness-independent with no unbounded mode. The runtime library
 resolves the defaults rather than individual adapters; the CLI records the
-effective values in the panel request and dry-run report (ADR 0049).
+effective values in the panel request and dry-run report. Each harness process
+runs as its own process group: stopping it sends SIGTERM to the leader, then
+SIGKILLs the rest of the group after a grace period, and runtime disposal
+(including on SIGINT, SIGTERM and SIGHUP) stops any group still running
+(ADR 0049).
 
 Legacy execution tiers are retired (ADR 0017). Hidden-subagent panels are
 removed; the `fusion-panelist-*` reference-example agents have been deleted
