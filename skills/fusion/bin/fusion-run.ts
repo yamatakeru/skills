@@ -12,7 +12,8 @@ import {
   defaultJudgeTimeoutMs,
   defaultPolicies,
   defaultWorkerTimeoutMs,
-  effectiveTimeoutMs,
+  resolveJudgeTimeoutMs,
+  resolveWorkerTimeoutMs,
   defaultHarnessSelector,
   DeterministicSynthesizer,
   errorMessage,
@@ -192,7 +193,7 @@ export async function preparePanelRequest(
     synthesizerResult.preference.strategy,
   )
     ? undefined
-    : (options.judgeTimeoutMs ?? defaultJudgeTimeoutMs);
+    : resolveJudgeTimeoutMs(options.judgeTimeoutMs);
   if (
     options.transport === "cli" &&
     synthesizerResult.preference.strategy === "opencode"
@@ -282,7 +283,9 @@ export function buildDryRunReport(
       fallbacks: model.modelPreference.fallbacks ?? [],
       validatedBy: model.validatedBy,
     })),
-    workerTimeoutMs: effectiveTimeoutMs(prepared.request.workerBudget),
+    workerTimeoutMs: resolveWorkerTimeoutMs(
+      prepared.request.workerBudget?.timeoutMs,
+    ),
     judge: dryRunJudge(options, prepared.request),
     manifest: {
       renderedPromptHash: manifest.renderedPromptHash,
@@ -307,7 +310,7 @@ function dryRunJudge(
     if (modelEntry !== undefined) {
       judge.modelEntry = modelEntry;
     }
-    judge.timeoutMs = request.judgeTimeoutMs ?? defaultJudgeTimeoutMs;
+    judge.timeoutMs = request.judgeTimeoutMs;
   }
   return judge;
 }
@@ -414,13 +417,10 @@ export async function buildSharedContext(
 
 // Resolves the effective Worker Timeout so the recorded request discloses it.
 function buildWorkerBudget(options: CliOptions): WorkerBudget {
-  const workerBudget: WorkerBudget = {
-    timeoutMs: options.workerTimeoutMs ?? defaultWorkerTimeoutMs,
+  return {
+    timeoutMs: resolveWorkerTimeoutMs(options.workerTimeoutMs),
+    ...(options.maxTurns === undefined ? {} : { maxTurns: options.maxTurns }),
   };
-  if (options.maxTurns !== undefined) {
-    workerBudget.maxTurns = options.maxTurns;
-  }
-  return workerBudget;
 }
 
 function embeddedContextSizeBytes(sharedContext: SharedContext): number {

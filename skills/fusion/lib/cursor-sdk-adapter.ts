@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deriveContainment } from "./containment";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
-import { defaultPolicies, effectiveTimeoutMs } from "./defaults";
+import { defaultPolicies, resolveWorkerTimeoutMs } from "./defaults";
 import {
   executeCommand,
   modelPreferenceToModel,
@@ -149,7 +149,7 @@ export class CursorSdkAdapter implements WorkerRunner {
         args: buildCursorSdkArgs(request),
         cwd: materialization.scratchDir,
         env: cursorRunEnv(materialization),
-        timeoutMs: effectiveTimeoutMs(request.budget),
+        timeoutMs: resolveWorkerTimeoutMs(request.budget?.timeoutMs),
       });
       return cursorSdkResultToWorkerResult(
         request,

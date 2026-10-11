@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { deriveContainment } from "./containment";
-import { effectiveTimeoutMs } from "./defaults";
+import { resolveWorkerTimeoutMs } from "./defaults";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import {
   assertNoStrictToolPolicyGap,
@@ -62,7 +62,7 @@ export class ClaudeCodeHeadlessCliAdapter implements WorkerRunner {
         request.environment?.workingDirectory ??
         request.environment?.workspaceRoot,
       env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
-      timeoutMs: effectiveTimeoutMs(request.budget),
+      timeoutMs: resolveWorkerTimeoutMs(request.budget?.timeoutMs),
     });
     return cliResultToWorkerResult("claude-code", request, result);
   }

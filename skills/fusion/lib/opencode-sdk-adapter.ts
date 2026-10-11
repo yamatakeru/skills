@@ -10,7 +10,7 @@ import type {
   PermissionRule,
 } from "@opencode/client";
 import { deriveContainment } from "./containment";
-import { effectiveTimeoutMs } from "./defaults";
+import { resolveWorkerTimeoutMs } from "./defaults";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import {
   assertNoStrictToolPolicyGap,
@@ -209,7 +209,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
           controller.abort(
             new WorkerTimeoutError("OpenCode SDK worker timed out."),
           ),
-        effectiveTimeoutMs(request.budget),
+        resolveWorkerTimeoutMs(request.budget?.timeoutMs),
       );
       // Reinspect on every invocation: v2 can reload agent/config state while alive.
       const rulesByAgent = await verifyEffectiveRules(
