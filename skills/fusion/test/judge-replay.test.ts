@@ -18,6 +18,7 @@ import {
   writeReplayArtifacts,
   type RecordedJudgeRun,
 } from "../lib/judge-replay";
+import { parseJudgeReplayArgs } from "../bin/fusion-judge-replay";
 import { panelRequest, workerRequest, okWorkerResult } from "./fixtures";
 
 const temporaryDirectories: string[] = [];
@@ -31,6 +32,35 @@ afterEach(async () => {
 });
 
 describe("Fusion judge replay", () => {
+  test("defaults the judge timeout and rejects the renamed flag", () => {
+    const required = ["--run", "r", "--arm", "J0", "--judge-model", "m"];
+    expect(parseJudgeReplayArgs(required).judgeTimeoutMs).toBe(300_000);
+    expect(
+      parseJudgeReplayArgs([...required, "--judge-timeout-ms", "1000"])
+        .judgeTimeoutMs,
+    ).toBe(1000);
+    expect(() =>
+      parseJudgeReplayArgs([...required, "--timeout-ms", "1000"]),
+    ).toThrow("use --judge-timeout-ms");
+  });
+
+  test("applies the arm timeout to the judge without touching the worker budget", () => {
+    const recorded = recordedRun();
+    const replay = buildReplayInput(recorded, {
+      judgeModel: { model: "gpt-5.5" },
+      judgeHarness: "opencode",
+      toolsMode: "none",
+      timeoutMs: 1000,
+    });
+
+    expect(replay.synthesisInput.panelRequest.workerBudget).toEqual(
+      recorded.panelRequest.workerBudget,
+    );
+    expect(buildJudgeRequest(replay.synthesisInput).budget?.timeoutMs).toBe(
+      1000,
+    );
+  });
+
   test("J0 builds the current byte-identical prompt and no-tools policy", () => {
     const recorded = recordedRun();
     const replay = buildReplayInput(recorded, {

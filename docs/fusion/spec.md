@@ -80,6 +80,18 @@ judge analysis rendered from its structured JSON (or, when the judge did not
 run or failed, the reference deterministic synthesis). `--json` switches
 stdout to the complete `PanelResult`.
 
+Every worker invocation is bounded by the Worker Timeout (default 10 minutes,
+`--worker-timeout-ms`) and the judge invocation by the independent Judge
+Timeout (default 5 minutes, `--judge-timeout-ms`). Both are wall-clock limits
+per invocation, excluding shared preparation such as starting a pooled server,
+and both are harness-independent with no unbounded mode. The runtime library
+resolves the defaults rather than individual adapters; the CLI records the
+effective values in the panel request and dry-run report. Each harness process
+runs as its own process group: stopping it sends SIGTERM to the leader, then
+SIGKILLs the rest of the group after a grace period, and runtime disposal
+(including on SIGINT, SIGTERM and SIGHUP) stops any group still running
+(ADR 0049).
+
 Legacy execution tiers are retired (ADR 0017). Hidden-subagent panels are
 removed; the `fusion-panelist-*` reference-example agents have been deleted
 from the repository. Same-agent
@@ -335,8 +347,9 @@ selected harness's default model with a warning. These preferences do not
 guarantee identical observed models after invocation-time fallbacks.
 `--synthesizer parent-agent` and `--synthesizer deterministic` remain implemented
 but are explicit-only escapes, never a silent default. `cursor` is also a valid
-harness-backed judge strategy on the SDK transport. The panel-wide timeout
-and `ReasoningPreference` apply to the judge invocation.
+harness-backed judge strategy on the SDK transport. `ReasoningPreference`
+and the turn budget apply to the judge invocation; its timeout is the separate
+Judge Timeout (ADR 0049).
 
 The judge invocation reuses the worker adapter path with its own provenance:
 `synthesis.started` / `synthesis.completed` carry the judge's strategy,
@@ -447,6 +460,8 @@ interface PanelRequest {
   synthesisContract: SynthesisContract;
   synthesizer?: SynthesizerPreference;
   reasoning?: ReasoningPreference;
+  workerBudget?: WorkerBudget;
+  judgeTimeoutMs?: number;
   provenancePolicy?: ProvenancePolicy;
 }
 

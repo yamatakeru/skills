@@ -1,5 +1,17 @@
 import type { DefaultPolicies } from "./types";
 
+// Harness-independent invocation limits (ADR 0049). Neither may be unbounded.
+export const defaultWorkerTimeoutMs = 600_000;
+export const defaultJudgeTimeoutMs = 300_000;
+
+export function resolveWorkerTimeoutMs(timeoutMs: number | undefined): number {
+  return timeoutMs ?? defaultWorkerTimeoutMs;
+}
+
+export function resolveJudgeTimeoutMs(timeoutMs: number | undefined): number {
+  return timeoutMs ?? defaultJudgeTimeoutMs;
+}
+
 export const defaultPolicies: DefaultPolicies = {
   session: { mode: "fresh", reusePolicy: "none" },
   isolation: {

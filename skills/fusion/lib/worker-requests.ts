@@ -1,4 +1,4 @@
-import { mergeDefaultPolicies } from "./defaults";
+import { mergeDefaultPolicies, resolveWorkerTimeoutMs } from "./defaults";
 import { renderWorkerPrompt } from "./worker-prompt";
 import type { WorkerPromptVariant } from "./worker-prompt";
 import type {
@@ -145,6 +145,7 @@ export function buildWorkerRequests(
       prompt: renderedPrompt,
       modelPreference,
       harness,
+      timeoutMs: resolveWorkerTimeoutMs(request.workerBudget?.timeoutMs),
     });
   });
 }
@@ -157,6 +158,7 @@ export function buildWorkerRequestBase(input: {
   modelPreference?: ModelPreference;
   harness?: HarnessDescriptor;
   contextManifest?: WorkerRequest["contextManifest"];
+  timeoutMs: number;
 }): WorkerRequest {
   return {
     panelRunId: input.request.panelRunId,
@@ -173,7 +175,7 @@ export function buildWorkerRequestBase(input: {
     toolsPolicy: input.policies.tools,
     reasoning: input.request.reasoning,
     environment: input.request.workerEnvironment,
-    budget: input.request.workerBudget,
+    budget: { ...input.request.workerBudget, timeoutMs: input.timeoutMs },
     outputContract: input.policies.output,
     provenancePolicy:
       input.request.provenancePolicy ?? input.policies.provenance,

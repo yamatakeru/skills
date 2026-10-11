@@ -500,6 +500,27 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
     },
   );
 
+  test("starts the worker timeout after shared server startup", async () => {
+    const f = fixture({
+      override: (url) =>
+        url.pathname === "/api/info"
+          ? Bun.sleep(150).then(() =>
+              Response.json({
+                version: "2.0.22",
+                pid: 10,
+                urls: [],
+                paths: { tmp: "/tmp" },
+              }),
+            )
+          : undefined,
+    });
+    const result = await f.adapter.runWorker({
+      ...f.request,
+      budget: { timeoutMs: 100 },
+    });
+    expect(result.status).toBe("ok");
+  });
+
   test("cleanup failure is disclosed without retroactively failing completed output", async () => {
     const f = fixture({
       override: (url) =>

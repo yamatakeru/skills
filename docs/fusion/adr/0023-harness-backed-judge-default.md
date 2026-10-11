@@ -7,6 +7,9 @@ Accepted
 Default judge / outer-model equivalence qualified by ADR 0047: explicit
 `--parent-model` substitutes are allowed without changing the actual outer model.
 
+Timeout sharing superseded by ADR 0049: the judge has its own Judge Timeout,
+independent of the Worker Timeout; `ReasoningPreference` stays shared.
+
 Divergence inventory corrected by ADR 0026: the no-tools judge is a further
 deliberate divergence from upstream, unrecorded when this ADR was written.
 

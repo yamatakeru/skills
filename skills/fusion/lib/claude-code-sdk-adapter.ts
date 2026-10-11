@@ -6,6 +6,7 @@ import {
   type CommandResult,
 } from "./headless-cli-adapters";
 import { deriveContainment } from "./containment";
+import { resolveWorkerTimeoutMs } from "./defaults";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import { toolPolicyWarnings } from "./tool-policy";
 import { fusionPanelDepthEnv, nextFusionPanelDepth } from "./panel-depth";
@@ -52,7 +53,7 @@ export class ClaudeCodeSdkAdapter implements WorkerRunner {
         request.environment?.workingDirectory ??
         request.environment?.workspaceRoot,
       env: { [fusionPanelDepthEnv]: nextFusionPanelDepth() },
-      timeoutMs: request.budget?.timeoutMs,
+      timeoutMs: resolveWorkerTimeoutMs(request.budget?.timeoutMs),
     });
     return sdkResultToWorkerResult(request, commandResult);
   }

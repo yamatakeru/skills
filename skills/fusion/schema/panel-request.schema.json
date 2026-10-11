@@ -172,6 +172,10 @@
         "harnessSelectionPolicy": {
           "$ref": "#/definitions/HarnessSelectionPolicy"
         },
+        "judgeTimeoutMs": {
+          "description": "Judge Timeout; independent of `workerBudget.timeoutMs` (ADR 0049).",
+          "type": "number"
+        },
         "panelRunId": {
           "type": "string"
         },

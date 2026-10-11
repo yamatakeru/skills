@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -10,6 +10,8 @@ import type {
   PermissionRule,
 } from "@opencode/client";
 import { deriveContainment } from "./containment";
+import { resolveWorkerTimeoutMs } from "./defaults";
+import { spawnProcessGroup, terminateProcessGroup } from "./process-group";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import {
   assertNoStrictToolPolicyGap,
@@ -187,14 +189,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     let errors: string[] | undefined;
     const controller = new AbortController();
     const streamController = new AbortController();
-    const timeoutMs = request.budget?.timeoutMs ?? 300_000;
-    const timer = setTimeout(
-      () =>
-        controller.abort(
-          new WorkerTimeoutError("OpenCode SDK worker timed out."),
-        ),
-      timeoutMs,
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       if (this.disposed) throw new Error("OpenCode adapter has been disposed.");
       if (request.session.mode !== "fresh")
@@ -207,7 +202,16 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
         hardDeniedTools.has(tool),
       );
       preferenceWarnings(request, warnings);
-      server = await abortable(this.ensureServer(request), controller.signal);
+      // Shared server startup has its own deadline and is excluded from the
+      // Worker/Judge Timeout, which starts once the server is ready (ADR 0049).
+      server = await this.ensureServer(request);
+      timer = setTimeout(
+        () =>
+          controller.abort(
+            new WorkerTimeoutError("OpenCode SDK worker timed out."),
+          ),
+        resolveWorkerTimeoutMs(request.budget?.timeoutMs),
+      );
       // Reinspect on every invocation: v2 can reload agent/config state while alive.
       const rulesByAgent = await verifyEffectiveRules(
         this.fetch,
@@ -1066,7 +1070,7 @@ async function startOpenCodeServerOnce(
   const port = await freePort();
   // --stdio removes server credentials from the tool environment and makes
   // stdin lifetime an additional parent-death cleanup boundary (v2.0.12).
-  const child = spawn(
+  const child = spawnProcessGroup(
     input.command,
     ["serve", "--stdio", "--hostname", "127.0.0.1", "--port", String(port)],
     {
@@ -1135,23 +1139,17 @@ async function freePort(): Promise<number> {
   return address.port;
 }
 async function stopChild(child: ChildProcess): Promise<void> {
-  if (
-    child.exitCode !== null ||
-    child.signalCode !== null ||
-    child.pid === undefined
-  )
-    return;
-  const closed = new Promise<void>((resolve) =>
-    child.once("close", () => resolve()),
-  );
-  child.stdin?.end();
-  child.kill("SIGTERM");
-  const timer = setTimeout(() => child.kill("SIGKILL"), 1_000);
-  try {
-    await closed;
-  } finally {
-    clearTimeout(timer);
-  }
+  if (child.pid === undefined) return;
+  // A server that already exited may still have left children in its group.
+  const running = child.exitCode === null && child.signalCode === null;
+  const closed = running
+    ? new Promise<void>((resolve) => child.once("close", () => resolve()))
+    : Promise.resolve();
+  if (running) child.stdin?.end();
+  // v2 servers do not trap SIGTERM (anomalyco/opencode#50780), so shell, LSP
+  // and MCP children are reaped through the process group.
+  await terminateProcessGroup(child);
+  await closed;
 }
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {

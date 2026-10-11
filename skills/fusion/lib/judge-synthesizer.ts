@@ -1,4 +1,4 @@
-import { mergeDefaultPolicies } from "./defaults";
+import { mergeDefaultPolicies, resolveJudgeTimeoutMs } from "./defaults";
 import { errorMessage } from "./errors";
 import { normalizeHarnessDescriptor } from "./harness";
 import {
@@ -156,6 +156,8 @@ export function buildJudgeRequest(
         userTask: request.prompt,
         sharedContext: request.sharedContext,
       }),
+      // Only the timeout is judge-specific; other budget fields stay shared.
+      timeoutMs: resolveJudgeTimeoutMs(request.judgeTimeoutMs),
     }),
     blindnessPolicy: {
       noPeerOutputs: false,

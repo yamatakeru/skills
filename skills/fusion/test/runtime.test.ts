@@ -63,7 +63,8 @@ describe("Fusion panel runtime", () => {
         },
       }),
       reasoning: { effort: "high" as const, maxTokens: 2000 },
-      workerBudget: { timeoutMs: 1234 },
+      workerBudget: { timeoutMs: 1234, maxTurns: 7 },
+      judgeTimeoutMs: 4321,
     };
 
     const result = await runPanel(request, {
@@ -91,7 +92,12 @@ describe("Fusion panel runtime", () => {
       effort: "high",
       maxTokens: 2000,
     });
-    expect(judgeRequest?.budget).toEqual({ timeoutMs: 1234 });
+    expect(judgeRequest?.budget).toEqual({ timeoutMs: 4321, maxTurns: 7 });
+    for (const workerRequest of runner.requests.filter(
+      (candidate) => candidate.workerId !== "judge",
+    )) {
+      expect(workerRequest.budget).toEqual({ timeoutMs: 1234, maxTurns: 7 });
+    }
     expect(result.complianceSummary.judgeCompliance).toMatchObject({
       workerId: "judge",
       status: "ok",

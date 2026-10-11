@@ -93,8 +93,10 @@ describe("Fusion CLI parsing", () => {
       "5",
       "--judge-model",
       "claude-code:sonnet",
-      "--timeout-ms",
+      "--worker-timeout-ms",
       "60000",
+      "--judge-timeout-ms",
+      "30000",
       "--transport",
       "cli",
       "Do work",
@@ -106,7 +108,8 @@ describe("Fusion CLI parsing", () => {
     expect(options.reasoning).toEqual({ effort: "high", maxTokens: 1234 });
     expect(options.maxTurns).toBe(5);
     expect(options.judgeModel).toBe("claude-code:sonnet");
-    expect(options.timeoutMs).toBe(60000);
+    expect(options.workerTimeoutMs).toBe(60000);
+    expect(options.judgeTimeoutMs).toBe(30000);
     expect(options.transport).toBe("cli");
     expect(options.prompt).toBe("Do work");
   });
@@ -195,6 +198,60 @@ describe("Fusion CLI parsing", () => {
       "Fusion requires a task prompt",
     );
     expect(() => parseArgs(["--transport", "api", "task"])).toThrow("sdk, cli");
+    expect(() => parseArgs(["--worker-timeout-ms", "0", "task"])).toThrow(
+      "positive integer",
+    );
+    expect(() => parseArgs(["--judge-timeout-ms", "0", "task"])).toThrow(
+      "positive integer",
+    );
+  });
+
+  test("rejects the removed --timeout-ms flag with its replacements", () => {
+    expect(() => parseArgs(["--timeout-ms", "60000", "task"])).toThrow(
+      "use --worker-timeout-ms for each worker and --judge-timeout-ms for the judge",
+    );
+  });
+
+  test("records default worker and judge timeouts in the panel request", async () => {
+    const prepared = await preparePanelRequest(
+      parseArgs(["--models", "claude-code:sonnet", "Do work"]),
+      { cwd: "/tmp", panelRunId: "default-timeouts" },
+    );
+
+    expect(prepared.request.workerBudget).toEqual({ timeoutMs: 600_000 });
+    expect(prepared.request.judgeTimeoutMs).toBe(300_000);
+    expect(prepared.workerRequests[0]?.budget).toEqual({ timeoutMs: 600_000 });
+  });
+
+  test("omits the judge timeout for non-judge synthesizers and rejects the flag", async () => {
+    const prepared = await preparePanelRequest(
+      parseArgs([
+        "--models",
+        "claude-code:sonnet",
+        "--synthesizer",
+        "deterministic",
+        "Do work",
+      ]),
+      { cwd: "/tmp", panelRunId: "deterministic-timeouts" },
+    );
+    expect(prepared.request.judgeTimeoutMs).toBeUndefined();
+
+    await expect(
+      preparePanelRequest(
+        parseArgs([
+          "--models",
+          "claude-code:sonnet",
+          "--synthesizer",
+          "deterministic",
+          "--judge-timeout-ms",
+          "1000",
+          "Do work",
+        ]),
+        { cwd: "/tmp", panelRunId: "deterministic-judge-timeout" },
+      ),
+    ).rejects.toThrow(
+      "--judge-timeout-ms only applies to the harness-backed judge synthesizer.",
+    );
   });
 
   test("rejects inline values on boolean flags", () => {
@@ -345,10 +402,12 @@ describe("Fusion CLI parsing", () => {
           validatedBy: "pattern",
         },
       ],
+      workerTimeoutMs: 600_000,
       judge: {
         strategy: "claude-code",
         modelEntry: "claude-code:haiku",
         harness: "claude-code",
+        timeoutMs: 300_000,
       },
       manifest: {
         renderedPromptHash: prepared.request.contextManifest.renderedPromptHash,
@@ -374,6 +433,8 @@ describe("Fusion CLI parsing", () => {
     expect(report).toContain("# Fusion Dry-Run Preflight");
     expect(report).toContain("no workers or judge were invoked");
     expect(report).toContain("| explicit | claude-code:sonnet | tier-alias |");
+    expect(report).toContain("- Worker timeout: 600000 ms");
+    expect(report).toContain("- Timeout: 300000 ms");
   });
 
   test("dry-run reports disclose parent-repeat slots and degradation warnings", async () => {

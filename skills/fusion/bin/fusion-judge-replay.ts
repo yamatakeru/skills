@@ -7,8 +7,10 @@ import {
   HarnessBackedJudgeSynthesizer,
   OpenCodeSdkAdapter,
   assertTopLevelFusionInvocation,
+  defaultJudgeTimeoutMs,
   errorMessage,
   resolveModelEntry,
+  terminateActiveProcessGroups,
   type HarnessKind,
   type WorkerRunner,
 } from "../lib/protocol";
@@ -20,6 +22,7 @@ import {
   writeReplayArtifacts,
   type ReplayArtifactPaths,
 } from "../lib/judge-replay";
+import { registerRuntimeSignalCleanup } from "./fusion-run";
 
 export interface JudgeReplayCliOptions {
   run: string;
@@ -27,7 +30,7 @@ export interface JudgeReplayCliOptions {
   tools: "none" | "worker-parity";
   groundingFile?: string;
   judgeModel: string;
-  timeoutMs: number;
+  judgeTimeoutMs: number;
   json: boolean;
   force: boolean;
 }
@@ -47,6 +50,7 @@ export interface JudgeReplayReport {
 
 async function main(): Promise<number> {
   let runtime: ReplayRuntime | undefined;
+  let deregisterSignalCleanup: (() => void) | undefined;
   try {
     assertTopLevelFusionInvocation();
     assertBunRuntime();
@@ -73,9 +77,10 @@ async function main(): Promise<number> {
       judgeHarness: resolvedModel.harness,
       toolsMode: options.tools,
       groundingAppendix,
-      timeoutMs: options.timeoutMs,
+      timeoutMs: options.judgeTimeoutMs,
     });
     runtime = createReplayRuntime();
+    deregisterSignalCleanup = registerRuntimeSignalCleanup(runtime.dispose);
     const synthesizer = new HarnessBackedJudgeSynthesizer({
       runner: runtime.registry,
       harnessSelector: runtime.registry,
@@ -95,7 +100,7 @@ async function main(): Promise<number> {
         toolsConstraintPresent: options.tools === "worker-parity",
         groundingPresent: groundingAppendix !== undefined,
         groundingAppendix,
-        timeoutMs: options.timeoutMs,
+        timeoutMs: options.judgeTimeoutMs,
         force: options.force,
       },
     );
@@ -131,6 +136,7 @@ async function main(): Promise<number> {
     }
     return 1;
   } finally {
+    deregisterSignalCleanup?.();
     try {
       await runtime?.dispose();
     } catch (error) {
@@ -144,7 +150,7 @@ async function main(): Promise<number> {
 export function parseJudgeReplayArgs(args: string[]): JudgeReplayCliOptions {
   const values: Partial<JudgeReplayCliOptions> = {
     tools: "none",
-    timeoutMs: 600_000,
+    judgeTimeoutMs: defaultJudgeTimeoutMs,
     json: false,
     force: false,
   };
@@ -200,9 +206,13 @@ export function parseJudgeReplayArgs(args: string[]): JudgeReplayCliOptions {
       case "--judge-model":
         values.judgeModel = takeValue();
         break;
-      case "--timeout-ms":
-        values.timeoutMs = parsePositiveInteger(flag, takeValue());
+      case "--judge-timeout-ms":
+        values.judgeTimeoutMs = parsePositiveInteger(flag, takeValue());
         break;
+      case "--timeout-ms":
+        throw new JudgeReplayUsageError(
+          "--timeout-ms has been renamed; use --judge-timeout-ms.",
+        );
       case "--json":
         rejectValue();
         values.json = true;
@@ -265,7 +275,7 @@ export function judgeReplayUsage(): string {
     "  --tools <mode>           none or worker-parity (default: none).",
     "  --grounding-file <path>  Append pre-fetched untrusted source material.",
     "  --judge-model <entry>    Required judge model entry.",
-    "  --timeout-ms <n>         Judge timeout in milliseconds (default: 600000).",
+    `  --judge-timeout-ms <n>   Judge timeout in milliseconds (default: ${defaultJudgeTimeoutMs}).`,
     "  --json                    Print a structured replay report.",
     "  --force                   Overwrite existing artifacts for this arm.",
     "  --help                    Show this help.",
@@ -293,6 +303,7 @@ function createReplayRuntime(): ReplayRuntime {
           runner as WorkerRunner & { dispose?: () => Promise<void> | void }
         ).dispose?.();
       }
+      await terminateActiveProcessGroups();
     },
   };
 }

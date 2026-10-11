@@ -360,6 +360,21 @@ means provider default; there is no built-in depth floor. Preferences a
 harness cannot honor are recorded as warnings, never silently dropped
 (ADR 0021).
 
+## Worker Timeout
+
+The wall-clock limit on a single worker invocation, from dispatch to result,
+excluding shared preparation reused across invocations (such as starting a
+pooled harness server). It is harness-independent and always bounded; a worker
+that exceeds it becomes a disclosed `timeout` dropout.
+_Avoid_: panel timeout, `--timeout-ms`
+
+## Judge Timeout
+
+The wall-clock limit on the harness-backed judge invocation, measured like the
+Worker Timeout but set independently of it. It is harness-independent and
+always bounded; exceeding it degrades the run to parent-agent synthesis.
+_Avoid_: panel timeout
+
 ## Fusion CLI
 
 The bundled Bun entrypoint under `skills/fusion/bin/` that is the single

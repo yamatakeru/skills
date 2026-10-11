@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deriveContainment } from "./containment";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
-import { defaultPolicies } from "./defaults";
+import { defaultPolicies, resolveWorkerTimeoutMs } from "./defaults";
 import {
   executeCommand,
   modelPreferenceToModel,
@@ -132,6 +132,9 @@ export class CursorSdkAdapter implements WorkerRunner {
 
   async runWorker(request: WorkerRequest): Promise<WorkerResult> {
     const startedAt = Date.now();
+    // Per-invocation preparation counts toward the timeout (ADR 0049).
+    const deadline =
+      startedAt + resolveWorkerTimeoutMs(request.budget?.timeoutMs);
     const profile = cursorExecutionProfile(request);
     let materialization: CursorRunMaterialization | undefined;
     try {
@@ -144,12 +147,27 @@ export class CursorSdkAdapter implements WorkerRunner {
             : workerDeniedToolNames.has(tool),
       );
       materialization = await materializeCursorRun(request, profile);
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        return cursorWorkerResult({
+          request,
+          profile,
+          status: "timeout",
+          output: "",
+          usage: { durationMs: Date.now() - startedAt },
+          tools: [],
+          nonJsonLines: [],
+          warnings: cursorSdkWarnings(request, [], [], []),
+          errors: ["cursor SDK worker timed out before cursor-agent started."],
+          materialization,
+        });
+      }
       const commandResult = await this.executor({
         command: this.command,
         args: buildCursorSdkArgs(request),
         cwd: materialization.scratchDir,
         env: cursorRunEnv(materialization),
-        timeoutMs: request.budget?.timeoutMs,
+        timeoutMs: remainingMs,
       });
       return cursorSdkResultToWorkerResult(
         request,
