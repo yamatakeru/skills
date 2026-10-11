@@ -153,12 +153,9 @@ export function buildReplayInput(
       strategy: armConfig.judgeHarness,
       model: armConfig.judgeModel,
     },
-    workerBudget: {
-      ...recorded.panelRequest.workerBudget,
-      ...(armConfig.timeoutMs === undefined
-        ? {}
-        : { timeoutMs: armConfig.timeoutMs }),
-    },
+    ...(armConfig.timeoutMs === undefined
+      ? {}
+      : { judgeTimeoutMs: armConfig.timeoutMs }),
   };
   const toolsEnabled = armConfig.toolsMode === "worker-parity";
 

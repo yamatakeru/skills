@@ -1,4 +1,4 @@
-import { mergeDefaultPolicies } from "./defaults";
+import { defaultWorkerTimeoutMs, mergeDefaultPolicies } from "./defaults";
 import { renderWorkerPrompt } from "./worker-prompt";
 import type { WorkerPromptVariant } from "./worker-prompt";
 import type {
@@ -173,7 +173,11 @@ export function buildWorkerRequestBase(input: {
     toolsPolicy: input.policies.tools,
     reasoning: input.request.reasoning,
     environment: input.request.workerEnvironment,
-    budget: input.request.workerBudget,
+    budget: {
+      ...input.request.workerBudget,
+      timeoutMs:
+        input.request.workerBudget?.timeoutMs ?? defaultWorkerTimeoutMs,
+    },
     outputContract: input.policies.output,
     provenancePolicy:
       input.request.provenancePolicy ?? input.policies.provenance,

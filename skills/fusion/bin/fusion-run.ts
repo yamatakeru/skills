@@ -9,7 +9,10 @@ import {
   CursorSdkAdapter,
   buildWorkerRequests,
   createContextManifest,
+  defaultJudgeTimeoutMs,
   defaultPolicies,
+  defaultWorkerTimeoutMs,
+  effectiveTimeoutMs,
   defaultHarnessSelector,
   DeterministicSynthesizer,
   errorMessage,
@@ -60,7 +63,8 @@ export interface CliOptions {
   transport: TransportMode;
   synthesizer?: string;
   judgeModel?: string;
-  timeoutMs?: number;
+  workerTimeoutMs?: number;
+  judgeTimeoutMs?: number;
   workerPromptVariant?: WorkerPromptVariant;
   prompt: string;
 }
@@ -184,6 +188,11 @@ export async function preparePanelRequest(
     composition,
     cwd,
   );
+  const judgeTimeoutMs = isNonJudgeSynthesizerStrategy(
+    synthesizerResult.preference.strategy,
+  )
+    ? undefined
+    : (options.judgeTimeoutMs ?? defaultJudgeTimeoutMs);
   if (
     options.transport === "cli" &&
     synthesizerResult.preference.strategy === "opencode"
@@ -218,6 +227,7 @@ export async function preparePanelRequest(
       readRoots: resolveReadRoots(options.readRoots, cwd),
     },
     workerBudget,
+    judgeTimeoutMs,
     workerPromptVariant: options.workerPromptVariant,
     provenancePolicy: provenancePolicy(options.record),
   } satisfies Omit<ExperimentPanelRequest, "contextManifest">;
@@ -272,6 +282,7 @@ export function buildDryRunReport(
       fallbacks: model.modelPreference.fallbacks ?? [],
       validatedBy: model.validatedBy,
     })),
+    workerTimeoutMs: effectiveTimeoutMs(prepared.request.workerBudget),
     judge: dryRunJudge(options, prepared.request),
     manifest: {
       renderedPromptHash: manifest.renderedPromptHash,
@@ -296,6 +307,7 @@ function dryRunJudge(
     if (modelEntry !== undefined) {
       judge.modelEntry = modelEntry;
     }
+    judge.timeoutMs = request.judgeTimeoutMs ?? defaultJudgeTimeoutMs;
   }
   return judge;
 }
@@ -309,6 +321,7 @@ export function renderDryRunReport(report: DryRunReport): string {
     "## Invocation",
     `- Panel run id: ${report.panelRunId}`,
     `- Transport: ${report.transport}`,
+    `- Worker timeout: ${report.workerTimeoutMs} ms`,
     "",
     "## Resolved Models",
     "| Slot | Entry | Kind | Harness | Resolved model id | Validated by | Fallbacks |",
@@ -344,6 +357,9 @@ function renderDryRunJudge(judge: DryRunReport["judge"]): string[] {
   }
   if (judge.harness !== undefined) {
     lines.push(`- Harness: ${judge.harness}`);
+  }
+  if (judge.timeoutMs !== undefined) {
+    lines.push(`- Timeout: ${judge.timeoutMs} ms`);
   }
   return lines;
 }
@@ -396,15 +412,15 @@ export async function buildSharedContext(
   return { sharedContext, warnings };
 }
 
-function buildWorkerBudget(options: CliOptions): WorkerBudget | undefined {
-  const workerBudget: WorkerBudget = {};
-  if (options.timeoutMs !== undefined) {
-    workerBudget.timeoutMs = options.timeoutMs;
-  }
+// Resolves the effective Worker Timeout so the recorded request discloses it.
+function buildWorkerBudget(options: CliOptions): WorkerBudget {
+  const workerBudget: WorkerBudget = {
+    timeoutMs: options.workerTimeoutMs ?? defaultWorkerTimeoutMs,
+  };
   if (options.maxTurns !== undefined) {
     workerBudget.maxTurns = options.maxTurns;
   }
-  return Object.keys(workerBudget).length === 0 ? undefined : workerBudget;
+  return workerBudget;
 }
 
 function embeddedContextSizeBytes(sharedContext: SharedContext): number {
@@ -536,9 +552,16 @@ export function parseArgs(args: string[]): CliOptions {
       case "--judge-model":
         options.judgeModel = takeValue();
         break;
-      case "--timeout-ms":
-        options.timeoutMs = parsePositiveInteger(flag, takeValue());
+      case "--worker-timeout-ms":
+        options.workerTimeoutMs = parsePositiveInteger(flag, takeValue());
         break;
+      case "--judge-timeout-ms":
+        options.judgeTimeoutMs = parsePositiveInteger(flag, takeValue());
+        break;
+      case "--timeout-ms":
+        throw new UsageError(
+          "--timeout-ms has been removed; use --worker-timeout-ms for each worker and --judge-timeout-ms for the judge.",
+        );
       case "--worker-prompt-variant":
         options.workerPromptVariant = parseWorkerPromptVariant(
           flag,
@@ -787,6 +810,11 @@ async function resolveSynthesizerPreference(
     if (options.judgeModel !== undefined) {
       throw new UsageError(
         "--judge-model only applies to the harness-backed judge synthesizer.",
+      );
+    }
+    if (options.judgeTimeoutMs !== undefined) {
+      throw new UsageError(
+        "--judge-timeout-ms only applies to the harness-backed judge synthesizer.",
       );
     }
     return { preference: { strategy: options.synthesizer }, warnings: [] };
@@ -1104,7 +1132,8 @@ export function usage(): string {
     "  --transport <mode>        sdk (default) or cli (Claude Code only).",
     "  --judge-model <entry>     Override the default parent-model judge.",
     "  --synthesizer <strategy>  parent-agent, deterministic, opencode, cursor, or claude-code.",
-    "  --timeout-ms <n>          Per-worker timeout.",
+    `  --worker-timeout-ms <n>   Per-worker timeout in milliseconds (default: ${defaultWorkerTimeoutMs}).`,
+    `  --judge-timeout-ms <n>    Judge timeout in milliseconds (default: ${defaultJudgeTimeoutMs}).`,
     "  --worker-prompt-variant <suppression-only|upstream-minimal>",
     "                            Worker prompt variant (experiment-scoped).",
     "",

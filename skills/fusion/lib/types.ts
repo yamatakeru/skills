@@ -43,6 +43,8 @@ export interface PanelRequest {
   reasoning?: ReasoningPreference;
   workerEnvironment?: WorkerEnvironment;
   workerBudget?: WorkerBudget;
+  /** Judge Timeout; independent of `workerBudget.timeoutMs` (ADR 0049). */
+  judgeTimeoutMs?: number;
   provenancePolicy?: ProvenancePolicy;
 }
 
@@ -90,7 +92,13 @@ export interface DryRunReport {
     fallbacks: string[];
     validatedBy: string;
   }>;
-  judge?: { strategy: string; modelEntry?: string; harness?: HarnessKind };
+  workerTimeoutMs: number;
+  judge?: {
+    strategy: string;
+    modelEntry?: string;
+    harness?: HarnessKind;
+    timeoutMs?: number;
+  };
   manifest: { renderedPromptHash: string; sharedContextHash: string };
   warnings: string[];
 }

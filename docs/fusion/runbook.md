@@ -51,7 +51,7 @@ return `Web search cancelled` even though permissions allow the tool.
 # Default panel from a Claude Code parent, with recording.
 # By default the parent agent passes its own model; explicit substitutes are allowed.
 bun skills/fusion/bin/fusion-run.ts --parent-model fable --record \
-  --timeout-ms 240000 \
+  --worker-timeout-ms 240000 \
   "Return exactly the string: fusion-smoke-ok. Do not add any other text."
 ```
 
@@ -69,7 +69,7 @@ opencode run --model openai/gpt-5.5 'Use your bash tool to run this exact \
 shell command from the current directory, wait for it to finish, then reply \
 with only its "- Run status:" line and every "- Status:" line from stdout: \
 bun skills/fusion/bin/fusion-run.ts --models sonnet,opencode-go/deepseek-v4.1-flash \
---timeout-ms 240000 "Return exactly the string: fusion-smoke-ok. Do not add any other text."'
+--worker-timeout-ms 240000 "Return exactly the string: fusion-smoke-ok. Do not add any other text."'
 ```
 
 Expect: Run status ok; both workers ok.
@@ -246,7 +246,7 @@ Use an absolute skill path because the working directory is the fixture:
 ```bash
 bun <skill-dir>/bin/fusion-run.ts \
   --models opencode-go/deepseek-v4.1-flash,opencode-go/deepseek-v4.1-flash \
-  --synthesizer deterministic --record --json --timeout-ms 30000 \
+  --synthesizer deterministic --record --json --worker-timeout-ms 30000 \
   'Read fact.txt with the read tool. Report the fixture number in the required sections, in fewer than 100 words. Do not use any other tools.'
 ```
 

@@ -16,6 +16,9 @@
             },
             "strategy": {
               "type": "string"
+            },
+            "timeoutMs": {
+              "type": "number"
             }
           },
           "required": [
@@ -108,6 +111,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "workerTimeoutMs": {
+          "type": "number"
         }
       },
       "required": [
@@ -115,6 +121,7 @@
         "panelRunId",
         "transport",
         "resolvedModels",
+        "workerTimeoutMs",
         "manifest",
         "warnings"
       ],

@@ -10,6 +10,7 @@ import type {
   PermissionRule,
 } from "@opencode/client";
 import { deriveContainment } from "./containment";
+import { effectiveTimeoutMs } from "./defaults";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
 import {
   assertNoStrictToolPolicyGap,
@@ -187,7 +188,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     let errors: string[] | undefined;
     const controller = new AbortController();
     const streamController = new AbortController();
-    const timeoutMs = request.budget?.timeoutMs ?? 300_000;
+    const timeoutMs = effectiveTimeoutMs(request.budget);
     const timer = setTimeout(
       () =>
         controller.abort(

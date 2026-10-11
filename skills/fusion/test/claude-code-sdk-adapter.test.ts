@@ -112,6 +112,8 @@ describe("Fusion Claude Code SDK adapter", () => {
     const result = await adapter.runWorker(workerRequest());
 
     expect(executions[0]?.command).toBe("claude");
+    // An unbudgeted request still gets the harness-independent Worker Timeout.
+    expect(executions[0]?.timeoutMs).toBe(600_000);
     expect(result.status).toBe("ok");
     expect(result.output).toBe("final result");
     expect(result.modelUsed).toBe("claude-sonnet-4-5");

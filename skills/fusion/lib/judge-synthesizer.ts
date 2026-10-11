@@ -1,4 +1,4 @@
-import { mergeDefaultPolicies } from "./defaults";
+import { defaultJudgeTimeoutMs, mergeDefaultPolicies } from "./defaults";
 import { errorMessage } from "./errors";
 import { normalizeHarnessDescriptor } from "./harness";
 import {
@@ -143,20 +143,27 @@ export function buildJudgeRequest(
     extras: options.judgePromptExtras,
   });
 
-  return {
-    ...buildWorkerRequestBase({
-      request,
-      policies,
-      workerId: "judge",
-      prompt,
-      modelPreference,
-      harness,
-      contextManifest: createContextManifest({
-        renderedPrompt: prompt,
-        userTask: request.prompt,
-        sharedContext: request.sharedContext,
-      }),
+  const base = buildWorkerRequestBase({
+    request,
+    policies,
+    workerId: "judge",
+    prompt,
+    modelPreference,
+    harness,
+    contextManifest: createContextManifest({
+      renderedPrompt: prompt,
+      userTask: request.prompt,
+      sharedContext: request.sharedContext,
     }),
+  });
+
+  return {
+    ...base,
+    // Only the timeout is judge-specific; other budget fields stay shared.
+    budget: {
+      ...base.budget,
+      timeoutMs: request.judgeTimeoutMs ?? defaultJudgeTimeoutMs,
+    },
     blindnessPolicy: {
       noPeerOutputs: false,
       noDraftSynthesis: true,

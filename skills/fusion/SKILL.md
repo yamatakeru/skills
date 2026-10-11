@@ -52,6 +52,14 @@ If the intended model is unavailable, omit the entry; the CLI will warn and
 refill the slot from fallback lists. Without `--parent-model` or `--judge-model`,
 the judge uses the selected harness's default model with a warning.
 
+A run can take about 15 minutes with default timeouts: each worker may use up
+to 10 minutes, then the judge up to 5. Start the command so that your own
+tool-call time limit cannot end it first, for example as a background job whose
+completion you wait for, because an interrupted run loses the panel report.
+Keep the Fusion timeouts as the limit that actually applies; raise
+`--worker-timeout-ms` for tasks that need long investigations instead of
+relying on the caller to stop the run.
+
 Pass the background the panel needs through `--context` (a short brief you
 author) and `--context-file` (repeatable, embeds file contents). Workers only
 see the task prompt and this shared context; do not assume they know the
@@ -183,7 +191,12 @@ compatibility path.
 - `--synthesizer <parent-agent|deterministic|opencode|cursor|claude-code>`:
   harness-backed judge is the default; `parent-agent` and `deterministic` are
   explicit-only escapes.
-- `--timeout-ms <n>`: per-worker timeout.
+- `--worker-timeout-ms <n>`: wall-clock limit for each worker invocation;
+  default 600000 (10 minutes). Applies to every harness.
+- `--judge-timeout-ms <n>`: wall-clock limit for the judge invocation,
+  independent of the worker limit; default 300000 (5 minutes). Only valid with
+  the harness-backed judge. There is no unbounded mode; `--timeout-ms` has
+  been removed.
 
 Reasoning and budget options a harness cannot honor are reported as warnings
 in the panel report, never silently dropped.
