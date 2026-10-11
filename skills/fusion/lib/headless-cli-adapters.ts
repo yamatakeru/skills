@@ -150,15 +150,18 @@ export async function executeCommand(
     const stderr: Buffer[] = [];
     // Whether the harness exits or times out, stop whatever it left behind,
     // then release pipes a descendant outside the group may still hold.
+    // Cleanup is best-effort and must never withhold the result.
     let stopping: Promise<void> | undefined;
     const stopGroup = (): Promise<void> =>
-      (stopping ??= terminateProcessGroup(child).then(() => {
-        const release = setTimeout(() => {
-          child.stdout?.destroy();
-          child.stderr?.destroy();
-        }, pipeReleaseMs);
-        child.once("close", () => clearTimeout(release));
-      }));
+      (stopping ??= terminateProcessGroup(child)
+        .catch(() => undefined)
+        .then(() => {
+          const release = setTimeout(() => {
+            child.stdout?.destroy();
+            child.stderr?.destroy();
+          }, pipeReleaseMs);
+          child.once("close", () => clearTimeout(release));
+        }));
     const timeout =
       execution.timeoutMs === undefined
         ? undefined
@@ -171,7 +174,7 @@ export async function executeCommand(
     child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
     child.on("error", (error) => {
       if (timeout !== undefined) clearTimeout(timeout);
-      reject(error);
+      void stopGroup().then(() => reject(error));
     });
     child.on("exit", () => void stopGroup());
     child.on("close", async (exitCode) => {
