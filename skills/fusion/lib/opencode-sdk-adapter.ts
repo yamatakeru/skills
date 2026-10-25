@@ -137,7 +137,7 @@ function policyFingerprint(request: WorkerRequest): string {
   });
 }
 
-/** OpenCode 2.0.22+ machine protocol. There is deliberately no v1/CLI fallback. */
+/** OpenCode 2.0.22+/2.1.x machine protocol. There is deliberately no v1/CLI fallback. */
 export class OpenCodeSdkAdapter implements WorkerRunner {
   private readonly command: string;
   private readonly fetch: Fetch;
@@ -565,10 +565,11 @@ function assertServerInfo(
 }
 
 function assertSupportedVersion(value: unknown): asserts value is string {
-  const match = typeof value === "string" ? /^2\.0\.(\d+)$/u.exec(value) : null;
-  if (!match || Number(match[1]) < 22)
+  const match =
+    typeof value === "string" ? /^2\.([01])\.(\d+)$/u.exec(value) : null;
+  if (!match || (match[1] === "0" && Number(match[2]) < 22))
     throw new Error(
-      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires OpenCode 2.0.22+ in the 2.0 release line. No v1 or CLI fallback is available.`,
+      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires stable OpenCode 2.0.22+ or 2.1.x. No v1 or CLI fallback is available.`,
     );
 }
 

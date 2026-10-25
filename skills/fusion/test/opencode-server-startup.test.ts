@@ -40,7 +40,7 @@ Bun.serve({
     if (new URL(request.url).pathname !== "/api/info") return new Response(null, {status:500});
     if (scenario.startsWith("http-")) return new Response(null, {status:Number(scenario.slice(5))});
     return Response.json({
-      version: scenario === "unsupported-version" ? "2.1.0" : "2.0.22",
+      version: scenario === "unsupported-version" ? "2.2.0" : "2.0.22",
       pid: scenario === "invalid-identity" ? "invalid" : process.pid,
       urls: [], paths: {tmp: ${JSON.stringify(workspace)}}
     });
@@ -101,7 +101,7 @@ describe("OpenCode owned-server startup retry", () => {
     ["http-401", "HTTP 401"],
     ["http-403", "HTTP 403"],
     ["http-404", "HTTP 404"],
-    ["unsupported-version", "Unsupported OpenCode version 2.1.0"],
+    ["unsupported-version", "Unsupported OpenCode version 2.2.0"],
     ["invalid-identity", "Invalid OpenCode server identity"],
   ] as const) {
     test(`fails closed without retry for ${scenario}`, async () => {

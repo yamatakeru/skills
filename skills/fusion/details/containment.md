@@ -79,8 +79,8 @@ in gitignored areas, or remote API side effects.
 
 ## OpenCode Version Boundary
 
-The supported line is stable OpenCode 2.0.x from 2.0.22, with 2.0.22 as the
-measured target (ADR 0046/0048). Older versions, prereleases and unknown release
+The supported lines are stable OpenCode 2.0.x from 2.0.22 and any stable
+2.1.x, with 2.1.4 as the measured target (ADR 0046/0048/0050). Older versions, prereleases and unknown release
 lines fail explicitly. There is no v1 adapter or OpenCode CLI transport.
 The `sdk` label denotes the structured REST/SSE machine protocol, not a runtime
 npm dependency; `@opencode/client` is pinned for type-only imports.
