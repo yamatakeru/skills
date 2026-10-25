@@ -66,6 +66,12 @@ daily.
 The last-match dependency cannot be detected by the effective-rule check
 alone (ADR 0048). After each OpenCode upgrade, run the free contract check in
 the runbook, and re-read `Permission.evaluate` when `permission.ts` changes
-upstream. A paid live smoke on 2.1.x has not yet been recorded; until it is,
-runtime prompt and SSE behaviour on 2.1 is covered only by the no-model check
-and the adapter fixtures.
+upstream.
+
+The runbook's default-panel live smoke was run on 2.1.4 the same day. The
+OpenCode worker on `opencode-go/qwen3.8-flash` completed with exact output,
+`verified-effective` enforcement, the accepted `browser:*` appended deny noted,
+and a successful interrupt. The `openai/gpt-6.1-sol` worker failed with
+OpenCode's own `authentication token has expired`, which a plain `opencode run`
+with the same model reproduced outside Fusion; it is a credential issue, not a
+2.1 incompatibility. The Claude Code worker and judge completed.
