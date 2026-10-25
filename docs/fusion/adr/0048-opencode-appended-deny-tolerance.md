@@ -6,6 +6,8 @@ Accepted. Partially supersedes ADR 0046's exact ordered suffix verification and
 its OpenCode 2.0.12 target/boundary. ADR 0046's other transport, isolation,
 cleanup and evidence decisions remain unchanged. Tracking:
 [issue #24](https://github.com/yamatakeru/skills/issues/24).
+The supported boundary and type-only pin are partially superseded by
+[ADR 0050](0050-opencode-2-1-release-line.md).
 
 ## Decision
 
