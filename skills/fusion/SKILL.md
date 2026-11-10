@@ -97,7 +97,8 @@ full-panel consensus.
 - **Project `AGENTS.md` still reaches OpenCode workers.** The report's
   Instruction environment line says which instruction layers were blocked.
 - **Recover a crashed run's synthesis** with
-  `bin/fusion-judge-replay.ts` when the run was started with `--record`; see
+  `<skill-dir>/bin/fusion-judge-replay.ts` when the run was started with
+  `--record`; see
   `details/provenance.md`.
 
 ## When the CLI cannot run

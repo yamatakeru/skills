@@ -86,7 +86,8 @@ skills are excluded and built-in skills such as `code-review` stay as
 competitors) and records whether the first action invokes `fusion`.
 
 ```bash
-git show <base>:skills/fusion/SKILL.md > /tmp/fusion-skill-old.md
+BASE_REV=main  # revision holding the previous description
+git show "${BASE_REV}:skills/fusion/SKILL.md" > /tmp/fusion-skill-old.md
 bun scripts/fusion-trigger-eval.ts --skill old=/tmp/fusion-skill-old.md \
   --skill new=skills/fusion/SKILL.md --model sonnet --repeat 2
 ```

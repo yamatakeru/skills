@@ -44,10 +44,18 @@ async function firstSkillCall(skillFile: string, model: string, prompt: string):
     Bun.spawnSync(["git", "init", "-q"], { cwd: project });
     const proc = Bun.spawn(
       ["claude", "-p", "--setting-sources", "project", "--output-format", "stream-json", "--verbose", "--max-turns", "1", "--model", model, prompt],
-      { cwd: project, stdout: "pipe", stderr: "ignore" },
+      { cwd: project, stdout: "pipe", stderr: "pipe" },
     );
-    const lines = (await new Response(proc.stdout).text()).split("\n");
-    await proc.exited;
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    // --max-turns 1 ends a tool-using turn with a non-zero exit, so only a run
+    // without any assistant event counts as a harness failure.
+    if (exitCode !== 0 && !stdout.includes('"type":"assistant"'))
+      throw new Error(`claude exited ${exitCode} without a model turn: ${stderr.trim() || stdout.trim()}`);
+    const lines = stdout.split("\n");
     for (const line of lines) {
       if (!line.includes('"tool_use"')) continue;
       const event = JSON.parse(line) as { type?: string; message?: { content?: Array<{ type?: string; name?: string; input?: { skill?: string } }> } };
