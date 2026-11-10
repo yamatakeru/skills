@@ -17,12 +17,13 @@ bun run schema:fusion
 
 ## OpenCode v2 reference environment
 
-Target: `opencode v2.1.4`; supported boundary: stable 2.0.x >= 2.0.22 or
-stable 2.1.x (ADR 0050). Rerun the free contract check below after every
+Target: `opencode v2.2.6`; supported boundary: stable 2.0.x >= 2.0.22,
+stable 2.1.x, or stable 2.2.x (ADR 0051). Rerun the free contract check below after every
 OpenCode upgrade; v2 patches arrive frequently and have changed effective agent
 rules before. The check cannot detect a change from last-match rule evaluation,
 so also re-read upstream `packages/core/src/permission.ts` (`evaluate`) when it
-changes (ADR 0048/0050).
+changes (ADR 0048/0050/0051). Dry-run does not start the owned server, so it
+cannot reveal an unsupported release line; this check can.
 The v1 adapter and OpenCode CLI transport are removed (ADR 0046). The pinned
 `@opencode/client` dependency is type-only; the installed skill needs no npm
 runtime packages. Use SDK transport for OpenCode workers and judge.
@@ -76,6 +77,25 @@ bun skills/fusion/bin/fusion-run.ts --models sonnet,opencode-go/deepseek-v4.1-fl
 ```
 
 Expect: Run status ok; both workers ok.
+
+## Trigger check: skill description (paid)
+
+Run after changing the `description` in `skills/fusion/SKILL.md`. Each case
+runs one isolated Claude Code turn (`--setting-sources project`, so user-level
+skills are excluded and built-in skills such as `code-review` stay as
+competitors) and records whether the first action invokes `fusion`.
+
+```bash
+BASE_REV=main  # revision holding the previous description
+git show "${BASE_REV}:skills/fusion/SKILL.md" > /tmp/fusion-skill-old.md
+bun scripts/fusion-trigger-eval.ts --skill old=/tmp/fusion-skill-old.md \
+  --skill new=skills/fusion/SKILL.md --model sonnet --repeat 2
+```
+
+Cases live in `scripts/fusion-trigger-cases.json`. Compare variants on the same
+model; the score is only the first action, so a model that gathers context
+with Bash before invoking the skill counts as not fired. It measures Claude
+Code only, not other harnesses' skill listings.
 
 ## Live smoke: gated test suite (paid)
 

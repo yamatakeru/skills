@@ -1,19 +1,21 @@
 ---
 name: fusion
 description: >-
-  Fusion-inspired blind-panel deliberation for comparison-shaped tasks—deep
-  research, architecture, design review, code review, and other work where
-  independent perspectives are likely to change or sharpen the conclusion. The
-  bundled Bun CLI runs neutral same-prompt workers, then a harness-backed judge
-  compares worker outputs so the parent agent can write the final answer.
+  Runs a blind panel of different models on the same task, then returns a
+  judge's comparison (consensus, contradictions, gaps) for the calling agent to
+  synthesize. Use when independent second opinions are likely to change or
+  sharpen a conclusion: open research questions, architecture or design
+  choices, critique of a plan or spec, or a multi-model second-opinion review.
+  Trigger on "fusion", "blind panel", "second opinion", "ask other models",
+  "セカンドオピニオン", "複数モデルで". Not for narrow lookups or routine
+  single-pass code review.
 license: MIT
 compatibility: >-
-  SKILL.md-compatible agents with shell access and Bun installed. Uses the
-  bundled self-contained TypeScript CLI; no node_modules are required inside the
-  skill directory. OpenCode requires stable 2.0.x >= 2.0.22 or 2.1.x and SDK transport;
-  OpenCode v1 and its former CLI transport are unsupported.
+  SKILL.md-compatible agents with shell access and Bun installed. The bundled
+  TypeScript CLI needs no node_modules. OpenCode workers need stable OpenCode
+  2.0.22+, 2.1.x, or 2.2.x.
 metadata:
-  version: "0.14.2"
+  version: "0.15.0"
   kind: "blind-panel synthesis"
   mode: "blind"
   canonical-runtime: "bun-cli"
@@ -21,275 +23,121 @@ metadata:
 
 # Fusion
 
-Fusion is a skill-level blind-panel deliberation protocol inspired by
-OpenRouter Fusion's panel-and-synthesis workflow. It is not an OpenRouter
-Fusion API wrapper and does not call the OpenRouter Fusion API directly.
+Fusion asks several models the same question independently, has a separate
+judge compare their answers, and leaves the final answer to you, the calling
+agent. It is inspired by OpenRouter Fusion's panel-and-synthesis workflow but
+does not call the OpenRouter API.
 
-Use Fusion for comparison-shaped tasks—deep research, design exploration,
-review-angle sweeps, and other ambiguous or open-ended work where independent
-perspectives are likely to change or sharpen the conclusion—or when a panel is
-explicitly requested. Match the panel to the stakes: cheap-model panels make
-casual use reasonable for exploratory work, while flagship-mixed panels suit
-high-stakes or hard-to-reverse decisions. Answer trivial or narrow tasks
-directly.
+Match the panel to the stakes: the default mixed panel suits hard-to-reverse
+decisions, and cheaper `--models` lists are fine for exploratory work. Answer
+trivial or narrow tasks directly instead.
 
-## Canonical Execution Path
-
-The bundled CLI is the single canonical panel execution path. Run it through
-the parent harness shell tool:
+## Run the panel
 
 ```bash
-bun <skill-dir>/bin/fusion-run.ts --parent-model <its own model id> "task"
+bun <skill-dir>/bin/fusion-run.ts --parent-model <your model id> \
+  --context "<brief>" "task"
 ```
 
-`<skill-dir>` is the installed Fusion skill directory. Pass the parent agent's
-own model as `--parent-model` by default whenever it can be expressed as a
-supported model entry. You may explicitly select a different supported model
-for this entry: it selects the default panel's parent slot and the default judge
-model preference, not the calling agent's model or the author of the final
-answer. The CLI does not discover the calling agent's model automatically.
-If the intended model is unavailable, omit the entry; the CLI will warn and
-refill the slot from fallback lists. Without `--parent-model` or `--judge-model`,
-the judge uses the selected harness's default model with a warning.
+- `<skill-dir>` is this skill's directory. Bun is required; if `bun` is
+  missing, tell the user to install it from https://bun.sh/docs/installation
+  instead of improvising another path.
+- Pass your own model as `--parent-model` whenever it is a supported entry. It
+  fills the default panel's parent seat and selects the judge model; it does
+  not change who writes the final answer. If your model is not expressible,
+  omit it and accept the CLI's warning.
+- Workers see only the task and shared context, not this conversation. Put
+  the background they need in `--context` (a brief you write) and
+  `--context-file` (repeatable, embeds a file). Use `--read-root <dir>` when
+  workers must read outside the workspace.
+- Write the task and context neutrally. Every worker gets the same prompt;
+  adding roles, personas, debate positions, or a preferred answer breaks the
+  blind panel.
+- `--models a,b,c` replaces the default panel. `--judge-model` changes the
+  judge. `--effort` raises worker reasoning for high-stakes tasks. Append
+  `--dry-run` to the exact command to see which models resolve. `--help`
+  lists every option and the model alias table.
 
-A run can take about 15 minutes with default timeouts: each worker may use up
-to 10 minutes, then the judge up to 5. Always start the command so that your
-own tool-call time limit cannot end it first, regardless of how small the task
-looks, for example as a background job whose completion you wait for, because
-an interrupted run loses the panel report.
-Keep the Fusion timeouts as the limit that actually applies; raise
-`--worker-timeout-ms` for tasks that need long investigations instead of
-relying on the caller to stop the run.
+## Read the report and answer
 
-Pass the background the panel needs through `--context` (a short brief you
-author) and `--context-file` (repeatable, embeds file contents). Workers only
-see the task prompt and this shared context; do not assume they know the
-conversation. For high-stakes tasks you may raise worker reasoning depth with
-`--effort`; the default leaves each provider's default untouched.
+The report lists each worker's output, then a judge analysis with five
+findings: consensus, contradictions, partial coverage, unique insights, and
+blind spots. The judge compares; it does not pick a winner or write the answer.
 
-Bun is required. If `bun` is missing, first surface a clear error with
-installation guidance, for example: "Fusion requires Bun. Install it from
-https://bun.sh/docs/installation and rerun the CLI." Never substitute another
-execution path silently; the only permitted degradation is the announced
-Emergency Fallback described below.
+Verify load-bearing claims with your own tools where it matters, then write the
+final answer yourself from the judge analysis and the worker outputs. Lead with
+well-supported consensus, keep real contradictions visible, and name blind
+spots that limit confidence.
 
-## Judge-Backed Synthesis
+If the run status is `failed` (no worker succeeded), report the failure and
+its reasons and offer a retry; do not answer as if a panel had run. Otherwise,
+if the judge failed or did not run, the report says so. Synthesize from the
+deterministic audit synthesis when the report includes one, otherwise
+directly from the worker outputs. If the run status is
+`partial`, say which workers are missing and do not present the result as
+full-panel consensus.
 
-By default the CLI runs the panel, then invokes a separate no-tools judge
-through the same headless adapter path. The judge compares worker outputs; it
-does not merge them, choose a winner, or write the final answer.
+## Gotchas
 
-Read the CLI report, verify load-bearing claims with your own read tools where
-needed, then the parent agent must author the final answer grounded in the
-judge analysis and worker outputs. The judge analysis uses these five findings:
+- **A run can take about 15 minutes** (workers up to 10, judge up to 5). Start
+  it so your own tool-call time limit cannot kill it first, for example as a
+  background job you wait on, even for small tasks; an interrupted run loses
+  the report. For long investigations raise `--worker-timeout-ms` rather than
+  stopping the run yourself.
+- **Exit code 0 does not mean every worker succeeded.** `partial` also exits 0.
+  Read the run status and each worker's status.
+- **Dry-run is not a live check.** It resolves models without starting the
+  OpenCode server or calling providers, so expired provider credentials (for
+  example `Request failed: 401`) and an unsupported OpenCode version appear
+  only as worker errors in a real run.
+- **`--models` drops the parent seat**, but the judge still follows
+  `--parent-model`. Set `--judge-model` when you want a different judge, and
+  keep it on a harness one of the workers uses (a Claude judge needs a Claude
+  worker, an OpenCode judge an OpenCode worker); otherwise the real run loses
+  the judge even though dry-run passes.
+- **Claude aliases float.** `fable`, `opus`, `sonnet`, and `haiku` resolve to the
+  latest model of that tier; pass a full `claude-*` ID to pin one.
+- **Workers get read-only tools, not a sandbox.** Edit tools, non-allowlisted
+  commands, and delegation are denied, so ask for patches or plans, not
+  changes. The shell allowlist can still be abused (for example `ls > f`).
+  The Workspace watchdog compares Git status and refs before and after the
+  run, so it is not exhaustive: further edits to files already dirty before the
+  run can stay `clean`, it is `not-applicable` outside a Git work tree, and it
+  cannot see gitignored areas, writes outside the workspace, or remote side
+  effects. Use an OS-level sandbox when a task needs real isolation.
+- **Denied reads do not crash a worker, and its answer may not mention
+  them.** The Markdown report shows only worker Warnings, which can omit or
+  summarize denials. When source coverage matters, run with `--record` (or
+  `--json`) from the start and check each worker's
+  `toolUseSummary.deniedRequests` and `complianceEvidence.notes`; a rerun
+  produces different worker outputs.
+- **Project `AGENTS.md` still reaches OpenCode workers.** The report's
+  Instruction environment line says which instruction layers were blocked.
+- **Recover a crashed run's synthesis** with
+  `<skill-dir>/bin/fusion-judge-replay.ts` when the run was started with
+  `--record`; see
+  `details/provenance.md`.
 
-1. **Consensus**: what independent workers converged on.
-2. **Contradictions**: mutually exclusive claims or recommendations.
-3. **Partial coverage**: important topics only some workers covered.
-4. **Unique insights**: valuable single-worker observations.
-5. **Blind spots**: relevant questions or evidence nobody addressed.
+## When the CLI cannot run
 
-If the judge fails, times out, or returns invalid core JSON, the run remains
-usable: the report warns, omits structured `analysis`, and falls back to the
-previous parent-agent flow using raw worker outputs plus deterministic audit
-synthesis. Explicit `--synthesizer parent-agent` and `--synthesizer
-deterministic` remain escape hatches.
+Only if the CLI cannot run at all (no Bun after telling the user, or no usable
+harness), you may simulate the panel yourself: announce the degraded status
+first, keep the same prompt in separate passes, produce the same five
+findings, and state that this is not a full-compliance Fusion panel. Do not
+substitute any other execution path silently.
 
-## Default Panel Composition
+## Further reading
 
-The default panel has three workers. Same-harness panels are allowed. Default
-slots are filled in this priority order:
+Read these only when the situation calls for it:
 
-1. Parent model slot from `--parent-model` (the caller's own model by default;
-   explicit overrides are allowed).
-2. Strong generalist slot through the `strong-generalist` alias.
-3. Efficient generalist slot through the `efficient-generalist` alias.
-
-If `--parent-model` is missing, the CLI warns and refills that slot from the
-bundled alias fallback lists. Default duplicate model IDs are deduped, then
-refilled from unused strong candidates followed by unused efficient candidates.
-If those distinct candidates are exhausted for an effective panel size of
-three or fewer, remaining seats repeat only the resolved parent model under the
-`parent-repeat` slot and emit degraded warnings. Without a resolved parent, or
-at four or more panelists, insufficiency remains an error. Explicit `--models`
-duplicates remain allowed.
-
-Automatic default candidates are privacy-eligible only; free models are
-available solely through explicit `--models` entries.
-
-## Model Selection
-
-`--models <comma-list>` replaces the default composition entirely.
-It removes the default parent slot but does not override the judge preference
-derived from `--parent-model`.
-
-Model entry routing:
-
-- `provider/model` routes to OpenCode.
-- Claude aliases `fable`, `opus`, `sonnet`, `haiku`, and `claude-*` IDs route
-  to Claude Code.
-- `strong-generalist`, `efficient-generalist`, `openai-flagship`, and
-  `budget-smart` resolve through the bundled alias table. The latter two are
-  compatibility aliases and are not used by the default composition.
-- `opencode:<entry>` and `claude-code:<entry>` force those harnesses.
-- `cursor:<model-id>` selects Cursor. Cursor is explicit-prefix only: it is
-  never selected by aliases, bare model patterns, or default composition.
-- Unknown entries are errors, not guesses.
-
-OpenCode-backed entries are checked against `opencode models`. On v2 this may
-start a shared background catalog service, including during dry-run; Fusion
-executes workers on a separate owned server and does not stop that shared service.
-An initially empty successful catalog is retried within a bounded window.
-Claude Code has
-no model enumeration command; Claude-backed entries use latest aliases and
-`--fallback-model`, then are validated by the worker attempt. Cursor-backed
-entries are checked against `cursor-agent models`.
-
-Use `--help` to inspect the complete runtime alias table and ordered candidate
-chains. Use `--dry-run` on the intended invocation to see the candidates that
-actually resolve, their slot names, and any fallback or degraded warnings.
-
-The judge model preference defaults to the resolved `--parent-model` entry,
-even when `--models` replaces the panel. Use `--judge-model <entry>` to override
-it; judge model entries use the same routing rules as panel model entries.
-This is a preference, not a guarantee that worker and judge invocation-time
-fallbacks use the same observed model. Cursor can be used for judging with
-`--judge-model cursor:<model-id>` or `--synthesizer cursor` on the SDK transport.
-
-In the library contract, `PanelSpec.workers` is the per-slot preference list:
-each slot may carry `{ model, harness }`. There is no legacy parallel-array
-compatibility path.
-
-## CLI Options
-
-- `--parent-model <entry>`: model entry for the default parent slot and judge;
-  normally the calling agent's own model, but explicit overrides are allowed.
-  Does not change the calling agent's model.
-- `--models <comma-list>`: explicit model list; replaces default composition.
-- `--panelists <n>`: panel size for default composition; default is 3,
-  maximum is 20.
-- `--context <text>`: shared context brief given to every worker.
-- `--context-file <path>`: embed a file into the shared context; repeatable.
-- `--effort <low|medium|high|xhigh>`: worker reasoning effort; default is the
-  provider default.
-- `--reasoning-max-tokens <n>`: worker reasoning token budget.
-- `--max-turns <n>`: per-worker turn budget where the harness supports it.
-- `--dry-run`: preflight this exact invocation without running workers or
-  judge.
-- `--transport <sdk|cli>`: worker and judge transport; default is `sdk`.
-  `cli` is an explicit opt-in for Claude Code only, with degraded compliance
-  evidence. OpenCode and Cursor entries (workers or judge) under `cli` are
-  usage errors; there is no silent transport fallback.
-- `--read-root <dir>`: declare a directory outside the workspace as readable
-  (recursive) for every worker in the run; repeatable.
-- `--record`: write split artifacts under `.fusion-runs/<panelRunId>/` when
-  the directory is git-ignored. With `--dry-run`, it warns and records nothing.
-- `--json`: print the structured report for this invocation instead of
-  Markdown: `PanelResult` for panel runs, `DryRunReport` with
-  `mode: "dry-run"` for dry runs.
-- `--judge-model <entry>`: override the judge model; defaults to
-  `--parent-model` when available.
-- `--synthesizer <parent-agent|deterministic|opencode|cursor|claude-code>`:
-  harness-backed judge is the default; `parent-agent` and `deterministic` are
-  explicit-only escapes.
-- `--worker-timeout-ms <n>`: wall-clock limit for each worker invocation;
-  default 600000 (10 minutes). Applies to every harness.
-- `--judge-timeout-ms <n>`: wall-clock limit for the judge invocation,
-  independent of the worker limit; default 300000 (5 minutes). Only valid with
-  the harness-backed judge. There is no unbounded mode; `--timeout-ms` has
-  been removed.
-
-Reasoning and budget options a harness cannot honor are reported as warnings
-in the panel report, never silently dropped.
-
-For preflight, compose the exact command you intend to run and append
-`--dry-run`. The CLI still resolves composition, judge preference, transport
-guards, and the context manifest, then exits before constructing the runtime or
-recorder. Dry-run invokes no workers and no judge, but it does shell out to
-`opencode models` and `cursor-agent models` when those harness listings are
-needed for availability checks.
-
-Default Markdown output starts with run status, compliance tier, and warnings,
-then lists each worker's full output with worker id, model, harness, and
-status, then the judge analysis. When the judge did not run or failed, the
-report shows deterministic audit synthesis instead. Panel exit code is 0 for
-`ok` and `partial`, and 1 for `failed` or usage errors. Dry-run exit code is 0
-only when the full composition resolves cleanly, otherwise 1 with the same
-diagnostic the real invocation would raise.
-
-## Worker Rules
-
-All workers must receive the same full task prompt and shared context. Do not
-assign roles, personas, debate positions, or specialty lenses. Do not show any
-worker peer outputs, draft synthesis, or panel conclusions before it returns.
-Do not request, expose, synthesize, or record private chain-of-thought; workers
-should provide concise reasoning summaries, evidence, sources, assumptions,
-uncertainties, and verification notes instead.
-
-Default worker tools are read-only local access, a read-only bash allowlist
-(git inspection plus read-only search and listing commands), and web search
-and web fetch where the harness provides them. Workers must not edit or write
-files, run destructive or non-allowlisted shell commands, spawn subagents,
-delegate subtasks, or recursively invoke panels.
-
-Reads outside the workspace are denied unless the parent declares the
-directory with `--read-root`. A denied request surfaces to the worker as a
-structured tool error: the worker keeps running and discloses the denial in
-its answer instead of being dropped from the panel.
-
-The Instruction Environment is a standing harness input: Claude Code blocks
-user, project, and local memory via an empty `--setting-sources` list and auto
-memory via `--settings '{"autoMemoryEnabled":false}'`; OpenCode SDK
-blocks user/global instruction layers by redirecting both `OPENCODE_CONFIG_DIR`
-and `XDG_CONFIG_HOME` and unsetting `OPENCODE_CONFIG`, while project and ancestor
-`AGENTS.md` still inject. Cursor account-level User Rules remain injected
-regardless of `CURSOR_CONFIG_DIR`. Worker and judge prompts
-carry injection-subordination clauses, and runs disclose these facts in
-compliance notes and the report's Instruction environment header line.
-
-OpenCode uses an authenticated, run-scoped v2 server, native ordered permission
-rules, and a fresh session for each worker and judge. It verifies the actual
-server version and effective rules before invoking models, waits for terminal
-execution events, and interrupts sessions before disconnecting. Unknown release
-lines fail explicitly; no v1 compatibility path remains. Web search uses the
-owner-approved **Exa** provider in the run-scoped config, without changing user
-settings or automatically switching providers. A provider failure stays visible
-as a tool failure. The judge remains no-tools.
-
-Cursor workers use a run-scoped scratch cwd with project hooks to enforce the
-read-only bash allowlist, recursive delegation denial, and declared read-root
-semantics while keeping web tools enabled. Undocumented `CURSOR_CONFIG_DIR`
-and headless hook loading remain smoke-monitored environment surfaces.
-
-The shell allowlist is enforced but is not a sandbox. Reports disclose
-containment separately from protocol compliance; see
-[`details/containment.md`](details/containment.md) for the threat model,
-residual holes, evidence layers, and crash recovery.
-
-## Partial Results
-
-Partial failure is allowed by default. If at least one worker succeeds, the CLI
-continues with status `partial` and discloses failed workers and reasons. If
-all workers fail, the run status is `failed`. The parent-authored synthesis and
-final answer must acknowledge missing workers and must not present partial
-results as full-panel consensus.
-
-## Emergency Fallback
-
-If the CLI cannot run at all, for example because Bun is missing (after
-surfacing the installation error above) or no usable harness exists, an
-internal same-agent blind-panel simulation is permitted only as an emergency
-fallback. Announce the degraded status before producing
-results. Keep the same prompt separated across passes, preserve the five
-findings, and state that this is not a full-compliance Fusion panel. Removal of
-this fallback will be reconsidered once the skill matures.
-
-## Supplementary Details
-
-The runtime protocol above is complete and authoritative. These files are
-optional background and must not contradict the CLI path:
-
-- `details/blind-panel.md`
-- `details/synthesis.md`
-- `details/provenance.md`
-- `details/containment.md`
+- `details/runtime.md`: how model entries route, how the default panel is
+  composed and refilled, judge selection, the full option semantics, exit
+  codes, and per-harness instruction blocking. Read it when a resolution,
+  warning, or harness behavior in the report is unclear.
+- `details/containment.md`: threat model, residual holes, and evidence layers
+  behind the report's Containment and Enforcement lines. Read it before relying
+  on containment for a sensitive task.
+- `details/provenance.md`: `--record` artifacts, crash markers, and judge
+  replay.
+- `details/blind-panel.md` and `details/synthesis.md`: background on panel
+  design and synthesis.
