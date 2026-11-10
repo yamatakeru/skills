@@ -106,8 +106,11 @@ full-panel consensus.
   cannot see gitignored areas, writes outside the workspace, or remote side
   effects. Use an OS-level sandbox when a task needs real isolation.
 - **Denied reads do not crash a worker, and its answer may not mention
-  them.** When a source matters, check the worker's Warnings in the report and
-  `toolUseSummary.deniedRequests` in `--json` output before trusting coverage.
+  them.** The Markdown report shows only worker Warnings, which can omit or
+  summarize denials. When source coverage matters, run with `--record` (or
+  `--json`) from the start and check each worker's
+  `toolUseSummary.deniedRequests` and `complianceEvidence.notes`; a rerun
+  produces different worker outputs.
 - **Project `AGENTS.md` still reaches OpenCode workers.** The report's
   Instruction environment line says which instruction layers were blocked.
 - **Recover a crashed run's synthesis** with

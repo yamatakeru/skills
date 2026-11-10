@@ -88,7 +88,17 @@ async function firstSkillCall(skillFile: string, model: string, prompt: string):
 }
 
 const options = parse(Bun.argv.slice(2));
-const cases = (await Bun.file(options.cases).json()) as TriggerCase[];
+const cases = parseCases(await Bun.file(options.cases).json(), options.cases);
+
+function parseCases(value: unknown, source: string): TriggerCase[] {
+  if (!Array.isArray(value)) throw new Error(`${source}: expected an array of trigger cases`);
+  return value.map((item, index) => {
+    const entry = item as Partial<TriggerCase> | null;
+    if (typeof entry?.id !== "string" || typeof entry.prompt !== "string" || typeof entry.expect !== "boolean")
+      throw new Error(`${source}[${index}]: expected { id: string, prompt: string, expect: boolean }`);
+    return { id: entry.id, prompt: entry.prompt, expect: entry.expect };
+  });
+}
 for (const variant of options.variants) {
   let correct = 0;
   let total = 0;
