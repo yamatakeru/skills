@@ -1,0 +1,12 @@
+[
+  { "id": "ja-second-opinion-design", "expect": true, "prompt": "キャッシュ層を Redis から SQLite に移す設計案について、複数モデルでセカンドオピニオンが欲しい。" },
+  { "id": "en-second-opinion-architecture", "expect": true, "prompt": "Get a second opinion from other models on whether we should split our monolith into separate services." },
+  { "id": "ja-fusion-research", "expect": true, "prompt": "fusion で調べて: Bun と Node.js の起動時間の差を生んでいる主な要因は何か。" },
+  { "id": "en-blind-panel-critique", "expect": true, "prompt": "Our draft ADR proposes event sourcing for the billing service. Run a blind panel to critique it before we decide." },
+  { "id": "ja-independent-spec-review", "expect": true, "prompt": "この仕様書のレビューを、他のモデルにもそれぞれ独立にやらせて結果を比較したい。" },
+  { "id": "en-routine-code-review", "expect": false, "prompt": "Review my staged changes for bugs before I commit." },
+  { "id": "ja-routine-pr-review", "expect": false, "prompt": "この PR のコードレビューをお願い。" },
+  { "id": "en-narrow-lookup", "expect": false, "prompt": "What is the default port of PostgreSQL?" },
+  { "id": "en-fix-test", "expect": false, "prompt": "Fix the failing test in src/foo.test.ts." },
+  { "id": "ja-rename", "expect": false, "prompt": "リポジトリ全体で変数名 userId を accountId に置き換えて。" }
+]

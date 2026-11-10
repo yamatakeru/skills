@@ -71,6 +71,17 @@ covers).
   files, which is the failure the original convention guarded against.
 - **Parent-facing guide plus conditional references** (chosen).
 
+## Evidence (2026-11-10)
+
+The paid trigger check in the runbook compared the previous and new
+descriptions on ten cases (five should fire, five should not, including
+routine code review that the built-in `code-review` skill competes for), two
+repeats each. Sonnet scored 20/20 for both; Haiku scored 14/20 (previous) and
+15/20 (new), with misses on prompts that first look for a referenced document
+with Bash. The rewrite therefore showed no measurable triggering change; it is
+justified by length, scope clarity, and conformance to the guidance above,
+not by a measured trigger gain.
+
 ## Consequences
 
 New failure modes found in real runs are added to the Gotchas section.

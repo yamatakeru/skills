@@ -78,6 +78,24 @@ bun skills/fusion/bin/fusion-run.ts --models sonnet,opencode-go/deepseek-v4.1-fl
 
 Expect: Run status ok; both workers ok.
 
+## Trigger check: skill description (paid)
+
+Run after changing the `description` in `skills/fusion/SKILL.md`. Each case
+runs one isolated Claude Code turn (`--setting-sources project`, so user-level
+skills are excluded and built-in skills such as `code-review` stay as
+competitors) and records whether the first action invokes `fusion`.
+
+```bash
+git show <base>:skills/fusion/SKILL.md > /tmp/fusion-skill-old.md
+bun scripts/fusion-trigger-eval.ts --skill old=/tmp/fusion-skill-old.md \
+  --skill new=skills/fusion/SKILL.md --model sonnet --repeat 2
+```
+
+Cases live in `scripts/fusion-trigger-cases.json`. Compare variants on the same
+model; the score is only the first action, so a model that gathers context
+with Bash before invoking the skill counts as not fired. It measures Claude
+Code only, not other harnesses' skill listings.
+
 ## Live smoke: gated test suite (paid)
 
 Fragile-surface monitors (ADR 0034/0045 fragility registers) run as
