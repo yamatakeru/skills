@@ -5,6 +5,8 @@
 Accepted. Partially supersedes ADR 0048's supported boundary ("stable OpenCode
 2.0.x from 2.0.22") and its 2.0.22 type-only pin. ADR 0048's appended-deny
 tolerance and every other ADR 0046/0048 decision remain unchanged.
+The supported boundary and type-only pin are partially superseded by
+[ADR 0051](0051-opencode-2-2-release-line.md).
 
 ## Context
 
