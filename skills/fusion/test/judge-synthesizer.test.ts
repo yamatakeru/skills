@@ -32,6 +32,58 @@ describe("Fusion judge synthesizer prompt", () => {
     });
   });
 
+  test("selects a registered judge harness that no worker uses", () => {
+    const registry = new AdapterRegistry({ transport: "sdk" })
+      .register("opencode", okRunner())
+      .register("claude-code", okRunner());
+
+    const request = buildJudgeRequest(
+      {
+        panelRequest: {
+          ...panelRequest({
+            synthesizer: {
+              strategy: "claude-code",
+              model: { provider: "anthropic", model: "sonnet" },
+            },
+          }),
+          harnessSelectionPolicy: { availableHarnesses: ["opencode"] },
+        },
+        workerRequests: [],
+        workerResults: [],
+        events: [],
+      },
+      { harnessSelector: registry },
+    );
+
+    expect(request.harness).toEqual({
+      kind: "claude-code",
+      invocation: "headless",
+      transport: "sdk",
+    });
+  });
+
+  test("still rejects a judge harness without a registered runner", () => {
+    const registry = new AdapterRegistry({ transport: "cli" }).register(
+      "claude-code",
+      okRunner(),
+    );
+
+    expect(() =>
+      buildJudgeRequest(
+        {
+          panelRequest: {
+            ...panelRequest({ synthesizer: { strategy: "opencode" } }),
+            harnessSelectionPolicy: { availableHarnesses: ["claude-code"] },
+          },
+          workerRequests: [],
+          workerResults: [],
+          events: [],
+        },
+        { harnessSelector: registry },
+      ),
+    ).toThrow("Selected Fusion harness is not registered: opencode");
+  });
+
   test("renders the exact injection-subordination clause in contract order", () => {
     const prompt = renderJudgePrompt({
       task: "Compare answers.",
