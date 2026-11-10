@@ -17,6 +17,7 @@ import {
   UsageError,
 } from "../bin/fusion-run";
 import {
+  buildJudgeRequest,
   ClaudeCodeHeadlessCliAdapter,
   ClaudeCodeSdkAdapter,
   CursorSdkAdapter,
@@ -332,6 +333,38 @@ describe("Fusion CLI parsing", () => {
       strategy: "claude-code",
       model: { model: "haiku", fallbacks: [] },
     });
+  });
+
+  test("runs a judge on a harness that no --models worker uses", async () => {
+    const prepared = await preparePanelRequest(
+      parseArgs([
+        "--models",
+        "claude-code:sonnet",
+        "--synthesizer",
+        "opencode",
+        "Judge on another harness.",
+      ]),
+      { cwd: "/tmp", panelRunId: "judge-other-harness" },
+    );
+    expect(prepared.request.harnessSelectionPolicy.availableHarnesses).toEqual([
+      "claude-code",
+    ]);
+
+    const runtime = createFusionRuntime("sdk");
+    try {
+      const judgeRequest = buildJudgeRequest(
+        {
+          panelRequest: prepared.request,
+          workerRequests: prepared.workerRequests,
+          workerResults: [],
+          events: [],
+        },
+        { harnessSelector: runtime.registry },
+      );
+      expect(judgeRequest.harness?.kind).toBe("opencode");
+    } finally {
+      await runtime.dispose();
+    }
   });
 
   test("allows explicit cursor judge strategy without an implicit judge model", async () => {

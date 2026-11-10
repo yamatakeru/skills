@@ -33,6 +33,12 @@ selection; `pi` remains a name-only candidate.
 If `availableHarnesses` is provided as an empty list, no harness is selectable;
 the selector should fail rather than silently choosing a default.
 
+In the reference CLI, `availableHarnesses` lists the worker harnesses. A
+harness-backed judge strategy is a separate explicit selection: for judge
+selection only, a non-empty list is extended with the judge harness, so a judge
+may run on a harness no worker uses as long as the runtime registers that
+harness's runner.
+
 A harness is full-capable only when its adapter can:
 
 - create or prove a fresh worker session;

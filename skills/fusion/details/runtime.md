@@ -79,13 +79,9 @@ preference and uses the same routing rules as worker entries. The preference
 does not guarantee that worker and judge invocation-time fallbacks land on the
 same observed model.
 
-Known limitation: the judge can only run on a harness that at least one worker
-uses. With explicit `--models` on one harness and a judge entry routed to
-another (for example OpenCode-only workers with `--judge-model sonnet`),
-dry-run passes but the real run fails judge selection with `harness preference
-is not available`, produces neither judge analysis nor deterministic audit
-synthesis, and reports `partial`. Until this is fixed, keep the judge on a
-harness that one of the `--models` workers uses.
+The judge harness does not have to match any worker harness: an explicit
+judge strategy is added to the panel's worker harness list for judge selection
+only, and the runtime still rejects a harness without a registered runner.
 
 Cursor can judge with `--judge-model cursor:<model-id>` or
 `--synthesizer cursor` on the SDK transport. `--synthesizer parent-agent` and

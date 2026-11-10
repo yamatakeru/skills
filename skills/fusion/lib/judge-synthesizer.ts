@@ -14,6 +14,8 @@ import {
 import type {
   DefaultPolicies,
   HarnessDescriptor,
+  HarnessKind,
+  HarnessSelectionPolicy,
   HarnessSelector,
   ModelPreference,
   PanelRequest,
@@ -307,14 +309,35 @@ function selectJudgeHarness(
   harnessSelector: HarnessSelector,
 ): HarnessDescriptor {
   const strategy = request.synthesizer?.strategy;
+  const judgeHarness = isHarnessSynthesizerStrategy(strategy)
+    ? strategy
+    : undefined;
   return harnessSelector.selectHarness({
     workerId: "judge",
     modelPreference,
-    harnessPreference: isHarnessSynthesizerStrategy(strategy)
-      ? { kind: strategy }
-      : undefined,
-    policy: request.harnessSelectionPolicy,
+    harnessPreference:
+      judgeHarness === undefined ? undefined : { kind: judgeHarness },
+    policy: judgeSelectionPolicy(request.harnessSelectionPolicy, judgeHarness),
   });
+}
+
+// The panel policy lists the worker harnesses. An explicit judge strategy is
+// its own selection, so it joins that list; the registry still rejects a
+// harness without a registered runner. An explicit empty list stays empty.
+function judgeSelectionPolicy(
+  policy: HarnessSelectionPolicy,
+  judgeHarness: HarnessKind | undefined,
+): HarnessSelectionPolicy {
+  const available = policy.availableHarnesses;
+  if (
+    judgeHarness === undefined ||
+    available === undefined ||
+    available.length === 0 ||
+    available.includes(judgeHarness)
+  ) {
+    return policy;
+  }
+  return { ...policy, availableHarnesses: [...available, judgeHarness] };
 }
 
 function noToolsPolicy(panelTools: ToolsPolicy): ToolsPolicy {
