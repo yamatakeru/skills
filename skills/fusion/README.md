@@ -22,9 +22,10 @@ skills/
     lib/          # Portable TypeScript protocol reference implementation
 ```
 
-The `SKILL.md` file is the core artifact and contains the complete runtime
-protocol. The files under `details/` are optional guidance; the skill should
-still work correctly if they are not read. `bin/fusion-run.ts` is the
+The `SKILL.md` file is the core artifact: a guide for the calling agent that
+is sufficient on its own to run a panel and author the answer. The files under
+`details/` hold the runtime internals the CLI enforces or discloses, linked
+from `SKILL.md` with the situation in which to read each one (ADR 0052). `bin/fusion-run.ts` is the
 canonical execution path. `lib/protocol.ts` is the public TypeScript entry
 point for the harness-neutral reference implementation. The implementation is
 split across `lib/*.ts` by responsibility: request/result types, manifest
