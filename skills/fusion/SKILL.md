@@ -69,7 +69,9 @@ final answer yourself from the judge analysis and the worker outputs. Lead with
 well-supported consensus, keep real contradictions visible, and name blind
 spots that limit confidence.
 
-If the judge failed or did not run, the report says so. Synthesize from the
+If the run status is `failed` (no worker succeeded), report the failure and
+its reasons and offer a retry; do not answer as if a panel had run. Otherwise,
+if the judge failed or did not run, the report says so. Synthesize from the
 deterministic audit synthesis when the report includes one, otherwise
 directly from the worker outputs. If the run status is
 `partial`, say which workers are missing and do not present the result as
@@ -97,9 +99,10 @@ full-panel consensus.
   latest model of that tier; pass a full `claude-*` ID to pin one.
 - **Workers get read-only tools, not a sandbox.** Edit tools, non-allowlisted
   commands, and delegation are denied, so ask for patches or plans, not
-  changes. The shell allowlist can still be abused (for example `ls > f`), so
-  check the report's Workspace watchdog line and read
-  `details/containment.md` before relying on containment for sensitive work.
+  changes. The shell allowlist can still be abused (for example `ls > f`).
+  The Workspace watchdog line reports workspace changes after the run but
+  cannot see gitignored areas, writes outside the workspace, or remote side
+  effects; use an OS-level sandbox when a task needs real isolation.
   Denied reads surface in the worker's answer, not as a crash.
 - **Project `AGENTS.md` still reaches OpenCode workers.** The report's
   Instruction environment line says which instruction layers were blocked.
