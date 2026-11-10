@@ -58,7 +58,12 @@ async function firstSkillCall(skillFile: string, model: string, prompt: string):
     const lines = stdout.split("\n");
     for (const line of lines) {
       if (!line.includes('"tool_use"')) continue;
-      const event = JSON.parse(line) as { type?: string; message?: { content?: Array<{ type?: string; name?: string; input?: { skill?: string } }> } };
+      let event: { type?: string; message?: { content?: Array<{ type?: string; name?: string; input?: { skill?: string } }> } };
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue;
+      }
       if (event.type !== "assistant") continue;
       for (const block of event.message?.content ?? []) {
         if (block.type === "tool_use") return block.name === "Skill" ? (block.input?.skill ?? "Skill") : block.name ?? "tool";

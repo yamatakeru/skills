@@ -88,7 +88,10 @@ full-panel consensus.
   example `Request failed: 401`) and an unsupported OpenCode version appear
   only as worker errors in a real run.
 - **`--models` drops the parent seat**, but the judge still follows
-  `--parent-model`. Set `--judge-model` when you want a different judge.
+  `--parent-model`. Set `--judge-model` when you want a different judge, and
+  keep it on a harness one of the workers uses (a Claude judge needs a Claude
+  worker, an OpenCode judge an OpenCode worker); otherwise the real run loses
+  the judge even though dry-run passes.
 - **Claude aliases float.** `fable`, `opus`, `sonnet`, and `haiku` resolve to the
   latest model of that tier; pass a full `claude-*` ID to pin one.
 - **Workers are read-only.** They can read, search, and browse, but cannot edit
