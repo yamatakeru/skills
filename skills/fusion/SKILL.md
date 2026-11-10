@@ -69,8 +69,9 @@ final answer yourself from the judge analysis and the worker outputs. Lead with
 well-supported consensus, keep real contradictions visible, and name blind
 spots that limit confidence.
 
-If the judge failed, the report says so and shows raw worker outputs with a
-deterministic audit synthesis; synthesize from those. If the run status is
+If the judge failed or did not run, the report says so. Synthesize from the
+deterministic audit synthesis when the report includes one, otherwise
+directly from the worker outputs. If the run status is
 `partial`, say which workers are missing and do not present the result as
 full-panel consensus.
 
@@ -94,9 +95,12 @@ full-panel consensus.
   the judge even though dry-run passes.
 - **Claude aliases float.** `fable`, `opus`, `sonnet`, and `haiku` resolve to the
   latest model of that tier; pass a full `claude-*` ID to pin one.
-- **Workers are read-only.** They can read, search, and browse, but cannot edit
-  files, run non-allowlisted commands, or delegate. Ask for patches or plans,
-  not changes. Denied reads surface in the worker's answer, not as a crash.
+- **Workers get read-only tools, not a sandbox.** Edit tools, non-allowlisted
+  commands, and delegation are denied, so ask for patches or plans, not
+  changes. The shell allowlist can still be abused (for example `ls > f`), so
+  check the report's Workspace watchdog line and read
+  `details/containment.md` before relying on containment for sensitive work.
+  Denied reads surface in the worker's answer, not as a crash.
 - **Project `AGENTS.md` still reaches OpenCode workers.** The report's
   Instruction environment line says which instruction layers were blocked.
 - **Recover a crashed run's synthesis** with
