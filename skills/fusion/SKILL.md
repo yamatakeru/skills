@@ -100,10 +100,14 @@ full-panel consensus.
 - **Workers get read-only tools, not a sandbox.** Edit tools, non-allowlisted
   commands, and delegation are denied, so ask for patches or plans, not
   changes. The shell allowlist can still be abused (for example `ls > f`).
-  The Workspace watchdog line reports workspace changes after the run but
+  The Workspace watchdog compares Git status and refs before and after the
+  run, so it is not exhaustive: further edits to files already dirty before the
+  run can stay `clean`, it is `not-applicable` outside a Git work tree, and it
   cannot see gitignored areas, writes outside the workspace, or remote side
-  effects; use an OS-level sandbox when a task needs real isolation.
-  Denied reads surface in the worker's answer, not as a crash.
+  effects. Use an OS-level sandbox when a task needs real isolation.
+- **Denied reads do not crash a worker, and its answer may not mention
+  them.** When a source matters, check the worker's Warnings in the report and
+  `toolUseSummary.deniedRequests` in `--json` output before trusting coverage.
 - **Project `AGENTS.md` still reaches OpenCode workers.** The report's
   Instruction environment line says which instruction layers were blocked.
 - **Recover a crashed run's synthesis** with

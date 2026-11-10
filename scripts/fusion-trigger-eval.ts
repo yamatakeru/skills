@@ -55,20 +55,32 @@ async function firstSkillCall(skillFile: string, model: string, prompt: string):
     // without any assistant event counts as a harness failure.
     if (exitCode !== 0 && !stdout.includes('"type":"assistant"'))
       throw new Error(`claude exited ${exitCode} without a model turn: ${stderr.trim() || stdout.trim()}`);
-    const lines = stdout.split("\n");
-    for (const line of lines) {
-      if (!line.includes('"tool_use"')) continue;
-      let event: { type?: string; message?: { content?: Array<{ type?: string; name?: string; input?: { skill?: string } }> } };
+    type StreamEvent = {
+      type?: string;
+      subtype?: string;
+      is_error?: boolean;
+      message?: { model?: string; content?: Array<{ type?: string; name?: string; input?: { skill?: string } }> };
+    };
+    let result: StreamEvent | undefined;
+    for (const line of stdout.split("\n")) {
+      let event: StreamEvent;
       try {
         event = JSON.parse(line);
       } catch {
         continue;
       }
+      if (event.type === "result") result = event;
       if (event.type !== "assistant") continue;
+      // API errors arrive as a synthetic assistant turn, not a model action.
+      if (event.message?.model === "<synthetic>")
+        throw new Error(`claude reported an API error instead of a model turn: ${stdout.trim()}`);
       for (const block of event.message?.content ?? []) {
         if (block.type === "tool_use") return block.name === "Skill" ? (block.input?.skill ?? "Skill") : block.name ?? "tool";
       }
     }
+    // Count "no tool call" only for a turn that finished cleanly.
+    if (exitCode !== 0 || result?.subtype !== "success" || result.is_error === true)
+      throw new Error(`claude ended without a tool call or a clean answer (exit ${exitCode}): ${stderr.trim() || stdout.trim()}`);
     return null;
   } finally {
     await rm(project, { recursive: true, force: true });
