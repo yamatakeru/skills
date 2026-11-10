@@ -36,15 +36,14 @@ server or read its version.
   first", and Fusion already fails closed on any effective `ask` (ADR 0048),
   so neither change widens worker permissions.
 - `bun run typecheck:fusion` passes with `@opencode/client` pinned at 2.2.6.
-- Live smoke on 2.2.6 (runbook default panel, `--parent-model fable`): the
-  version gate admitted the server; `opencode-go/qwen3.8-flash` and the Claude
-  Code worker and judge succeeded with `verified-effective` enforcement on the
-  OpenCode worker. The `openai/gpt-6.1-sol` worker failed with `Request failed:
-  401`, which reproduces with a plain `opencode run --model openai/gpt-6.1-sol`
-  outside Fusion and is a local provider credential problem, not a protocol
-  change. A second run with two OpenCode workers
-  (`opencode-go/glm-5.2`, `opencode-go/qwen3.8-flash`) returned both workers
-  `ok` with `verified-effective` enforcement.
+- The runbook's default-panel live smoke on 2.2.6 (`--parent-model fable`)
+  returned run status ok with full compliance and no warnings: both OpenCode
+  workers (`openai/gpt-6.1-sol`, `opencode-go/qwen3.8-flash`) succeeded with
+  `verified-effective` enforcement, and the Claude Code worker and judge
+  (`claude-fable-5-2`) succeeded. An earlier attempt failed only the OpenAI
+  worker with `Request failed: 401`; it reproduced with a plain `opencode run`
+  outside Fusion and cleared after re-authenticating the provider, so it was a
+  local credential problem, not a protocol change.
 
 ## Decision
 
