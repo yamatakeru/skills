@@ -2,17 +2,20 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { OpenCodeSdkAdapter, defaultPolicies } from "../lib/protocol";
+import {
+  OpenCodeSdkAdapter,
+  defaultPolicies,
+  isSupportedOpenCodeVersion,
+} from "../lib/protocol";
 import { workerRequest } from "./fixtures";
 
 const command = Bun.which("opencode");
 const version = command
   ? Bun.spawnSync([command, "--version"]).stdout.toString().trim()
   : "";
-const release = /(?:opencode v)?2\.([012])\.(\d+)$/u.exec(version);
-// Mirrors the adapter boundary: stable 2.0.22+, or any stable 2.1.x or 2.2.x.
-const supported =
-  release !== null && (release[1] !== "0" || Number(release[2]) >= 22);
+const supported = isSupportedOpenCodeVersion(
+  version.replace(/^opencode v/u, ""),
+);
 
 describe("Fusion OpenCode v2 no-model contract", () => {
   test.skipIf(command === null || !supported)(

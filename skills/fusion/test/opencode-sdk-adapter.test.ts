@@ -536,7 +536,7 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
     expect(result.warnings?.join()).toContain("interrupt failed");
   });
 
-  test.each(["1.18.31", "2.0.21", "2.3.0", "3.0.0", "2.2.6-beta.1", "unknown"])(
+  test.each(["1.18.31", "2.0.21", "2.4.0", "3.0.0", "2.3.0-beta.1", "unknown"])(
     "rejects unsupported server version %s before sessions/models",
     async (version) => {
       const f = fixture({ version });
@@ -547,7 +547,7 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
     },
   );
 
-  test.each(["2.0.22", "2.1.4", "2.2.6"])(
+  test.each(["2.0.22", "2.1.4", "2.2.6", "2.3.0"])(
     "admits supported server version %s",
     async (version) => {
       const f = fixture({ version });
