@@ -38,6 +38,12 @@ server or read its version.
   `experimental.mcp.event` events, which the event collector ignores, and
   new optional fields (`freeform`, `tls`, `firstToken`, generate usage).
   `bun run typecheck:fusion` passes with `@opencode/client` pinned at 2.3.0.
+- The runbook's default-panel live smoke on 2.3.0 (`--parent-model fable`)
+  returned run status ok with full compliance and no warnings: both OpenCode
+  workers (`openai/gpt-6.1-sol`, `opencode-go/qwen3.8-flash`) succeeded on
+  harness version 2.3.0 with `verified-effective` enforcement and successful
+  aborts, and the Claude Code worker and judge (`claude-fable-5-2`)
+  succeeded.
 
 ## Decision
 
@@ -62,3 +68,8 @@ After each OpenCode upgrade, run the free contract check in the runbook, and
 re-read `Permission.evaluate` and `evaluateInput` when `permission.ts` changes
 upstream. Because dry-run does not exercise the server version gate, the
 contract check is the cheapest way to notice a newly unsupported release line.
+
+The boundary is defined once, in `isSupportedOpenCodeVersion`
+(`skills/fusion/lib/opencode-sdk-adapter.ts`); the contract check reuses it
+instead of mirroring the pattern, so admitting a further line changes one
+predicate plus its fixtures and documentation.
