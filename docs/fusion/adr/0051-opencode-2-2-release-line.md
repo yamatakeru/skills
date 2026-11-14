@@ -6,6 +6,8 @@ Accepted. Partially supersedes ADR 0050's supported boundary ("stable 2.0.x
 from 2.0.22, or any stable 2.1.x") and its 2.1.4 type-only pin. ADR 0050's
 reasoning for admitting a whole minor line, and every ADR 0046/0048 decision,
 remain unchanged.
+The supported boundary and type-only pin are partially superseded by
+[ADR 0053](0053-opencode-2-3-release-line.md).
 
 ## Context
 

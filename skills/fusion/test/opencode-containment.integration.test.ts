@@ -9,8 +9,8 @@ const command = Bun.which("opencode");
 const version = command
   ? Bun.spawnSync([command, "--version"]).stdout.toString().trim()
   : "";
-const release = /(?:opencode v)?2\.([012])\.(\d+)$/u.exec(version);
-// Mirrors the adapter boundary: stable 2.0.22+, or any stable 2.1.x or 2.2.x.
+const release = /(?:opencode v)?2\.([0-3])\.(\d+)$/u.exec(version);
+// Mirrors the adapter boundary: stable 2.0.22+, or any stable 2.1.x, 2.2.x or 2.3.x.
 const supported =
   release !== null && (release[1] !== "0" || Number(release[2]) >= 22);
 

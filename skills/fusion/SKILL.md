@@ -13,7 +13,7 @@ license: MIT
 compatibility: >-
   SKILL.md-compatible agents with shell access and Bun installed. The bundled
   TypeScript CLI needs no node_modules. OpenCode workers need stable OpenCode
-  2.0.22+, 2.1.x, or 2.2.x.
+  2.0.22+, 2.1.x, 2.2.x, or 2.3.x.
 metadata:
   version: "0.15.0"
   kind: "blind-panel synthesis"
