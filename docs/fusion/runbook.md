@@ -283,8 +283,29 @@ synthesis. One task was an investigation with a known answer key and the
 other was an open-ended critique. The first attempt
 failed for both models before any model output with OpenCode's
 `Integration.Authorization: Request failed: 400` on the OpenAI provider, a
-credential problem that also appeared outside Fusion. The comparison is
-pending re-authentication.
+credential problem that also appeared outside Fusion. After the owner
+re-authenticated, the rerun completed `ok` for all four sessions:
+
+| Task | Model | Input / output tokens | Duration | Result |
+|---|---|---|---|---|
+| Duplicate-seat investigation (answer key) | GPT-6.1 Sol | 33.6K / 3.6K | 124 s | All key paths found |
+| | GPT-6.2 Sol | 64.5K / 4.5K | 211 s | All key paths found |
+| Default-policy critique | GPT-6.1 Sol | 44.6K / 2.5K | 105 s | Five ranked weaknesses |
+| | GPT-6.2 Sol | 45.9K / 2.5K | 135 s | Five ranked weaknesses |
+
+The answer key covered parent-repeat, explicit duplicates, suffix and
+cross-namespace variants, and Claude fallback convergence. Both models found
+every item. Sampled `file:line` citations from both models were correct.
+GPT-6.2 Sol read about twice as much input on the investigation task. On the
+critique it added one correct finding the other model lacked: a failed
+catalog probe throws before the degraded path. Neither model showed the
+shallow exploration reported elsewhere. Workers ran on a subscription
+credential, so the run reported no per-token cost. This is one run per task,
+with workers able to read this runbook section, so treat it as a smoke check
+that found no regression, not a benchmark. The provisional GPT-6.2 Sol
+promotion stands. Both critiques independently flagged that an Astra parent
+still gets a same-family Sol strong seat while GLM is available; this
+existing exact-ID limitation is out of scope for this refresh.
 
 ## OpenCode v2 migration validation (2026-09-21–22)
 
