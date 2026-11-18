@@ -245,6 +245,47 @@ Parent-entry override semantics are separately recorded in ADR 0047. Reasoning
 effort mapping, family-aware selection, and resolver/adapter changes are out of
 scope.
 
+## GPT-6.2 Astra/Sol candidate refresh (2026-11-18)
+
+Under ADR 0015/0041, replace GPT-6.1 Sol with GPT-6.2 Sol as the primary
+strong candidate and GPT-6 Astra with GPT-6.2 Astra everywhere it appears
+(strong tail fallback, primary compatibility flagship). Candidate order,
+the efficient/budget-smart pool, and parent/judge defaults are unchanged.
+Older IDs remain usable through explicit selection while the harness lists
+them. No provider route or free model is added.
+
+The [OpenAI announcement](https://openai.com/index/introducing-gpt-6-2-astra-sol/)
+reports both models completing demanding tasks with fewer output tokens. The
+model specifications for
+[GPT-6.2 Sol](https://developers.openai.com/api/docs/models/gpt-6.2-sol) and
+[GPT-6.2 Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra)
+list Standard input/output prices per million tokens of $2/$10 (unchanged from
+GPT-6.1 Sol) and $8/$40 (down from GPT-6 Astra's $10/$50). These are API token
+prices, not measured per-task costs or subscription quota equivalents.
+
+Astra is replaced outright: it is cheaper than its predecessor and sits in
+fallback and compatibility positions. The Sol promotion is provisional and
+carries a specific risk for panel seats. Early third-party evidence reports
+reduced exploration: [Plotly's data analytics exam](https://plotly.com/blog/gpt-6-2-sol-plotly-data-analytics-bench/)
+scored GPT-6.2 Sol 40/43 against GPT-6.1 Sol's 43/43, with all misses on
+hidden-pattern questions where it ran about half as many queries. Launch-day
+practitioner reports also describe stopping early and weaker instruction
+following. Both models also ship with tighter cybersecurity safeguards, so
+security-review panels may see more refusals. Revert the strong primary to
+GPT-6.1 Sol if a live comparison shows shallower investigation in Fusion
+worker outputs.
+
+The local catalog lists `openai/gpt-6.2-sol` and `openai/gpt-6.2-astra`, and a
+Claude-parent dry-run resolves GPT-6.2 Sol for the strong seat with no
+warnings. A small live comparison was authorized: two tasks, each run as an
+explicit `openai/gpt-6.1-sol,openai/gpt-6.2-sol` panel with deterministic
+synthesis. One task was an investigation with a known answer key and the
+other was an open-ended critique. The first attempt
+failed for both models before any model output with OpenCode's
+`Integration.Authorization: Request failed: 400` on the OpenAI provider, a
+credential problem that also appeared outside Fusion. The comparison is
+pending re-authentication.
+
 ## OpenCode v2 migration validation (2026-09-21–22)
 
 The owner authorized at most ten live sessions. Exactly ten were used, all on

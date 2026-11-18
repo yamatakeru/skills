@@ -15,10 +15,10 @@ import { claudeModelAliases } from "./worker-requests";
 export const DEFAULT_PANEL_SIZE = 3;
 
 const STRONG_GENERALIST_CANDIDATES = [
-  "openai/gpt-6.1-sol",
+  "openai/gpt-6.2-sol",
   "opencode-go/glm-5.2",
   "opencode-go/deepseek-v4.1-flash",
-  "openai/gpt-6-astra",
+  "openai/gpt-6.2-astra",
 ] as const;
 
 const EFFICIENT_GENERALIST_CANDIDATES = [
@@ -31,8 +31,8 @@ const EFFICIENT_GENERALIST_CANDIDATES = [
 ] as const;
 
 const OPENAI_FLAGSHIP_CANDIDATES = [
-  "openai/gpt-6-astra",
-  "openai/gpt-6.1-sol",
+  "openai/gpt-6.2-astra",
+  "openai/gpt-6.2-sol",
   "openai/gpt-6-luna",
 ] as const;
 
