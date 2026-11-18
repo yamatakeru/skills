@@ -30,7 +30,10 @@ does not call the OpenRouter API.
 
 Match the panel to the stakes: the default mixed panel suits hard-to-reverse
 decisions, and cheaper `--models` lists are fine for exploratory work. Answer
-trivial or narrow tasks directly instead.
+trivial or narrow tasks directly instead. Also skip the panel when the
+deliverable is a single authored voice, depends on language-sensitive nuance,
+or is a latency-bound read: one strong pass serves these better than a
+judge-stitched comparison.
 
 ## Run the panel
 
