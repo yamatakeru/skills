@@ -15,8 +15,8 @@ second opinions. Comparison shape, not stakes alone, is the Fusion usage
 criterion: cheap-model panels may run casually on exploratory
 comparison-shaped work, while flagship-mixed panels are reserved for
 high-stakes or hard-to-reverse decisions. Trivial or narrow tasks, and work
-whose deliverable is a single authored voice or a latency-bound read, stay
-outside panel execution (ADR 0025).
+whose deliverable is a single authored voice, language-sensitive nuance, or a
+latency-bound read, stay outside panel execution (ADR 0025).
 
 ## Portable Spec
 
