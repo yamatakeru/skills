@@ -268,7 +268,8 @@ fallback and compatibility positions. The Sol promotion is provisional and
 carries a specific risk for panel seats. Early third-party evidence reports
 reduced exploration: [Plotly's data analytics exam](https://plotly.com/blog/gpt-6-2-sol-plotly-data-analytics-bench/)
 scored GPT-6.2 Sol 40/43 against GPT-6.1 Sol's 43/43, with all misses on
-hidden-pattern questions where it ran about half as many queries. Launch-day
+hidden-pattern questions. On those questions it ran about 9 database queries
+per question, against about 16 for GPT-6.1 Sol and a board median of 25. Launch-day
 practitioner reports also describe stopping early and weaker instruction
 following. Both models also ship with tighter cybersecurity safeguards, so
 security-review panels may see more refusals. Revert the strong primary to
