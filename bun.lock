@@ -5,7 +5,7 @@
     "": {
       "name": "skills",
       "devDependencies": {
-        "@opencode/client": "2.3.0",
+        "@opencode/client": "2.4.0",
         "@types/node": "26.1.0",
         "bun-types": "1.3.14",
         "ts-json-schema-generator": "^2.9.0",
@@ -14,11 +14,11 @@
     },
   },
   "packages": {
-    "@opencode/client": ["@opencode/client@2.3.0", "", { "dependencies": { "@opencode/protocol": "2.3.0", "@opencode/schema": "2.3.0" }, "peerDependencies": { "effect": "4.1.0", "solid-js": ">=1.9.0" }, "optionalPeers": ["effect", "solid-js"] }, "sha512-xu74XGiYIqLZ2FzIrtjaR5UNWWXY3fRln0WLgZoQTR/wWMgG+T9XGQQGCl8ry8jnCFsJVokiHemBqft9oMzC1A=="],
+    "@opencode/client": ["@opencode/client@2.4.0", "", { "dependencies": { "@opencode/protocol": "2.4.0", "@opencode/schema": "2.4.0" }, "peerDependencies": { "effect": "4.1.0", "solid-js": ">=1.9.0" }, "optionalPeers": ["effect", "solid-js"] }, "sha512-U8IKpgERCdM5JRFkaHsE1xkx+jT9IeZrVQsN4Xb7W4kcIWCNwDPNIp00ihcYECEDhejbUH/2uwIECoadDezoxQ=="],
 
-    "@opencode/protocol": ["@opencode/protocol@2.3.0", "", { "dependencies": { "@opencode/schema": "2.3.0", "effect": "4.1.0" } }, "sha512-V37zTGXVa1j9aXUvUY01YN1EtfMMSWoT5pSCc6M0UsGdTUZX6QL/vMgGVGzPvbt7+Z8Vo40/0DFRPyqT4sdvnw=="],
+    "@opencode/protocol": ["@opencode/protocol@2.4.0", "", { "dependencies": { "@opencode/schema": "2.4.0", "effect": "4.1.0" } }, "sha512-SvbUy1ZIUp2L24JpZoIuoGoUxhy8c5xg2sDQk25iUqONzgK31tUpi623wOIXbNScZmOvnOOjdZ87jufhShiIfg=="],
 
-    "@opencode/schema": ["@opencode/schema@2.3.0", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.1.0" } }, "sha512-9CPS4+BXWUs3ELIWo68AA2q4XEPMkRYwpGYdqd/wNz3jRTOB8swef+2/z+igkCel+UtlX+dAlGTmSnid/JcoKw=="],
+    "@opencode/schema": ["@opencode/schema@2.4.0", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.1.0" } }, "sha512-1BpbHYL7x/BRpxzg7hOM6qJPWU5bZZcUnGX3B+0WlO0F+RTAG35BRVW5Y8orYgSAORxkpjuWt682/3WNXKPZSQ=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
