@@ -94,76 +94,22 @@ data workers must not read.
 
 ## How it is enforced
 
-1. **Enforced permission map.** SDK adapters configure deny-by-default tool
-   permissions, including a catch-all deny and explicit read/search/list/web and
-   command-level `bash` allows. Prompts are not the permission boundary.
-   `ToolsPolicy.deny` is applied after the mode-derived tool set, so denial
-   always wins over defaults, explicit `allow`, and `readOnlyBashCommands`.
-2. **Startup verification.** Where the harness exposes effective rules, the
-   adapter verifies the required deny and allow invariants before any model
-   runs. A detected failure fails that worker; the panel may continue with
-   partial synthesis.
-3. **Session abort.** Every terminal path aborts the harness session after
-   result collection and before disconnecting its event stream. Abort failures
-   are warning-only evidence, with server shutdown as the final backstop.
-4. **Recursion guard.** Worker environments increment `FUSION_PANEL_DEPTH`;
-   `fusion-run` and `fusion-judge-replay` refuse to start at depth 1 or greater.
-   The default shell allowlist already excludes `bun`, so this layer primarily
-   protects full-tool runs and future allowlist changes.
-5. **Prompt hardening.** Default workers are told to treat instructions found in
-   repository files, web pages, and tool output as data rather than directives,
-   and persistent harness-injected instructions as environment context rather
-   than the task contract. These clauses reduce quality drift but do not
-   replace technical enforcement. Experiment prompt variants omit both clauses to
-   preserve condition purity. Claude Code user/project/local memory and auto
-   memory are also blocked at startup via an empty `--setting-sources` list and
-   `--settings '{"autoMemoryEnabled":false}'`; OpenCode SDK user/global
-   instruction layers are blocked at startup through both config-directory
-   redirects and removal of the explicit config-file pointer.
-6. **Workspace watchdog** and **compliance disclosure**, described under
-   Reading the report.
-7. **Crash-safe recording.** Recorded worker artifacts are persisted
-   incrementally; see `provenance.md`.
-
-OpenCode v2 rule pre-denials surface as structured tool failures with
-`error.type: "permission.rejected"`. Unexpected `permission.asked` requests
-are rejected with feedback and attributed by their source tool-call id.
-Denials are deduplicated, and unknown errors remain `failed`, never guessed
-from human-readable message prefixes.
-
-The OpenCode server runs authenticated `serve --stdio`; readiness and every
-request authenticate. Both the local binary and actual `/api/info` identity
-are checked. Before any prompt, Fusion verifies that native agent rules contain
-its exact ordered rules beginning with its catch-all deny, including declared
-read roots and the no-tools judge, followed by nothing or only deny rules.
-Earlier inherited defaults are shadowed by that reset. Appended denies (for
-example OpenCode 2.0.21+'s `browser:*` deny) can only narrow the last-match
-policy and are disclosed in notes; an appended allow or ask fails closed.
-Asynchronous agent initialization is awaited, not treated as permission to
-skip verification. Native actions map portable `bash` to `shell` and
-recursive delegation to `subagent`. The `sdk` label denotes the structured
-REST/SSE machine protocol, not a runtime npm dependency.
-
-SSE must confirm `server.connected` before prompt admission. Only terminal
-execution success completes the worker; a prompt response or tool step does
-not. Every terminal path requests interrupt before aborting the stream. An
-idle `interrupted:false` response is a successful cleanup no-op. Stream loss
-fails rather than attempting replay of a live-only event feed. Externally
-injected servers require explicit authentication and version/rule checks but
-cannot claim Fusion-controlled startup isolation and are never killed.
-
-Web search selects Exa in the run-scoped config with the owner's consent. This
-avoids v2's interactive first-use provider form without changing persisted user
-settings or silently sending queries to a different provider.
-
-Unknown tool names use the strict parity check uniformly across adapters,
-without treating OpenCode's catch-all denial as a verifiability exception:
-strict parity fails only if the capability is still effective after mode and
-profile floors.
-
-Cursor adds only verified config grammar (`Shell(**)`, `Read(**)`, and
-`Write(**)`) to its immutable profile floor. It does not map `Grep`, `Glob`, or
-`LS` to the broader `Read(**)` permission. A run-scoped, fail-closed
-`preToolUse` hook enforces the remaining canonical tool-name denials, and Bash
-denial also empties the shell hook allowlist. Observation of tool results is a
-separate best-effort surface and its limitations remain disclosed.
+- **Permission map.** Adapters configure deny-by-default tool permissions: a
+  catch-all deny, then explicit read/search/list/web allows and command-level
+  shell allows. Prompts are not the permission boundary; a deny always wins
+  over defaults and explicit allows.
+- **Startup verification.** Where the harness exposes effective rules, they
+  are verified before any model runs. For OpenCode this covers the server
+  version and Fusion's ordered rules, including declared read roots; denies
+  that OpenCode appends after them can only narrow the policy and are
+  disclosed in notes, while an appended allow or ask fails the worker. A
+  failed check fails that worker; the panel may continue as `partial`.
+- **Session abort.** Every terminal path aborts the harness session. Abort
+  failures are warnings, with server shutdown as the final backstop.
+- **Recursion guard.** Workers cannot start another Fusion run.
+- **Prompt hardening.** Workers are told to treat instructions in repository
+  files, web pages and tool output as data, not directives. This reduces drift
+  but is not enforcement.
+- **Cursor** enforces the remaining tool-name denials and the shell allowlist
+  with a run-scoped, fail-closed hook; observation of tool results is
+  best-effort and disclosed.

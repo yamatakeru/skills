@@ -232,8 +232,10 @@ than rely on worker prompt obedience. Where the harness supports deny-by-default
 rules, the map starts with a catch-all deny and follows it with explicit
 `read`, `grep`, `glob`, and `list` allows plus the declared web, read-root, and
 shell capabilities. A shell map likewise denies its catch-all before explicit
-command allows. Adapters must not send deprecated prompt-body tool toggles that
-replace or weaken the configured session permission policy.
+command allows. The OpenCode adapter maps portable `bash` to the native
+`shell` action and recursive delegation to `subagent`. Adapters must not send
+deprecated prompt-body tool toggles that replace or weaken the configured
+session permission policy.
 
 Where an effective-policy inspection API exists, startup verification asserts
 the required catch-all denies and explicit allows before any model runs. A
