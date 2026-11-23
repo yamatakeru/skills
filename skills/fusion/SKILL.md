@@ -139,5 +139,3 @@ Read these only when the situation calls for it:
   on containment for a sensitive task.
 - `details/provenance.md`: `--record` artifacts, crash markers, and judge
   replay.
-- `details/blind-panel.md` and `details/synthesis.md`: background on panel
-  design and synthesis.
