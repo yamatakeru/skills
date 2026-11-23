@@ -1,5 +1,5 @@
-This file is supplementary guidance for Fusion. The executable runtime protocol
-remains in `../SKILL.md`. Do not rely on this file being read at runtime.
+Read this before relying on Fusion's worker containment for a sensitive task,
+or when the report's Compliance, Enforcement or Containment line is unclear.
 
 # Worker Containment
 
@@ -12,7 +12,7 @@ allowed the panel to report full compliance.
 Issue [yamatakeru/skills#11](https://github.com/yamatakeru/skills/issues/11)
 confirmed that deprecated agent-level `tools` also corrupts effective rule
 ordering during OpenCode v1 normalization. The v2-only SDK transport uses native
-ordered `permissions` rules as the sole authority (ADR 0046); the historical v1
+ordered `permissions` rules as the sole authority; the historical v1
 workarounds and deprecated `tools` toggles are not carried forward.
 
 ## Threat Model
@@ -50,15 +50,15 @@ in gitignored areas, or remote API side effects.
 5. **Prompt hardening.** Default workers are told to treat instructions found in
    repository files, web pages, and tool output as data rather than directives,
    and persistent harness-injected instructions as environment context rather
-   than the task contract. These items 8-9 reduce quality drift but do not
-   replace technical enforcement. Experiment prompt variants omit both items to
+   than the task contract. These clauses reduce quality drift but do not
+   replace technical enforcement. Experiment prompt variants omit both clauses to
    preserve condition purity. Claude Code user/project/local memory and auto
    memory are also blocked at startup via an empty `--setting-sources` list and
    `--settings '{"autoMemoryEnabled":false}'`; OpenCode SDK user/global
    instruction layers are blocked at startup through both config-directory
    redirects and removal of the explicit config-file pointer; OpenCode project
    and ancestor `AGENTS.md` and Cursor User Rules remain standing disclosed
-   inputs (ADR 0043/0045/0046).
+   inputs.
 6. **Workspace watchdog.** Before/after Git status and ref snapshots detect
    tracked-worktree changes and ref movements, including remote-tracking ref
    updates. Findings are unattributed unless worker tool evidence corroborates
@@ -80,8 +80,8 @@ in gitignored areas, or remote API side effects.
 ## OpenCode Version Boundary
 
 The supported lines are stable OpenCode 2.0.x from 2.0.22 and any stable
-2.1.x, 2.2.x, 2.3.x or 2.4.x, with 2.4.0 as the measured target (ADR 0046/0048/0050/0051/0053/0054). Older versions, prereleases and unknown release
-lines fail explicitly. There is no v1 adapter or OpenCode CLI transport.
+2.1.x, 2.2.x, 2.3.x or 2.4.x, with 2.4.0 as the measured target. Older versions, prereleases and unknown
+release lines fail explicitly. There is no v1 adapter or OpenCode CLI transport.
 The `sdk` label denotes the structured REST/SSE machine protocol, not a runtime
 npm dependency; `@opencode/client` is pinned for type-only imports.
 
@@ -92,20 +92,16 @@ its exact ordered rules beginning with its catch-all deny, including declared
 read roots and the no-tools judge, followed by nothing or only deny rules.
 Earlier inherited defaults are shadowed by that reset. Appended denies (for
 example OpenCode 2.0.21+'s `browser:*` deny) can only narrow the last-match
-policy and are disclosed in notes; an appended allow or ask fails closed
-(ADR 0048). Asynchronous agent initialization is awaited, not treated as permission
+policy and are disclosed in notes; an appended allow or ask fails closed.
+Asynchronous agent initialization is awaited, not treated as permission
 to skip verification. Native actions map portable `bash` to `shell` and
 recursive delegation to `subagent`.
 
-From OpenCode 2.4 on macOS, OpenCode matches `read`, `edit` and
-`external_directory` resources without case, over the whole path. Fusion's
-read-root allows therefore also match any path that differs from the root
-only in letter case, in any component; on a case-sensitive volume those are
-different directories (for example a `/Volumes/Work/repo` root also admits
-`/Volumes/WORK/repo/...` and `/Volumes/Work/REPO/...`). This is an accepted
-residual of the harness allowlist (ADR 0054); on such volumes, do not declare
-a read root when a path differing from it only in case holds data workers
-must not read.
+On macOS, OpenCode 2.4+ matches path rules without case, so a read root also
+admits every path that differs from it only in letter case. On a
+case-sensitive volume those are different directories, and Fusion does not
+block them. There, do not declare a read root when such a case variant holds
+data workers must not read.
 
 SSE must confirm `server.connected` before prompt admission. Only terminal
 execution success completes the worker; a prompt response or tool step does
@@ -148,8 +144,7 @@ Cursor adds only verified config grammar (`Shell(**)`, `Read(**)`, and
 `LS` to the broader `Read(**)` permission. A run-scoped, fail-closed
 `preToolUse` hook enforces the remaining canonical tool-name denials, and Bash
 denial also empties the shell hook allowlist. Observation of tool results is a
-separate best-effort surface and its limitations remain disclosed. OpenCode's
-former degraded headless CLI transport was removed by ADR 0046.
+separate best-effort surface and its limitations remain disclosed.
 
 Tool-name policy does not support command-pattern denials such as
 `Bash(rm *)`; such entries are disclosed rather than treated as effective
@@ -173,7 +168,7 @@ sandboxing; the watchdog and disclosure remain necessary.
 
 Broad metacharacter deny patterns are not used: they reject legitimate searches
 such as `rg "=>"` or `rg "a|b"` and remain bypassable by deliberate
-construction. See ADR 0039 for the accepted trade-off and sandbox deferral.
+construction. OS-level sandboxing is the deferred boundary.
 
 ## Crash Recovery
 
@@ -187,7 +182,7 @@ If the required worker artifacts survived, rerun only the judge against the
 recorded run:
 
 ```bash
-bun skills/fusion/bin/fusion-judge-replay.ts \
+bun <skill-dir>/bin/fusion-judge-replay.ts \
   --run <id-or-path> \
   --arm recovery \
   --judge-model <entry>

@@ -62,7 +62,7 @@ under the `parent-repeat` slot and emit degraded warnings. Without a resolved
 parent, or at four or more panelists, insufficiency remains an error.
 Explicit `--models` duplicates remain allowed.
 
-Automatic default candidates are privacy-eligible only (ADR 0041); free models
+Automatic default candidates are privacy-eligible only; free models
 are available solely through explicit `--models` entries.
 
 `--models <comma-list>` replaces the default composition entirely, including
@@ -163,7 +163,7 @@ fetch where the harness provides them. Writes, non-allowlisted shell commands,
 subagents, delegation, and recursive panels are denied. A denied request is a
 structured tool error: the worker keeps running and discloses the denial.
 
-The Instruction Environment is a standing harness input (ADR 0043/0045):
+The Instruction Environment is a standing harness input:
 
 - Claude Code blocks user, project, and local memory via an empty
   `--setting-sources` list and auto memory via
@@ -174,7 +174,7 @@ The Instruction Environment is a standing harness input (ADR 0043/0045):
 - Cursor account-level User Rules remain injected regardless of
   `CURSOR_CONFIG_DIR`.
 
-Worker and judge prompts carry injection-subordination clauses (ADR 0044), and
+Worker and judge prompts carry injection-subordination clauses, and
 reports disclose these facts in compliance notes and the Instruction
 environment header line.
 
