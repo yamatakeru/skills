@@ -137,7 +137,7 @@ function policyFingerprint(request: WorkerRequest): string {
   });
 }
 
-/** OpenCode 2.0.22+/2.1.x/2.2.x/2.3.x machine protocol. There is deliberately no v1/CLI fallback. */
+/** OpenCode 2.0.22+/2.1.x/2.2.x/2.3.x/2.4.x machine protocol. There is deliberately no v1/CLI fallback. */
 export class OpenCodeSdkAdapter implements WorkerRunner {
   private readonly command: string;
   private readonly fetch: Fetch;
@@ -564,17 +564,17 @@ function assertServerInfo(
     throw new Error("Invalid OpenCode server identity response.");
 }
 
-/** Stable 2.0.22+, or any stable 2.1.x, 2.2.x or 2.3.x (ADR 0053). */
+/** Stable 2.0.22+, or any stable 2.1.x, 2.2.x, 2.3.x or 2.4.x (ADR 0054). */
 export function isSupportedOpenCodeVersion(value: unknown): value is string {
   const match =
-    typeof value === "string" ? /^2\.([0-3])\.(\d+)$/u.exec(value) : null;
+    typeof value === "string" ? /^2\.([0-4])\.(\d+)$/u.exec(value) : null;
   return match !== null && (match[1] !== "0" || Number(match[2]) >= 22);
 }
 
 function assertSupportedVersion(value: unknown): asserts value is string {
   if (!isSupportedOpenCodeVersion(value))
     throw new Error(
-      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires stable OpenCode 2.0.22+, 2.1.x, 2.2.x, or 2.3.x. No v1 or CLI fallback is available.`,
+      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires stable OpenCode 2.0.22+, 2.1.x, 2.2.x, 2.3.x, or 2.4.x. No v1 or CLI fallback is available.`,
     );
 }
 
