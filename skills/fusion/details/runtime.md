@@ -13,7 +13,6 @@ of it, so the parent does not need to re-check these rules by hand.
 - CLI options
 - Dry-run, output, and exit codes
 - Harness environment
-- Library contract
 
 ## Model entries and routing
 
@@ -153,9 +152,3 @@ and Fusion never switches providers on its own.
 Cursor workers run from a run-scoped scratch directory whose hooks enforce the
 shell allowlist, delegation denial, and declared read roots, with web tools
 enabled.
-
-## Library contract
-
-In the library contract, `PanelSpec.workers` is the per-slot preference list:
-each slot may carry `{ model, harness }`. `lib/protocol.ts` is the public entry
-point.
