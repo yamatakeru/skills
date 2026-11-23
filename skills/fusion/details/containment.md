@@ -98,12 +98,14 @@ to skip verification. Native actions map portable `bash` to `shell` and
 recursive delegation to `subagent`.
 
 From OpenCode 2.4 on macOS, OpenCode matches `read`, `edit` and
-`external_directory` resources without case. Fusion's read-root allows
-therefore also match a case variant of the root, which on a case-sensitive
-volume is a different directory (for example a `/Volumes/Work/repo` root also
-admits `/Volumes/Work/REPO/...`). This is an accepted residual of the harness
-allowlist (ADR 0054); on such volumes, do not declare a read root that has a
-case-variant sibling holding data workers must not read.
+`external_directory` resources without case, over the whole path. Fusion's
+read-root allows therefore also match any path that differs from the root
+only in letter case, in any component; on a case-sensitive volume those are
+different directories (for example a `/Volumes/Work/repo` root also admits
+`/Volumes/WORK/repo/...` and `/Volumes/Work/REPO/...`). This is an accepted
+residual of the harness allowlist (ADR 0054); on such volumes, do not declare
+a read root when a path differing from it only in case holds data workers
+must not read.
 
 SSE must confirm `server.connected` before prompt admission. Only terminal
 execution success completes the worker; a prompt response or tool step does

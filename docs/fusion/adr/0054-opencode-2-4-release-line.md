@@ -35,9 +35,10 @@ dry-run did not reveal this.
   default volume a deny can no longer be bypassed by a case variant of a
   path, and allows still match only the same files. On a case-sensitive
   volume, however, Fusion's read-root allows (`external_directory` for
-  `<root>` and `<root>/**`) also match case-variant siblings, which are
-  different directories: a `/Volumes/Work/repo` root admits
-  `/Volumes/Work/REPO/...`. A trailing deny cannot carve the variant out,
+  `<root>` and `<root>/**`) also match every path that differs from the root
+  only in letter case, in any component, and those are different
+  directories: a `/Volumes/Work/repo` root admits `/Volumes/WORK/repo/...`
+  and `/Volumes/Work/REPO/...`. A trailing deny cannot carve a variant out,
   because it would match the declared root with the same case folding.
 - The `@opencode/client` 2.3.0 to 2.4.0 type diff does not touch the
   endpoints, events or types Fusion reads (`/api/info`, `/api/agent`,
@@ -66,11 +67,14 @@ automatically.
 
 The case-insensitive read-root match on case-sensitive macOS volumes is
 accepted as a documented residual, not mitigated in the adapter. It needs a
-non-default case-sensitive volume and a case-variant sibling of a declared
-read root, Fusion's containment is a harness allowlist rather than an OS
-sandbox, and the same upstream change closes the opposite case-variant
-bypass of denies on default volumes. `details/containment.md` states the
-limitation for callers.
+non-default case-sensitive volume and a path differing only in case from a
+declared read root, Fusion's containment is a harness allowlist rather than
+an OS sandbox, and the same upstream change closes the opposite case-variant
+bypass of denies on default volumes. The limitation is stated in
+`details/containment.md`, which `SKILL.md` already routes callers to before
+relying on containment for a sensitive task. It is not a `SKILL.md` Gotcha:
+it was not observed in a real run, and the body carries no version ranges
+(ADR 0052).
 
 ## Considered Options
 
