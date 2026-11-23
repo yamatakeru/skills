@@ -36,7 +36,7 @@ real isolation.
   evidence. A watchdog mutation caps the tier at `degraded`; worker tool
   evidence that corroborates it makes the tier `non-compliant`.
 - **Enforcement sources:** `verified-effective` means the effective rules were
-  inspected at runtime before any model ran; `harness-declared` means the
+  inspected at runtime before that worker's model ran; `harness-declared` means the
   adapter configured an enforcement surface the harness cannot expose for
   inspection.
 - **Containment** is orthogonal to the compliance tier. `no-shell`: workers
@@ -83,8 +83,9 @@ construction.
 
 OpenCode workers accept only the stable release lines listed in the
 `compatibility` field of `SKILL.md`. Any other version, including prereleases
-and newer release lines, fails before any model call with an error that names
-the supported range. There is no v1 adapter or OpenCode CLI transport.
+and newer release lines, fails each OpenCode worker before its model call,
+with an error that names the supported range; workers on other harnesses still
+run. There is no v1 adapter or OpenCode CLI transport.
 
 On macOS, OpenCode 2.4+ matches path rules without case, so a read root also
 admits every path that differs from it only in letter case. On a
@@ -99,7 +100,7 @@ data workers must not read.
   shell allows. Prompts are not the permission boundary; a deny always wins
   over defaults and explicit allows.
 - **Startup verification.** Where the harness exposes effective rules, they
-  are verified before any model runs. For OpenCode this covers the server
+  are verified before that worker's model runs. For OpenCode this covers the server
   version and Fusion's ordered rules, including declared read roots; denies
   that OpenCode appends after them can only narrow the policy and are
   disclosed in notes, while an appended allow or ask fails the worker. A

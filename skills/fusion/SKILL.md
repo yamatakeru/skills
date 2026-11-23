@@ -126,11 +126,11 @@ substitute any other execution path silently.
 Read these only when the situation calls for it:
 
 - `details/runtime.md`: how model entries route, how the default panel is
-  composed and refilled, judge selection, the full option semantics, exit
-  codes, and per-harness instruction blocking. Read it when a resolution,
-  warning, or harness behavior in the report is unclear.
-- `details/containment.md`: threat model, residual holes, and evidence layers
-  behind the report's Containment and Enforcement lines. Read it before relying
-  on containment for a sensitive task.
+  composed and refilled, judge selection, option semantics beyond `--help`,
+  and exit codes. Read it when a resolution, warning, or harness behavior in
+  the report is unclear.
+- `details/containment.md`: threat model, residual holes, and the report's
+  Compliance, Enforcement, Containment, watchdog and Instruction environment
+  lines. Read it before relying on containment for a sensitive task.
 - `details/provenance.md`: `--record` artifacts, crash markers, and judge
   replay.
