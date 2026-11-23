@@ -110,23 +110,26 @@ export async function loadRecordedRun(
     absoluteRunDir,
     "synthesis.json",
   );
-  const panelRequest = parseArtifact(requestText, "request.json");
+  const panelRequest = parseArtifact(
+    requestText,
+    "request.json",
+    assertPanelRequest,
+  );
   const workerRequests = parseArtifact(
     workerRequestsText,
     "worker-requests.json",
+    assertWorkerRequests,
   );
-  const workerResults = parseArtifact(workerResultsText, "worker-results.json");
+  const workerResults = parseArtifact(
+    workerResultsText,
+    "worker-results.json",
+    assertWorkerResults,
+  );
   const synthesis =
     synthesisText === undefined
       ? undefined
-      : parseArtifact(synthesisText, "synthesis.json");
+      : parseArtifact(synthesisText, "synthesis.json", assertSynthesisResult);
 
-  assertPanelRequest(panelRequest);
-  assertWorkerRequests(workerRequests);
-  assertWorkerResults(workerResults);
-  if (synthesis !== undefined) {
-    assertSynthesisResult(synthesis);
-  }
   assertConsistentRunIds(panelRequest, workerRequests, workerResults);
 
   return {
@@ -285,12 +288,19 @@ export function resolveRecordedRunDir(run: string, cwd = process.cwd()): string 
     : resolve(cwd, ".fusion-runs", run);
 }
 
-function parseArtifact(text: string, name: string): unknown {
+function parseArtifact<T>(
+  text: string,
+  name: string,
+  assertShape: (value: unknown) => asserts value is T,
+): T {
+  let value: unknown;
   try {
-    return JSON.parse(text) as unknown;
+    value = JSON.parse(text);
   } catch (error) {
     throw new Error(`Invalid JSON in recorded Fusion artifact ${name}: ${errorMessage(error)}`);
   }
+  assertShape(value);
+  return value;
 }
 
 function assertPanelRequest(value: unknown): asserts value is PanelRequest {
