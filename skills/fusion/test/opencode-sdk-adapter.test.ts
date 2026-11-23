@@ -543,6 +543,7 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
       const result = await f.adapter.runWorker(f.request);
       expect(result.status).toBe("error");
       expect(result.errors?.join()).toContain("Unsupported OpenCode");
+      expect(result.errors?.join()).toContain("Update the Fusion skill");
       expect(f.counts().sessionCount).toBe(0);
     },
   );

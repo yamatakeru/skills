@@ -574,7 +574,7 @@ export function isSupportedOpenCodeVersion(value: unknown): value is string {
 function assertSupportedVersion(value: unknown): asserts value is string {
   if (!isSupportedOpenCodeVersion(value))
     throw new Error(
-      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires stable OpenCode 2.0.22+, 2.1.x, 2.2.x, 2.3.x, or 2.4.x. No v1 or CLI fallback is available.`,
+      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires stable OpenCode 2.0.22+, 2.1.x, 2.2.x, 2.3.x, or 2.4.x. No v1 or CLI fallback is available. Update the Fusion skill if a newer release supports this OpenCode version; otherwise use a supported OpenCode version or run without OpenCode workers.`,
     );
 }
 
