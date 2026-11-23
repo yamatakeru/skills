@@ -62,9 +62,9 @@ bun skills/fusion/bin/fusion-run.ts --parent-model fable --record \
 Expect: Run status ok; workers claude-code x1 + opencode x2 all ok;
 Judge ok with a validated "## Judge Analysis" section and zero warnings;
 `result.json` carries `strategy` plus the structured analysis, no
-`fallbackReason`; 8 artifacts under `.fusion-runs/<panelRunId>/`
+`fallbackReason`; 9 artifacts under `.fusion-runs/<panelRunId>/`
 (request, manifest, events, worker-requests, worker-results, synthesis,
-compliance, result).
+compliance, result, and `run-status` resolved to `complete`).
 
 ## Live smoke: OpenCode parent (paid)
 
