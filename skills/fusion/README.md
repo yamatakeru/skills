@@ -66,7 +66,8 @@ Restart OpenCode after changing its configuration.
 
 ## Models
 
-`bun bin/fusion-run.ts --help` prints every option, the alias table, and the
+`bun <skill-dir>/bin/fusion-run.ts --help`, where `<skill-dir>` is the
+installed skill directory, prints every option, the alias table, and the
 ordered fallback chain behind each alias. `details/runtime.md` explains how
 entries route to harnesses and how the default panel is composed. To list
 available model IDs, run `opencode models` or `cursor-agent models`.
