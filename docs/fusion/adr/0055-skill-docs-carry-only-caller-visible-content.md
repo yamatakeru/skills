@@ -3,7 +3,9 @@
 ## Status
 
 Accepted. Partially supersedes ADR 0052's placement rule that "runtime
-internals the CLI enforces or discloses" live in `details/`. ADR 0052's
+internals the CLI enforces or discloses" live in `details/`, and its rule that
+version ranges live in "the frontmatter `compatibility` field, ADRs, the
+runbook, and `details/containment.md`". ADR 0052's
 parent-facing `SKILL.md`, its description, its Gotchas policy and its
 one-level progressive disclosure remain unchanged.
 
@@ -22,6 +24,12 @@ not what `--record` writes. Judge-replay commands used repository paths.
 The installed skill directory has no `docs/`, so ADR numbers and repository
 paths are unreachable for its reader. Most internals in `details/` were
 already stated in `spec.md` or an ADR, so the copies only drifted.
+
+The supported OpenCode range was written by hand in seven places: the
+version regex, two code comments, the error message, the `compatibility`
+field, `containment.md`, and the runbook. Each of the four release-line
+admissions (ADR 0050, 0051, 0053, 0054) edited all of them, and ADR 0052
+records the skill still saying "2.0.x or 2.1.x" while 2.2.6 was rejected.
 
 Current vendor guidance:
 
@@ -60,6 +68,13 @@ Current vendor guidance:
   `compatibility`. The unused `metadata` block is removed; installs are
   tracked by commit.
 - The unsupported OpenCode version error states what to do next.
+- The supported OpenCode range is defined once, as constants in the OpenCode
+  adapter from which both the version check and the human-readable range
+  (`SUPPORTED_OPENCODE_VERSIONS`) are derived; the error message uses that
+  string. The `compatibility` field is the only other copy, and a test asserts
+  it contains the string. `containment.md` and the runbook describe the
+  behavior and the measured target, not the range. ADRs keep recording each
+  admission.
 
 ## Considered Options
 

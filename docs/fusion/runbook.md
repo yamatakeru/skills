@@ -17,8 +17,10 @@ bun run schema:fusion
 
 ## OpenCode v2 reference environment
 
-Target: `opencode v2.4.0`; supported boundary: stable 2.0.x >= 2.0.22,
-stable 2.1.x, 2.2.x, 2.3.x, or 2.4.x (ADR 0054). Rerun the free contract check below after every
+Target: `opencode v2.4.0`. The supported boundary is defined only by
+`SUPPORTED_OPENCODE_VERSIONS` and its constants in
+`skills/fusion/lib/opencode-sdk-adapter.ts` (ADR 0055); `SKILL.md`'s
+`compatibility` field is tested against it. Rerun the free contract check below after every
 OpenCode upgrade; v2 patches arrive frequently and have changed effective agent
 rules before. The check cannot detect a change from last-match rule evaluation,
 so also re-read upstream `packages/core/src/permission.ts` (`evaluate`) when it

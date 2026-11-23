@@ -78,7 +78,9 @@ denies, ADR 0048), subscribes before prompt
 admission, and waits for terminal execution events. Neither OpenCode v1 nor
 OpenCode CLI transport is retained. CLI transport is an explicit Claude Code
 opt-in only; unsupported worker or judge selections fail without fallback.
-Concrete supported versions and smoke commands live in the skill and runbook.
+The supported OpenCode range is defined once in the adapter and mirrored in
+the skill's `compatibility` field under test (ADR 0055); smoke commands and
+the measured target live in the runbook.
 
 The CLI prints a Markdown panel report to stdout by default: status,
 compliance tier, and warnings first, then each worker's full output, then the

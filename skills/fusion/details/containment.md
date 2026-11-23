@@ -81,10 +81,10 @@ construction.
 
 ## OpenCode version boundary
 
-The supported lines are stable OpenCode 2.0.x from 2.0.22 and any stable
-2.1.x, 2.2.x, 2.3.x or 2.4.x, with 2.4.0 as the measured target. Older
-versions, prereleases and unknown release lines fail explicitly before any
-model call. There is no v1 adapter or OpenCode CLI transport.
+OpenCode workers accept only the stable release lines listed in the
+`compatibility` field of `SKILL.md`. Any other version, including prereleases
+and newer release lines, fails before any model call with an error that names
+the supported range. There is no v1 adapter or OpenCode CLI transport.
 
 On macOS, OpenCode 2.4+ matches path rules without case, so a read root also
 admits every path that differs from it only in letter case. On a

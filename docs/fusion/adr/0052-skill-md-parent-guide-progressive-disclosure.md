@@ -5,7 +5,8 @@
 Accepted. Replaces the repository convention, stated in `AGENTS.md` and the
 skill README, that `SKILL.md` carries the "complete runtime protocol". No
 earlier ADR recorded that convention.
-The placement of runtime internals in `details/` is partially superseded by
+The placement of runtime internals in `details/` and of version ranges is
+partially superseded by
 [ADR 0055](0055-skill-docs-carry-only-caller-visible-content.md).
 
 ## Context

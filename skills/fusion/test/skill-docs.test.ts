@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { SUPPORTED_OPENCODE_VERSIONS } from "../lib/opencode-sdk-adapter";
 
 // SKILL.md and details/ are read by calling agents from an installed skill
 // directory, which contains neither docs/ nor the repository layout.
@@ -39,6 +40,13 @@ describe("agent-facing skill docs", () => {
       [...skill.matchAll(/details\/([\w.-]+\.md)/gu)].map((match) => match[1]!),
     );
     expect([...linked].sort()).toEqual([...detailFiles].sort());
+  });
+
+  test("SKILL.md compatibility states the OpenCode range the code enforces", () => {
+    const frontmatter = agentDocs[0]!.text.split(/^---$/mu)[1]!;
+    expect(frontmatter.replace(/\s+/gu, " ")).toContain(
+      `OpenCode ${SUPPORTED_OPENCODE_VERSIONS}.`,
+    );
   });
 
   test("details files reference only existing sibling files", () => {
