@@ -14,11 +14,6 @@ compatibility: >-
   SKILL.md-compatible agents with shell access and Bun installed. The bundled
   TypeScript CLI needs no node_modules. OpenCode workers need stable OpenCode
   2.0.22+, 2.1.x, 2.2.x, 2.3.x, or 2.4.x.
-metadata:
-  version: "0.15.0"
-  kind: "blind-panel synthesis"
-  mode: "blind"
-  canonical-runtime: "bun-cli"
 ---
 
 # Fusion
@@ -131,13 +126,11 @@ substitute any other execution path silently.
 Read these only when the situation calls for it:
 
 - `details/runtime.md`: how model entries route, how the default panel is
-  composed and refilled, judge selection, the full option semantics, exit
-  codes, and per-harness instruction blocking. Read it when a resolution,
-  warning, or harness behavior in the report is unclear.
-- `details/containment.md`: threat model, residual holes, and evidence layers
-  behind the report's Containment and Enforcement lines. Read it before relying
-  on containment for a sensitive task.
+  composed and refilled, judge selection, option semantics beyond `--help`,
+  and exit codes. Read it when a resolution, warning, or harness behavior in
+  the report is unclear.
+- `details/containment.md`: threat model, residual holes, and the report's
+  Compliance, Enforcement, Containment, watchdog and Instruction environment
+  lines. Read it before relying on containment for a sensitive task.
 - `details/provenance.md`: `--record` artifacts, crash markers, and judge
   replay.
-- `details/blind-panel.md` and `details/synthesis.md`: background on panel
-  design and synthesis.

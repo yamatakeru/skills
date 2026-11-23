@@ -13,7 +13,6 @@ of it, so the parent does not need to re-check these rules by hand.
 - CLI options
 - Dry-run, output, and exit codes
 - Harness environment
-- Library contract
 
 ## Model entries and routing
 
@@ -34,8 +33,7 @@ Availability checks:
 - OpenCode-backed entries are checked against `opencode models`. On v2 this
   may start a shared background catalog service, including during dry-run;
   Fusion executes workers on a separate owned server and does not stop that
-  shared service. An initially empty successful catalog is retried within a
-  bounded window.
+  shared service.
 - Claude Code has no model enumeration command; Claude-backed entries use
   latest aliases and `--fallback-model`, then are validated by the worker
   attempt.
@@ -62,7 +60,7 @@ under the `parent-repeat` slot and emit degraded warnings. Without a resolved
 parent, or at four or more panelists, insufficiency remains an error.
 Explicit `--models` duplicates remain allowed.
 
-Automatic default candidates are privacy-eligible only (ADR 0041); free models
+Automatic default candidates are privacy-eligible only; free models
 are available solely through explicit `--models` entries.
 
 `--models <comma-list>` replaces the default composition entirely, including
@@ -93,41 +91,26 @@ raw worker outputs instead.
 
 ## CLI options
 
-- `--parent-model <entry>`: model entry for the default parent slot and judge;
-  normally the calling agent's own model, but explicit overrides are allowed.
-  Does not change the calling agent's model.
-- `--models <comma-list>`: explicit model list; replaces default composition.
-- `--panelists <n>`: panel size for default composition; default 3, maximum 20.
-- `--context <text>`: shared context brief given to every worker.
-- `--context-file <path>`: embed a file into the shared context; repeatable.
-- `--read-root <dir>`: declare a directory outside the workspace as readable
-  (recursive) for every worker in the run; repeatable.
-- `--effort <low|medium|high|xhigh>`: worker reasoning effort; default is the
-  provider default.
-- `--reasoning-max-tokens <n>`: worker reasoning token budget.
-- `--max-turns <n>`: per-worker turn budget where the harness supports it.
-- `--dry-run`: preflight this exact invocation without running workers or judge.
-- `--record`: write split artifacts under `.fusion-runs/<panelRunId>/` when the
-  directory is git-ignored. With `--dry-run`, it warns and records nothing.
-- `--json`: print `PanelResult` for panel runs, or `DryRunReport` with
-  `mode: "dry-run"` for dry runs, instead of Markdown.
-- `--transport <sdk|cli>`: default `sdk`. `cli` is an explicit opt-in for
-  Claude Code only, with degraded compliance evidence. OpenCode and Cursor
-  entries (workers or judge) under `cli` are usage errors; there is no silent
-  transport fallback.
-- `--judge-model <entry>`: override the judge model.
-- `--synthesizer <parent-agent|deterministic|opencode|cursor|claude-code>`:
-  harness-backed judge is the default.
-- `--worker-timeout-ms <n>`: wall-clock limit for each worker invocation;
-  default 600000. Applies to every harness.
-- `--judge-timeout-ms <n>`: wall-clock limit for the judge, independent of the
-  worker limit; default 300000. Only valid with the harness-backed judge.
-  There is no unbounded mode.
-- `--worker-prompt-variant <suppression-only|upstream-minimal>`: experiment
-  scoped; normal runs leave it unset.
+`--help` lists every option with its default. Semantics it does not state:
 
-Reasoning and budget options a harness cannot honor are reported as warnings,
-never silently dropped.
+- `--panelists`: 2 is a quick sanity check, 3 the default, 4 suits
+  high-stakes or broad tasks; go beyond 4 only when the user accepts the cost
+  and latency.
+- `--read-root` applies to every worker in the run; `containment.md` covers
+  its limits.
+- `--record` writes only when `.fusion-runs/` is git-ignored; with
+  `--dry-run` it warns and records nothing.
+- `--json` prints `PanelResult` for panel runs, or `DryRunReport` with
+  `mode: "dry-run"` for dry runs.
+- `--transport cli` is an explicit opt-in for Claude Code only, with degraded
+  compliance evidence. OpenCode and Cursor entries (workers or judge) under
+  `cli` are usage errors; there is no silent transport fallback.
+- `--worker-timeout-ms` and `--judge-timeout-ms` apply to every harness;
+  `--judge-timeout-ms` is valid only with the harness-backed judge. There is
+  no unbounded mode.
+- `--worker-prompt-variant` is for experiments; leave it unset.
+- Reasoning and budget options a harness cannot honor are reported as
+  warnings, never silently dropped.
 
 ## Dry-run, output, and exit codes
 
@@ -149,54 +132,23 @@ otherwise 1 with the diagnostic the real invocation would raise.
 
 ## Harness environment
 
-The CLI renders one prompt for all workers: the same full task, the portable
-worker instructions, the output contract, and the shared context. It assigns
-no roles, personas, debate positions, or specialty lenses, and shows no worker
-peer outputs, draft synthesis, or panel conclusions before that worker returns.
-Workers are asked for concise reasoning summaries, evidence, sources,
-assumptions, uncertainties, and verification notes; private chain-of-thought
-is never requested, exposed, synthesized, or recorded.
+Every worker gets one rendered prompt: the full task, the portable worker
+instructions, the output contract, and the shared context, with no roles,
+personas or peer output. Workers return concise reasoning summaries,
+evidence, sources, assumptions, uncertainties, and verification notes;
+private chain-of-thought is never requested or recorded.
 
-Worker tools default to read-only local access, a read-only bash allowlist (git
-inspection plus read-only search and listing commands), and web search and
-fetch where the harness provides them. Writes, non-allowlisted shell commands,
-subagents, delegation, and recursive panels are denied. A denied request is a
-structured tool error: the worker keeps running and discloses the denial.
+Worker tools default to read-only local access, a read-only shell allowlist
+(git inspection plus read-only search and listing commands), and web search
+and fetch where the harness provides them. Writes, other shell commands,
+delegation, and recursive panels are denied. `containment.md` explains what
+this does and does not prevent, and how the report discloses it.
 
-The Instruction Environment is a standing harness input (ADR 0043/0045):
+Each OpenCode worker and the judge get a fresh session on a run-scoped
+server. Web search uses the Exa provider in the run-scoped config without
+changing user settings; a provider failure stays visible as a tool failure,
+and Fusion never switches providers on its own.
 
-- Claude Code blocks user, project, and local memory via an empty
-  `--setting-sources` list and auto memory via
-  `--settings '{"autoMemoryEnabled":false}'`.
-- OpenCode SDK blocks user/global instruction layers by redirecting both
-  `OPENCODE_CONFIG_DIR` and `XDG_CONFIG_HOME` and unsetting `OPENCODE_CONFIG`;
-  project and ancestor `AGENTS.md` still inject.
-- Cursor account-level User Rules remain injected regardless of
-  `CURSOR_CONFIG_DIR`.
-
-Worker and judge prompts carry injection-subordination clauses (ADR 0044), and
-reports disclose these facts in compliance notes and the Instruction
-environment header line.
-
-OpenCode uses an authenticated, run-scoped v2 server, native ordered permission
-rules, and a fresh session for each worker and judge. It verifies the actual
-server version and effective rules before invoking models, waits for terminal
-execution events, and interrupts sessions before disconnecting. Unsupported
-release lines fail explicitly; see `containment.md` for the supported boundary.
-Web search uses the owner-approved Exa provider in the run-scoped config,
-without changing user settings or switching providers automatically; a
-provider failure stays visible as a tool failure.
-
-Cursor workers use a run-scoped scratch cwd with project hooks to enforce the
-read-only bash allowlist, recursive delegation denial, and declared read-root
-semantics while keeping web tools enabled. Undocumented `CURSOR_CONFIG_DIR`
-and headless hook loading remain smoke-monitored surfaces.
-
-The shell allowlist is enforced but is not a sandbox; `containment.md` covers
-the threat model, residual holes, evidence layers, and crash recovery.
-
-## Library contract
-
-In the library contract, `PanelSpec.workers` is the per-slot preference list:
-each slot may carry `{ model, harness }`. `lib/protocol.ts` is the public entry
-point.
+Cursor workers run from a run-scoped scratch directory whose hooks enforce the
+shell allowlist, delegation denial, and declared read roots, with web tools
+enabled.

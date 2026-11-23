@@ -536,13 +536,14 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
     expect(result.warnings?.join()).toContain("interrupt failed");
   });
 
-  test.each(["1.18.31", "2.0.21", "2.5.0", "3.0.0", "2.4.0-beta.1", "unknown"])(
+  test.each(["1.18.31", "2.0.21", "2.5.0", "2.04.1", "2.10.0", "3.0.0", "2.4.0-beta.1", "unknown"])(
     "rejects unsupported server version %s before sessions/models",
     async (version) => {
       const f = fixture({ version });
       const result = await f.adapter.runWorker(f.request);
       expect(result.status).toBe("error");
       expect(result.errors?.join()).toContain("Unsupported OpenCode");
+      expect(result.errors?.join()).toContain("Update the Fusion skill");
       expect(f.counts().sessionCount).toBe(0);
     },
   );

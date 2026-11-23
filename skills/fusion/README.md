@@ -1,73 +1,54 @@
 # Fusion
 
-Fusion is a lightweight skill for Fusion-inspired blind-panel deliberation. It
-is designed for complex research, architecture, design review, code review,
-debugging, and other high-stakes or ambiguous tasks where one answer is not
-enough.
+Fusion is an agent skill that runs a blind panel: several models answer the
+same task independently, a separate judge compares their answers
+(consensus, contradictions, partial coverage, unique insights, blind spots),
+and the calling agent writes the final answer. It is inspired by OpenRouter's
+[Fusion](https://openrouter.ai/docs/guides/features/plugins/fusion) but does
+not call the OpenRouter API.
 
-The skill is inspired by OpenRouter's [Fusion](https://openrouter.ai/docs/guides/features/plugins/fusion)
-system: independent same-prompt answers are compared and synthesized into
-consensus, contradictions, partial coverage, unique insights, and blind spots.
-It does not call the OpenRouter Fusion API directly.
+`SKILL.md` is the guide the calling agent follows. This README is for people
+installing or maintaining the skill.
 
-## Repository Layout
+## When to use
+
+Use it when independent second opinions are likely to change or sharpen a
+conclusion: open research questions, architecture or design choices, critique
+of a plan or spec, or a multi-model second-opinion review. Do not use it for
+narrow lookups or routine single-pass code review; a run takes minutes and
+calls several models.
+
+Ask the agent explicitly, for example:
 
 ```text
-skills/
-  fusion/
-    bin/          # Bundled Bun CLI entrypoint
-    SKILL.md      # The portable blind-panel skill definition
-    README.md     # This file
-    details/      # Optional deep-dive guidance; not required at runtime
-    lib/          # Portable TypeScript protocol reference implementation
+fusionを使って、この設計変更のリスクと実装方針を独立に評価して。
 ```
 
-The `SKILL.md` file is the core artifact: a guide for the calling agent that
-is sufficient on its own to run a panel and author the answer. The files under
-`details/` hold the runtime internals the CLI enforces or discloses, linked
-from `SKILL.md` with the situation in which to read each one (ADR 0052). `bin/fusion-run.ts` is the
-canonical execution path. `lib/protocol.ts` is the public TypeScript entry
-point for the harness-neutral reference implementation. The implementation is
-split across `lib/*.ts` by responsibility: request/result types, manifest
-helpers, panel composition, worker request construction, event logging,
-compliance evaluation, recording, and `runPanel` orchestration around injected
-worker and synthesis adapters.
+## Requirements
 
-## When To Use
+- [Bun](https://bun.sh/docs/installation) on the machine where the calling
+  agent runs. The CLI has no npm runtime dependencies.
+- At least one worker harness: Claude Code, OpenCode, or Cursor
+  (`cursor-agent`). Supported OpenCode versions are listed in the
+  `compatibility` field of `SKILL.md`.
 
-Use Fusion for:
+## Install and update
 
-- research questions with competing interpretations
-- architecture or design decisions needing independent judgment
-- risky implementation plans where independent convergence matters
-- code review where missing an issue would be costly
-- tasks where the user explicitly asks for a panel, ensemble, fusion, or
-  multi-model answer
-
-Do not use it for small factual questions, simple edits, obvious bug fixes, or
-tasks where latency and token cost are not justified.
-
-## Basic Installation
-
-Install the skill by making `skills/fusion/SKILL.md` visible to your agent
-harness.
-
-For OpenCode project-local use, copy the skill directory into the target
-repository:
+With the `skills` CLI:
 
 ```bash
-mkdir -p /path/to/your/repo/.opencode/skills
-cp -R skills/fusion /path/to/your/repo/.opencode/skills/
+npx skills add yamatakeru/skills --skill fusion   # add -g for a user-level install
+npx skills update fusion
 ```
 
-Bun must be installed on the machine where the parent agent runs the skill.
-The skill runtime itself has no npm runtime dependencies.
+The CLI records the installed commit, so an installed copy does not change
+until you update it. Update after changes that affect the runtime, for example
+when a newer OpenCode release becomes supported.
 
-## OpenCode Optional Configuration
+### Optional OpenCode configuration
 
 OpenCode can use the skill without extra configuration if the skill is
-discoverable and permissions allow it. The following
-`opencode.jsonc` fragment is optional.
+discoverable and permissions allow it. To allow it without a prompt:
 
 ```jsonc
 {
@@ -81,67 +62,42 @@ discoverable and permissions allow it. The following
 }
 ```
 
-After changing OpenCode configuration, restart OpenCode. Configuration, skill,
-and plugin files are loaded at startup.
+Restart OpenCode after changing its configuration.
 
-## Model Setup
+## Models
 
-The CLI composes a default three-worker panel from the parent slot
-(`--parent-model` when provided; omitting it warns and refills the seat from
-the alias fallback chains), the `strong-generalist` alias, and the
-`efficient-generalist` alias. Use `--models` to replace that default
-composition with explicit model entries.
+`bun <skill-dir>/bin/fusion-run.ts --help`, where `<skill-dir>` is the
+installed skill directory, prints every option, the alias table, and the
+ordered fallback chain behind each alias. `details/runtime.md` explains how
+entries route to harnesses and how the default panel is composed. To list
+available model IDs, run `opencode models` or `cursor-agent models`.
 
-By default, the calling agent passes its own model as `--parent-model`; it may
-explicitly select another supported entry instead. This selects the default
-parent seat and judge preference, not the calling agent's model or the author
-of the final answer. The CLI does not detect the calling model automatically.
-With `--models`, only the judge preference still uses `--parent-model`;
-`--judge-model` takes precedence. Omitting both `--parent-model` and
-`--judge-model` makes the judge use the selected harness's default model with
-a warning.
-
-Use `--help` to inspect the runtime alias chains, or this command to inspect
-OpenCode-backed model IDs:
-
-```bash
-opencode models
-```
-
-Use this command to inspect Cursor-backed model IDs:
-
-```bash
-cursor-agent models
-```
-
-## Usage
-
-Ask for the skill explicitly when the task warrants independent deliberation:
+## Layout
 
 ```text
-fusionを使って、この設計変更のリスクと実装方針を独立に評価して。
+SKILL.md      Guide for the calling agent
+details/      References SKILL.md links for specific situations
+bin/          fusion-run.ts (panel CLI) and fusion-judge-replay.ts
+lib/          TypeScript implementation; lib/protocol.ts is the public entry
+schema/       JSON Schemas generated from lib/types.ts
+test/         Bun tests
 ```
 
-```text
-fusion --panelists 3 で、このAPI設計案をレビューして。
-```
+## Library use
 
-```text
-fusion --models sonnet,strong-generalist,efficient-generalist で、このAPI設計案をレビューして。
-```
+`lib/protocol.ts` exports the harness-neutral implementation: request and
+result types, panel composition, worker request construction, compliance
+evaluation, recording, and `runPanel`, which orchestrates injected worker and
+synthesis adapters. In `PanelSpec.workers`, each slot may carry a
+`{ model, harness }` preference.
 
-Supported model entries are provider-qualified OpenCode models
-(`<provider>/<model>`), Claude aliases (`fable`, `opus`, `sonnet`, `haiku`,
-and `claude-*` ids), alias-table names, and the explicit harness prefixes
-`opencode:`, `claude-code:`, and `cursor:`. The alias table holds
-`strong-generalist` and `efficient-generalist`, used by the default
-composition, plus the `openai-flagship` and `budget-smart` compatibility
-aliases, which are not; run `--help` for the chain behind each one. Free
-models are excluded from automatic selection and are reachable only through
-explicit `--models` entries. Cursor is explicit-prefix only and is available
-only with the SDK transport. Unknown entries are errors.
+## Design documents
+
+The portable spec, glossary, domain model, ADRs and runbook live in
+[`docs/fusion/`](../../docs/fusion/) of the source repository.
 
 ## Limits
 
 Fusion coordinates independent blind-panel deliberation. It is not a
-role-divided review workflow and is not a full multi-worker coding system.
+role-divided review workflow and not a multi-worker coding system. Its worker
+containment is a harness allowlist, not a sandbox.

@@ -137,7 +137,7 @@ function policyFingerprint(request: WorkerRequest): string {
   });
 }
 
-/** OpenCode 2.0.22+/2.1.x/2.2.x/2.3.x/2.4.x machine protocol. There is deliberately no v1/CLI fallback. */
+/** OpenCode v2 machine protocol (see SUPPORTED_OPENCODE_VERSIONS). There is deliberately no v1/CLI fallback. */
 export class OpenCodeSdkAdapter implements WorkerRunner {
   private readonly command: string;
   private readonly fetch: Fetch;
@@ -564,17 +564,35 @@ function assertServerInfo(
     throw new Error("Invalid OpenCode server identity response.");
 }
 
-/** Stable 2.0.22+, or any stable 2.1.x, 2.2.x, 2.3.x or 2.4.x (ADR 0054). */
+// The single source of the supported OpenCode range. Admitting a release line
+// changes only these constants; SKILL.md's compatibility field is checked
+// against SUPPORTED_OPENCODE_VERSIONS by test.
+const LATEST_SUPPORTED_OPENCODE_MINOR = 4;
+const MIN_OPENCODE_2_0_PATCH = 22;
+
+/** Human-readable supported range, e.g. "2.0.22+, 2.1.x, ..., or 2.4.x". */
+export const SUPPORTED_OPENCODE_VERSIONS = (() => {
+  const lines = [`2.0.${MIN_OPENCODE_2_0_PATCH}+`];
+  for (let minor = 1; minor <= LATEST_SUPPORTED_OPENCODE_MINOR; minor++)
+    lines.push(`2.${minor}.x`);
+  return `${lines.slice(0, -1).join(", ")}, or ${lines.at(-1)}`;
+})();
+
+/** Stable releases only: 2.0.x from the minimum patch, then whole minor lines. */
 export function isSupportedOpenCodeVersion(value: unknown): value is string {
   const match =
-    typeof value === "string" ? /^2\.([0-4])\.(\d+)$/u.exec(value) : null;
-  return match !== null && (match[1] !== "0" || Number(match[2]) >= 22);
+    typeof value === "string" ? /^2\.(0|[1-9]\d*)\.(\d+)$/u.exec(value) : null;
+  if (match === null) return false;
+  const minor = Number(match[1]);
+  return minor === 0
+    ? Number(match[2]) >= MIN_OPENCODE_2_0_PATCH
+    : minor <= LATEST_SUPPORTED_OPENCODE_MINOR;
 }
 
 function assertSupportedVersion(value: unknown): asserts value is string {
   if (!isSupportedOpenCodeVersion(value))
     throw new Error(
-      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires stable OpenCode 2.0.22+, 2.1.x, 2.2.x, 2.3.x, or 2.4.x. No v1 or CLI fallback is available.`,
+      `Unsupported OpenCode version ${typeof value === "string" ? value : "unknown"}; Fusion requires stable OpenCode ${SUPPORTED_OPENCODE_VERSIONS}. No v1 or CLI fallback is available. Update the Fusion skill if a newer release supports this OpenCode version; otherwise use a supported OpenCode version or run without OpenCode workers.`,
     );
 }
 

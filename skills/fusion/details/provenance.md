@@ -1,54 +1,52 @@
-This file is supplementary guidance for Fusion. The executable runtime protocol
-remains in `../SKILL.md`. Do not rely on this file being read at runtime.
-
 # Provenance
 
-When `--record` is requested and safe, store enough information to audit the
-panel decision without persisting secrets or unnecessary private data.
+Read this when you need a run's artifacts: to audit a panel, inspect worker
+tool evidence, or recover a run whose synthesis was lost.
 
-## Suggested Contents
+## Recorded artifacts
 
-- Original prompt and options.
-- Panelist identifiers and model metadata when known.
-- Each panelist's returned structured output, excluding private
-  chain-of-thought and full reasoning traces.
-- Concise reasoning summaries, evidence, sources, tool-result references,
-  assumptions, uncertainties, and verification notes when provided.
-- CLI deterministic audit synthesis.
-- Parent-authored synthesis and final answer, if separately captured by the
-  parent agent.
-- Verification commands and results, if any.
-- Degraded-mode notes, such as CLI fallback use or unavailable models.
-- `run-status.json`, written as `running` when recording begins and resolved to
-  `complete`, `failed`, or `aborted` on handled terminal paths.
+`--record` writes these files under `.fusion-runs/<panelRunId>/` in the
+current workspace:
 
-## Suggested Location
+- `run-status.json`: run state (below).
+- `request.json`: the panel request, including the resolved options.
+- `manifest.json`: the shared-context manifest.
+- `events.jsonl`: the run's event log.
+- `worker-requests.json` and `worker-results.json`: each worker's request and
+  result, including `toolUseSummary.deniedRequests` and
+  `complianceEvidence.notes`.
+- `synthesis.json`: the judge analysis or the deterministic audit synthesis.
+- `compliance.json`: the compliance evaluation.
+- `result.json`: the full `PanelResult`.
 
-Use `.fusion-runs/<panelRunId>/` when the environment permits file writes.
-Otherwise, mention that recording was requested but unavailable.
+Recording requires `.fusion-runs/` to be listed in the workspace
+`.gitignore`. Otherwise recording is refused with a warning and the panel
+still runs unrecorded. Secret-like keys and values are redacted. Private
+chain-of-thought is never recorded.
 
-## Crash Marker and Judge Replay
+## Run status
 
-Recorded artifacts are written incrementally so worker requests and results
-survive a later synthesis or process failure. `run-status.json` has these
-semantics:
+Worker requests and results are written incrementally, so they survive a
+later synthesis or process failure. `run-status.json` reads:
 
-- `running`: the run started but did not reach a handled terminal state;
+- `running`: the run started but did not reach a handled terminal state, for
+  example after `SIGKILL`;
 - `complete`: the run finalized normally;
 - `failed`: the run finalized with failure;
-- `aborted`: a handled interrupt or termination finalized best-effort.
+- `aborted`: `SIGINT` or `SIGTERM` was handled and the run finalized
+  best-effort.
 
-`SIGINT` and `SIGTERM` handlers attempt to write `aborted`. `SIGKILL` cannot be
-handled, so the marker remains `running` and makes the crash self-describing.
+## Judge replay
 
-When the required worker artifacts exist, recover synthesis without rerunning
-workers by using judge replay:
+When a recorded run's worker artifacts survived, rerun only the judge:
 
 ```bash
-bun skills/fusion/bin/fusion-judge-replay.ts \
-  --run <id-or-path> \
-  --arm recovery \
-  --judge-model <entry>
+bun <skill-dir>/bin/fusion-judge-replay.ts \
+  --run <id-or-path> --arm recovery --judge-model <entry>
 ```
 
-Replay writes separate judge artifacts and preserves the original run evidence.
+Replay writes `synthesis-replay-<arm>.json` and
+`replay-manifest-<arm>.json` next to the original artifacts and leaves them
+unchanged. It recovers synthesis; it does not make the original run-status
+evidence that the original process completed. `--help` lists the remaining
+options.

@@ -78,7 +78,9 @@ denies, ADR 0048), subscribes before prompt
 admission, and waits for terminal execution events. Neither OpenCode v1 nor
 OpenCode CLI transport is retained. CLI transport is an explicit Claude Code
 opt-in only; unsupported worker or judge selections fail without fallback.
-Concrete supported versions and smoke commands live in the skill and runbook.
+The supported OpenCode range is defined once in the adapter and mirrored in
+the skill's `compatibility` field under test (ADR 0055); smoke commands and
+the measured target live in the runbook.
 
 The CLI prints a Markdown panel report to stdout by default: status,
 compliance tier, and warnings first, then each worker's full output, then the
@@ -232,8 +234,10 @@ than rely on worker prompt obedience. Where the harness supports deny-by-default
 rules, the map starts with a catch-all deny and follows it with explicit
 `read`, `grep`, `glob`, and `list` allows plus the declared web, read-root, and
 shell capabilities. A shell map likewise denies its catch-all before explicit
-command allows. Adapters must not send deprecated prompt-body tool toggles that
-replace or weaken the configured session permission policy.
+command allows. The OpenCode adapter maps portable `bash` to the native
+`shell` action and recursive delegation to `subagent`. Adapters must not send
+deprecated prompt-body tool toggles that replace or weaken the configured
+session permission policy.
 
 Where an effective-policy inspection API exists, startup verification asserts
 the required catch-all denies and explicit allows before any model runs. A
