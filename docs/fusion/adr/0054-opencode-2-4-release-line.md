@@ -27,12 +27,18 @@ dry-run did not reveal this.
   and `v2.4.0`
   ([`44aed4fd`](https://github.com/anomalyco/opencode/tree/44aed4fd144611879046ae923c25541f913780ad)).
   `evaluate` keeps the last-match evaluation that ADR 0048 depends on
-  (`rulesets.flat().findLast(...)`). The only change is that on macOS the
+  (`rulesets.flat().findLast(...)`). The only change (upstream `79bd2c6f`,
+  "match file permission rules without case on macOS") is that on macOS the
   resource match ignores case for the path actions `external_directory`,
-  `read` and `edit`, because macOS volumes resolve case-insensitively. This
-  applies equally to allow and deny rules, so a deny can no longer be
-  bypassed by a case variant of a path, and allow rules only match paths that
-  already resolve to the same files. It does not widen Fusion's policy.
+  `read` and `edit`, because default macOS volumes resolve
+  case-insensitively. It applies equally to allow and deny rules. On a
+  default volume a deny can no longer be bypassed by a case variant of a
+  path, and allows still match only the same files. On a case-sensitive
+  volume, however, Fusion's read-root allows (`external_directory` for
+  `<root>` and `<root>/**`) also match case-variant siblings, which are
+  different directories: a `/Volumes/Work/repo` root admits
+  `/Volumes/Work/REPO/...`. A trailing deny cannot carve the variant out,
+  because it would match the declared root with the same case folding.
 - The `@opencode/client` 2.3.0 to 2.4.0 type diff does not touch the
   endpoints, events or types Fusion reads (`/api/info`, `/api/agent`,
   `/api/event`, `/api/session` prompt/interrupt/permission reply,
@@ -58,6 +64,14 @@ release lines still fail explicitly before session creation. A further minor
 line needs the same check and a new decision; it is not admitted
 automatically.
 
+The case-insensitive read-root match on case-sensitive macOS volumes is
+accepted as a documented residual, not mitigated in the adapter. It needs a
+non-default case-sensitive volume and a case-variant sibling of a declared
+read root, Fusion's containment is a harness allowlist rather than an OS
+sandbox, and the same upstream change closes the opposite case-variant
+bypass of denies on default volumes. `details/containment.md` states the
+limitation for callers.
+
 ## Considered Options
 
 - **Keep 2.0 to 2.3 only**: stops every OpenCode worker on the installed
@@ -66,6 +80,13 @@ automatically.
   0050 gives for admitting whole minor lines.
 - **Drop older lines while admitting 2.4**: no evidence that they regressed,
   and dropping them would add a forced upgrade for no safety gain.
+- **Fail closed for read roots on case-sensitive volumes** (detect volume
+  case sensitivity on darwin with 2.4+ and refuse the OpenCode worker):
+  closes the residual, but adds detection logic, tests and review for a
+  non-default setup. Deferred as a possible follow-up rather than blocking
+  the release-line admission.
+- **Keep 2.4 out until mitigated**: leaves the default panel two seats short
+  on the installed binary for a narrow, documentable residual.
 
 ## Consequences
 

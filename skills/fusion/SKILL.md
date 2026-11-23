@@ -105,6 +105,10 @@ full-panel consensus.
   run can stay `clean`, it is `not-applicable` outside a Git work tree, and it
   cannot see gitignored areas, writes outside the workspace, or remote side
   effects. Use an OS-level sandbox when a task needs real isolation.
+- **On macOS, OpenCode 2.4+ matches read roots without case.** On a
+  case-sensitive volume, `--read-root /Vol/repo` also opens `/Vol/REPO`.
+  Avoid declaring such a root when a case-variant sibling holds data workers
+  must not read (`details/containment.md`).
 - **Denied reads do not crash a worker, and its answer may not mention
   them.** The Markdown report shows only worker Warnings, which can omit or
   summarize denials. When source coverage matters, run with `--record` (or
