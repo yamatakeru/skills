@@ -44,7 +44,11 @@ describe("agent-facing skill docs", () => {
 
   test("SKILL.md compatibility states the OpenCode range the code enforces", () => {
     const frontmatter = agentDocs[0]!.text.split(/^---$/mu)[1]!;
-    expect(frontmatter.replace(/\s+/gu, " ")).toContain(
+    // The field value: its own line plus the indented continuation lines.
+    const compatibility = /^compatibility:(.*\n(?:[ \t]+.*\n)*)/mu.exec(
+      frontmatter,
+    )?.[1];
+    expect(compatibility?.replace(/\s+/gu, " ")).toContain(
       `OpenCode ${SUPPORTED_OPENCODE_VERSIONS}.`,
     );
   });
