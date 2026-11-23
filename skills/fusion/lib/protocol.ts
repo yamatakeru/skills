@@ -18,6 +18,7 @@ export * from "./judge-synthesizer";
 export * from "./adapter-registry";
 export * from "./headless-cli-adapters";
 export * from "./opencode-sdk-adapter";
+export * from "./read-root-case";
 export * from "./claude-code-sdk-adapter";
 export * from "./cursor-sdk-adapter";
 export * from "./panel-composition";

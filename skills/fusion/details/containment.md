@@ -102,10 +102,12 @@ From OpenCode 2.4 on macOS, OpenCode matches `read`, `edit` and
 read-root allows therefore also match any path that differs from the root
 only in letter case, in any component; on a case-sensitive volume those are
 different directories (for example a `/Volumes/Work/repo` root also admits
-`/Volumes/WORK/repo/...` and `/Volumes/Work/REPO/...`). This is an accepted
-residual of the harness allowlist (ADR 0054); on such volumes, do not declare
-a read root when a path differing from it only in case holds data workers
-must not read.
+`/Volumes/WORK/repo/...` and `/Volumes/Work/REPO/...`). Before creating a
+session, the adapter therefore probes each cased component of every read root
+by its case-swapped name and fails the worker closed with
+`OPENCODE_READ_ROOT_CASE_UNSAFE` unless every lookup resolves to the same
+entry; a missing read root fails the same way (ADR 0055). Move the root to a
+case-insensitive volume, omit it, or run without OpenCode workers.
 
 SSE must confirm `server.connected` before prompt admission. Only terminal
 execution success completes the worker; a prompt response or tool step does

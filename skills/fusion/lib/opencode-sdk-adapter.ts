@@ -10,6 +10,7 @@ import type {
   PermissionRule,
 } from "@opencode/client";
 import { deriveContainment } from "./containment";
+import { assertReadRootsCaseSafe } from "./read-root-case";
 import { resolveWorkerTimeoutMs } from "./defaults";
 import { spawnProcessGroup, terminateProcessGroup } from "./process-group";
 import { instructionEnvironmentDisclosures } from "./instruction-environment";
@@ -61,6 +62,8 @@ export interface OpenCodeSdkAdapterOptions {
   serverFactory?: OpenCodeServerFactory;
   versionExecutor?: CommandExecutor;
   agentName?: string;
+  /** Platform the OpenCode server applies path rules on; defaults to this process. */
+  platform?: NodeJS.Platform;
 }
 export interface OpenCodeServerHandle {
   baseUrl: string;
@@ -144,6 +147,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
   private readonly serverFactory: OpenCodeServerFactory;
   private readonly versionExecutor: CommandExecutor;
   private readonly agentName: string;
+  private readonly platform: NodeJS.Platform;
   private readonly injectedBaseUrl?: string;
   private readonly password: string;
   private readonly authorization: string;
@@ -159,6 +163,7 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
     this.serverFactory = options.serverFactory ?? spawnOpenCodeServer;
     this.versionExecutor = options.versionExecutor ?? executeCommand;
     this.agentName = options.agentName ?? workerAgent;
+    this.platform = options.platform ?? process.platform;
     this.injectedBaseUrl = options.baseUrl;
     this.injectedPasswordMissing =
       options.baseUrl !== undefined && !options.serverPassword;
@@ -205,6 +210,12 @@ export class OpenCodeSdkAdapter implements WorkerRunner {
       // Shared server startup has its own deadline and is excluded from the
       // Worker/Judge Timeout, which starts once the server is ready (ADR 0049).
       server = await this.ensureServer(request);
+      if (request.toolsPolicy?.mode !== "none")
+        await assertReadRootsCaseSafe({
+          readRoots: request.environment?.readRoots,
+          version: this.version,
+          platform: this.platform,
+        });
       timer = setTimeout(
         () =>
           controller.abort(

@@ -557,6 +557,34 @@ describe("Fusion OpenCode v2 SDK adapter", () => {
     },
   );
 
+  test("refuses an unverifiable read root on macOS with case-folding OpenCode before sessions", async () => {
+    const request = workerRequest();
+    request.environment!.readRoots = ["/fusion-missing-read-root"];
+    const f = fixture({
+      request,
+      version: "2.4.0",
+      adapter: { platform: "darwin" },
+    });
+    const result = await f.adapter.runWorker(f.request);
+    expect(result.status).toBe("error");
+    expect(result.errors?.join()).toContain("OPENCODE_READ_ROOT_CASE_UNSAFE");
+    expect(f.counts().sessionCount).toBe(0);
+    expect(f.counts().promptCount).toBe(0);
+  });
+
+  test.each([
+    ["2.4.0", "linux"],
+    ["2.3.0", "darwin"],
+  ] as const)(
+    "does not probe read roots where OpenCode %s on %s keeps case",
+    async (version, platform) => {
+      const request = workerRequest();
+      request.environment!.readRoots = ["/fusion-missing-read-root"];
+      const f = fixture({ request, version, adapter: { platform } });
+      expect((await f.adapter.runWorker(f.request)).status).toBe("ok");
+    },
+  );
+
   test("injected server uses server identity, not the local CLI, and requires explicit auth", async () => {
     const f = fixture({
       adapter: {

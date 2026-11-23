@@ -242,6 +242,12 @@ runs behind a known-broken defense, and the panel may continue through partial
 synthesis. The absence of an inspection API is an evidence-quality limitation,
 not permission to ignore a detected mismatch.
 
+Where the harness matches path rules more loosely than the filesystem
+distinguishes paths (for example case-insensitive matching on a
+case-sensitive volume), the adapter verifies before any model runs that each
+declared read root cannot also admit a different directory, and otherwise
+fails the affected workers closed (ADR 0055).
+
 A denied tool request must remain a structured, model-visible degradation rather
 than a worker dropout. For persistent harness sessions, every result, timeout,
 and error path requests session abort after result collection and before event

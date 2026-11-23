@@ -6,6 +6,9 @@ Accepted. Partially supersedes ADR 0053's supported boundary ("stable 2.0.x
 from 2.0.22, or any stable 2.1.x, 2.2.x or 2.3.x") and its 2.3.0 type-only
 pin. ADR 0050's reasoning for admitting a whole minor line, and every ADR
 0046/0048 decision, remain unchanged.
+The acceptance of the case-insensitive read-root residual is superseded by
+[ADR 0055](0055-opencode-read-root-case-fail-closed.md), which fails such
+read roots closed.
 
 ## Context
 
